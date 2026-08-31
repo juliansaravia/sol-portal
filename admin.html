@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sol Inmobiliaria · Portal Interno</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div id="login" class="login-screen"></div>
+<div id="portalCliente" class="portal" hidden></div>
+
+<div class="app" hidden>
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-name">Sol Inmobiliaria</div>
+      <div class="brand-sub" id="brandRole">Suite Comercial</div>
+    </div>
+    <div class="proyecto-sel">
+      <label>Proyecto</label>
+      <select id="proyectoActivo" onchange="cambiarProyecto(this.value)">
+        <option value="RLE">La Esperanza</option>
+      </select>
+    </div>
+    <nav class="nav" id="nav">
+      <div class="nav-sec">Fundación</div>
+      <button class="nav-item active" data-view="inicio"><span class="nav-ico">◆</span><span>Inicio</span></button>
+      <button class="nav-item" data-view="inventario"><span class="nav-ico">▦</span><span>Mapa del conjunto</span></button>
+      <div class="nav-sec">Ventas</div>
+      <button class="nav-item" data-view="cotizador"><span class="nav-ico">≡</span><span>Cotizador</span></button>
+      <button class="nav-item" data-view="vender"><span class="nav-ico">＋</span><span>Ingresar venta</span></button>
+      <button class="nav-item" data-view="contratos"><span class="nav-ico">◫</span><span>Contratos</span></button>
+      <button class="nav-item" data-view="expedientes"><span class="nav-ico">▤</span><span>Expedientes</span></button>
+      <button class="nav-item" data-view="clientes"><span class="nav-ico">☺</span><span>Clientes</span></button>
+      <button class="nav-item" data-view="leads"><span class="nav-ico">◎</span><span>Leads del embudo</span></button>
+      <button class="nav-item" data-view="online"><span class="nav-ico">↗</span><span>Compra en línea</span></button>
+      <button class="nav-item" data-view="aprobacion"><span class="nav-ico">✓</span><span>Aprobación de créditos</span></button>
+      <div class="nav-sec">Cartera</div>
+      <button class="nav-item" data-view="cobranza"><span class="nav-ico">◷</span><span>Cobranza</span></button>
+      <button class="nav-item" data-view="agenda"><span class="nav-ico">◔</span><span>Agenda de cobranza</span></button>
+      <button class="nav-item" data-view="conciliacion"><span class="nav-ico">⇄</span><span>Cuadre bancario</span></button>
+      <button class="nav-item" data-view="confirmacion"><span class="nav-ico">❒</span><span>Confirmación de pagos</span></button>
+      <button class="nav-item" data-view="comisiones"><span class="nav-ico">%</span><span>Comisiones</span></button>
+      <div class="nav-sec">Inteligencia</div>
+      <button class="nav-item" data-view="reporteria"><span class="nav-ico">▤</span><span>Reportería</span></button>
+      <button class="nav-item" data-view="equipo"><span class="nav-ico">☷</span><span>Equipo</span></button>
+      <button class="nav-item" data-view="seguridad"><span class="nav-ico">⚿</span><span>Seguridad y accesos</span></button>
+      <button class="nav-item" data-view="automatizaciones"><span class="nav-ico">⚡</span><span>Automatizaciones</span></button>
+    </nav>
+    <div class="sidebar-foot">
+      <div id="footUser" style="margin-bottom:8px"></div>
+      <button class="btn btn-ghost btn-sm" style="width:100%" onclick="logout()">↩ Cerrar sesión</button>
+      <button class="btn-reset" onclick="if(confirm('¿Borrar los datos guardados y volver al estado original?'))resetDB()">Reiniciar datos</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <h1 id="viewTitle">Inicio</h1>
+        <div class="sub" id="viewSub">Panel general del suite</div>
+      </div>
+      <div class="search-wrap">
+        <input id="globalSearch" class="search-input" placeholder="Buscar lote, contrato o cliente…"
+               oninput="buscarGlobal(this.value)" autocomplete="off">
+        <div id="searchResults" class="search-results" hidden></div>
+      </div>
+    </header>
+    <section class="content" id="content"></section>
+  </main>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<div class="drawer" id="drawer" hidden></div>
+<div class="modal-scrim" id="modalScrim" hidden><div class="modal" id="modal"></div></div>
+
+<script>window.PORTAL='admin';</script>
+<script src="assets/lotes-geo.js"></script>
+<script src="assets/lotes-shape.js"></script>
+<script src="assets/marca.js"></script>
+<script src="data.js"></script>
+<script src="data-cartera.js"></script>
+<script src="data-mora.js"></script>
+<script src="data-calendario.js"></script>
+<script src="permisos.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config-supabase.js"></script>
+<script src="supabase.js"></script>
+<script src="datos-remotos.js"></script>
+<script src="store.js"></script>
+<script src="conciliacion.js"></script>
+<script src="comisiones.js"></script>
+<script src="contrato.js"></script>
+<script src="cotizacion.js"></script>
+<script src="data-recibos.js"></script>
+<script src="desistimiento.js"></script>
+<script src="expedientes.js"></script>
+<script src="seguridad.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

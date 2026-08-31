@@ -1,0 +1,2321 @@
+/* ============================================================
+   SUITE SOL INMOBILIARIA — motor de la aplicación
+   ============================================================ */
+const Q  = n => 'Q ' + (Math.round(n*100)/100).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2});
+const Qk = n => 'Q ' + Math.round(n).toLocaleString('es-GT');
+const fmtD = iso => iso ? new Date(iso+'T00:00:00').toLocaleDateString('es-GT',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let vista='inicio', filtro='todos', busqueda='', ROLE='admin', SCREEN='login', drawerTab='ficha', drawerCt=null;
+
+/* Los roles y sus vistas salen de la matriz de permisos, no de una
+   lista escrita a mano. Antes había dos listas que se desincronizaban. */
+const HOME={admin:'inicio',gerencia:'inicio',vendedor:'cotizador',
+            cobranza:'agenda',financiero:'confirmacion',confirmacion:'conciliacion'};
+const ROLES=Object.fromEntries(Object.entries(MATRIZ).map(([r,c])=>[r,
+  {label:c.etiqueta, home:HOME[r]||'inicio', views:vistasDe(r), color:c.color, nota:c.nota}]));
+/* 'cobrador' era el nombre viejo del rol de cobranza. */
+ROLES.cobrador=ROLES.cobranza;
+const PORTAL_CFG={
+  admin:   {titulo:'Portal Interno',       sub:'Administración y Cobranza', roles:['admin','cobrador']},
+  vendedor:{titulo:'Portal de Vendedores', sub:'Ingreso de ventas',         roles:['vendedor']},
+  cliente: {titulo:'Portal de Clientes',   sub:'Compra y estado de cuenta', roles:['cliente']},
+};
+/* Usuarios DEMO — la autenticación real va en el backend */
+/* Los usuarios y contraseñas vivían aquí, en el JavaScript que se
+   descarga el navegador. Cualquiera que abriera el inspector los veía.
+   Ahora la contraseña la valida Supabase y el rol sale de la tabla
+   persona — ver supabase.js.
+
+   Esta tabla queda SOLO para cuando el portal corre sin conexión a la
+   base (una demo, una revisión sin internet). En ese modo no hay datos
+   reales que proteger: son los data-*.js de julio. */
+const AUTH={
+  demo: {pass:'demo1234', role:'admin', name:'Modo demostración'},
+};
+let authState={step:1,user:null};
+
+const TITLES={
+  inicio:['Inicio','Panel general del suite'],
+  cotizador:['Cotizador','Calcula el plan de pago y compártelo con el cliente'],
+  vender:['Ingresar venta','Registra una venta y envíala a aprobación'],
+  inventario:['Mapa del conjunto','Plano real · haz clic en un lote para ver su ficha'],
+  contratos:['Contratos','Expedientes de venta'],
+  clientes:['Clientes','Información de los socios'],
+  leads:['Leads del embudo','Prospectos capturados desde redes sociales'],
+  online:['Compra en línea','Autoservicio del cliente'],
+  aprobacion:['Aprobación de créditos','Bandeja del comité'],
+  cobranza:['Cobranza','Cartera, giros y mora'],
+  confirmacion:['Confirmación de pagos','Boletas pendientes de verificar'],
+  comisiones:['Comisiones','Cálculo sobre cobro efectivo'],
+  reporteria:['Reportería','Indicadores del negocio'],
+  agenda:['Agenda de cobranza','A quién cobrar esta semana'],
+  recaudacion:['Recaudación de la semana','Marca lo que se cobró y lo que no'],
+  conciliacion:['Cuadre bancario','Los depósitos de Banrural contra la cartera'],
+  equipo:['Equipo','Usuarios, vendedores y códigos'],
+  automatizaciones:['Automatizaciones','Integraciones y flujos automáticos'],
+  seguridad:['Seguridad y accesos','Quién puede hacer qué, y qué se ha hecho'],
+  expedientes:['Expedientes','El papeleo de cada contrato, y qué le falta'],
+};
+const C = ()=>document.getElementById('content');
+
+/* ============================================================ AUTENTICACIÓN */
+function renderAuth(){
+  SCREEN='login';
+  const p=window.PORTAL||'admin', cfg=PORTAL_CFG[p];
+  document.querySelector('.app').hidden=true;
+  document.getElementById('portalCliente').hidden=true;
+  const L=document.getElementById('login'); L.style.display='flex';
+
+  /* Con la base conectada: correo y contraseña de verdad, y el rol lo
+     decide la tabla persona. Sin conexión: el modo demostración de
+     siempre, que corre con los datos congelados de julio. */
+  if(hayRemoto()){
+    L.innerHTML=`<div class="login-box" style="max-width:400px">
+      <div class="login-brand">Sol Inmobiliaria</div><div class="login-sub">${cfg.titulo}</div>
+      <p class="login-hint">${cfg.sub}</p>
+      <div class="field" style="text-align:left;margin-bottom:12px"><label>Correo</label>
+        <input id="au-email" type="email" autocomplete="username"
+               onkeydown="if(event.key==='Enter')entrar()"></div>
+      <div class="field" style="text-align:left;margin-bottom:18px"><label>Contraseña</label>
+        <input id="au-pass" type="password" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter')entrar()"></div>
+      <button id="au-entrar" class="btn btn-primary" style="width:100%" onclick="entrar()">Entrar</button>
+      <div class="login-foot">Tu contraseña la maneja Supabase.<br>
+        Si no puedes entrar, pídele a administración que revise tu usuario.</div></div>`;
+    setTimeout(()=>document.getElementById('au-email')?.focus(),50);
+    return;
+  }
+
+  if(authState.step===1){
+    L.innerHTML=`<div class="login-box" style="max-width:400px">
+      <div class="login-brand">Sol Inmobiliaria</div><div class="login-sub">${cfg.titulo}</div>
+      <p class="login-hint">${cfg.sub}</p>
+      <div class="field" style="text-align:left;margin-bottom:12px"><label>Usuario</label>
+        <input id="au-user" autocomplete="username" onkeydown="if(event.key==='Enter')submitLogin()"></div>
+      <div class="field" style="text-align:left;margin-bottom:18px"><label>Contraseña</label>
+        <input id="au-pass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')submitLogin()"></div>
+      <button class="btn btn-primary" style="width:100%" onclick="submitLogin()">Continuar</button>
+      <div class="login-foot" style="color:#8a6d1f">
+        MODO DEMOSTRACIÓN · datos de julio, sin conexión a la base.<br>
+        Entrar: <b>demo</b> · clave <b>demo1234</b></div></div>`;
+    setTimeout(()=>document.getElementById('au-user')?.focus(),50);
+  } else {
+    L.innerHTML=`<div class="login-box" style="max-width:400px">
+      <div class="login-brand">Verificación</div><div class="login-sub">Autenticación en dos pasos</div>
+      <p class="login-hint">Ingresa el código de 6 dígitos de tu app autenticadora.</p>
+      <div class="field" style="text-align:left;margin-bottom:18px"><label>Código 2FA</label>
+        <input id="au-code" inputmode="numeric" maxlength="6" placeholder="000000" onkeydown="if(event.key==='Enter')submit2FA()"></div>
+      <button class="btn btn-primary" style="width:100%" onclick="submit2FA()">Verificar e ingresar</button>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="authState.step=1;renderAuth()">← Atrás</button>
+      <div class="login-foot">Demostración: cualquier código de 6 dígitos</div></div>`;
+    setTimeout(()=>document.getElementById('au-code')?.focus(),50);
+  }
+}
+function submitLogin(){
+  const cfg=PORTAL_CFG[window.PORTAL||'admin'];
+  const u=(document.getElementById('au-user').value||'').trim().toLowerCase();
+  const pass=document.getElementById('au-pass').value||'';
+  const acc=AUTH[u];
+  if(!acc||acc.pass!==pass||!cfg.roles.includes(acc.role)){toast('Usuario o contraseña incorrectos');return;}
+  authState.user=u; authState.step=2; renderAuth();
+}
+function submit2FA(){
+  const code=(document.getElementById('au-code').value||'').trim();
+  if(!/^\d{6}$/.test(code)){toast('Ingresa un código de 6 dígitos');return;}
+  window.__user=AUTH[authState.user];
+  if(window.__user.role==='cliente') startCliente(); else startApp(window.__user.role);
+}
+
+/* ---------- Entrar de verdad ----------
+   Correo y contraseña contra Supabase. El rol NO lo elige quien entra:
+   sale de la tabla persona, que es la misma que consultan las políticas
+   de la base. Así la pantalla y la base no pueden contradecirse. */
+async function entrar(){
+  const email=(document.getElementById('au-email')||{}).value||'';
+  const pass =(document.getElementById('au-pass') ||{}).value||'';
+  const btn = document.getElementById('au-entrar');
+  if(btn){ btn.disabled=true; btn.textContent='Entrando…'; }
+
+  const r = await iniciarSesion(email, pass);
+  if(btn){ btn.disabled=false; btn.textContent='Entrar'; }
+  if(!r.ok){ toast(r.error); return; }
+
+  const carga = await cargarDesdeSupabase();
+  if(!carga.ok){ toast('Entraste, pero no se pudieron cargar los datos: '+carga.error); return; }
+
+  window.__user = { name: SESION.persona.nombre, role: rolDePortal(SESION.rol) };
+  anotar('sesion.entrar', SESION.persona.nombre+' · '+SESION.rol);
+  startApp(window.__user.role);
+  if(SESION.modoConsulta) avisoModoConsulta();
+}
+
+/* Al recargar la página no hay que volver a escribir la contraseña:
+   la sesión de Supabase sigue viva. */
+async function reanudarSesion(){
+  if(!hayRemoto()) return false;
+  const r = await cargarSesion();
+  if(!r.ok) return false;
+  const carga = await cargarDesdeSupabase();
+  if(!carga.ok){ console.warn('[sesión] sin datos:', carga.error); return false; }
+  window.__user = { name: SESION.persona.nombre, role: rolDePortal(SESION.rol) };
+  startApp(window.__user.role);
+  if(SESION.modoConsulta) avisoModoConsulta();
+  return true;
+}
+
+function avisoModoConsulta(){
+  const b=document.createElement('div');
+  b.id='avisoConsulta';
+  b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:999;background:#8a6d1f;'+
+    'color:#fff;padding:8px 16px;font:600 13px Arial;text-align:center';
+  b.textContent='MODO CONSULTA · se puede ver todo, todavía no se registra nada. '+
+    'Se apaga cuando el cuadre esté cerrado.';
+  document.body.appendChild(b);
+}
+function startApp(role){
+  ROLE=role; SCREEN='app';
+  document.getElementById('login').style.display='none';
+  document.getElementById('portalCliente').hidden=true;
+  document.querySelector('.app').hidden=false;
+  const allow=ROLES[role].views;
+  document.querySelectorAll('.nav-item').forEach(b=>{b.style.display=allow.includes(b.dataset.view)?'':'none';});
+  document.querySelectorAll('.nav-sec').forEach(sec=>{
+    let n=sec.nextElementSibling,vis=false;
+    while(n&&n.classList.contains('nav-item')){if(n.style.display!=='none')vis=true;n=n.nextElementSibling;}
+    sec.style.display=vis?'':'none';
+  });
+  document.getElementById('brandRole').textContent=ROLES[role].label;
+  document.getElementById('footUser').innerHTML=`<b style="color:#fff">${esc(window.__user.name)}</b><br>${ROLES[role].label}`;
+  const destino=(location.hash||'').slice(1);
+  setView(ROLES[role].views.includes(destino) ? destino : ROLES[role].home);
+}
+function logout(){
+  /* Con la base conectada hay que cerrar la sesión de verdad, no solo
+     volver a la pantalla de login: si no, el token sigue vivo y quien
+     agarre la computadora entra con un F5. */
+  if(hayRemoto() && SESION.persona){ cerrarSesion(); return; }
+
+  closeDrawer(); closeModal(); authState={step:1,user:null}; window.__user=null;
+  document.querySelector('.app').hidden=true;
+  document.getElementById('portalCliente').hidden=true;
+  renderAuth();
+}
+function startCliente(){
+  SCREEN='cliente'; onlineState={paso:1,lote:null,cliente:{},girosSaldo:60,reserva:2500};
+  document.getElementById('login').style.display='none';
+  document.querySelector('.app').hidden=true;
+  document.getElementById('portalCliente').hidden=false;
+  renderClientePortal();
+}
+
+/* ============================================================ PROYECTO ACTIVO
+   Sol Inmobiliaria es el suite; adentro vive cada desarrollo. Hoy
+   solo está La Esperanza cargada, pero el esquema ya es multi-proyecto:
+   cada uno lleva su propia tasa, enganche mínimo, plazos y comisión. */
+let PROYECTO_ACTIVO = 'RLE';
+
+function cambiarProyecto(codigo){
+  if(codigo === PROYECTO_ACTIVO || !PROYECTOS[codigo]) return;
+  PROYECTO_ACTIVO = codigo;
+  PROYECTO = PROYECTOS[codigo];        // las reglas comerciales cambian con él
+  toast('Proyecto: ' + PROYECTO.corto);
+  setView(vista);
+}
+
+/* Nombre del proyecto para títulos y documentos. */
+const nombreProyecto = () => PROYECTO.corto;
+
+/* ============================================================ ROUTER */
+function setView(v){
+  if(SCREEN==='app' && ROLES[ROLE] && !ROLES[ROLE].views.includes(v)) return;
+  try{ if(location.hash.slice(1)!==v) history.replaceState(null,'','#'+v); }catch(e){}
+  vista=v;
+  document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
+  document.getElementById('viewTitle').textContent=TITLES[v][0];
+  document.getElementById('viewSub').textContent=TITLES[v][1];
+  ({inicio:renderInicio,cotizador:renderCotizador,vender:renderVender,inventario:renderInventario,contratos:renderContratos,
+    clientes:renderClientes,leads:renderLeads,online:renderOnline,aprobacion:renderAprobacion,cobranza:renderCobranza,
+    confirmacion:renderConfirmacion,comisiones:renderComisiones,reporteria:renderReporteria,
+    agenda:renderAgenda,recaudacion:renderRecaudacion,conciliacion:renderConciliacion,seguridad:renderSeguridad,expedientes:renderExpedientes,equipo:renderEquipo,automatizaciones:renderAutomatizaciones}[v])();
+}
+
+/* ============================================================ INICIO */
+function renderInicio(){
+  const vend=DB.lotes.filter(l=>l.estado==='vendido').length;
+  const disp=DB.lotes.filter(l=>l.estado==='disponible').length;
+  const res=DB.lotes.filter(l=>l.estado==='reservado').length;
+  const sinAlta=DB.lotes.filter(l=>l.estado===LOTE_ALTA_PENDIENTE);
+  const activos=DB.contratos.filter(c=>c.estado==='aprobado');
+  const pend=DB.contratos.filter(c=>c.estado==='en_aprobacion').length;
+  const porConf=DB.pagos.filter(p=>p.estado==='registrado').length;
+  // KPIs calculados de la cartera real
+  const K=activos.reduce((a,c)=>{const ec=estadoCuenta(c);
+    a.venta+=c.precio; a.cartera+=ec.totalGiros; a.rec+=ec.recaudado; a.saldo+=ec.saldo;
+    return a;}, {venta:0,cartera:0,rec:0,saldo:0});
+  // La mora viene del modelo financiero, no del cálculo propio del portal
+  const M=resumenMora();
+  K.mora=M.enMora; K.montoMora=M.saldoVencido;
+  const kpis=[
+    {l:'Lotes vendidos',v:vend,s:`de ${DB.lotes.length} · ${Math.round(vend/DB.lotes.length*100)}%`},
+    {l:'Disponibles',v:disp,s:res?`${res} reservados`:'en inventario'},
+    {l:'Portafolio vendido',v:Qk(K.venta),s:`${activos.length} contratos`,cls:'sm'},
+    {l:'Cartera total',v:Qk(K.cartera),s:'con intereses',cls:'sm accent'},
+    {l:'Recaudado',v:Qk(K.rec),s:`${K.cartera?Math.round(K.rec/K.cartera*100):0}% de la cartera`,cls:'sm'},
+    {l:'Por cobrar',v:Qk(K.saldo),s:'saldo pendiente',cls:'sm warn'},
+  ];
+  let h=`<div class="kpis">`+kpis.map(k=>`<div class="kpi ${k.cls||''}">
+    <div class="kpi-label">${k.l}</div><div class="kpi-value ${/sm/.test(k.cls||'')?'sm':''}">${k.v}</div>
+    <div class="kpi-sub">${k.s}</div></div>`).join('')+`</div>`;
+
+  h+=`<div class="card"><div class="card-b" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+      <b style="color:var(--dark)">Requieren tu atención:</b>
+      ${pend?`<button class="btn btn-gold btn-sm" onclick="setView('aprobacion')">${pend} solicitud(es) por aprobar</button>`:''}
+      ${porConf?`<button class="btn btn-ghost btn-sm" onclick="setView('confirmacion')">${porConf} pago(s) por confirmar</button>`:''}
+      ${K.mora?`<button class="btn btn-ghost btn-sm" onclick="setView('cobranza')">${K.mora} contrato(s) en mora · ${Qk(K.montoMora)} vencidos</button>`:''}
+      ${M.nuncaPagaron.length?`<button class="btn btn-gold btn-sm" onclick="setView('cobranza')">${M.nuncaPagaron.length} venta(s) que nunca pagaron una cuota</button>`:''}
+      ${sinAlta.length?`<button class="btn btn-ghost btn-sm" onclick="setView('inventario')">${sinAlta.length} lote(s) del plano sin dar de alta: ${sinAlta.map(l=>l.codigo).join(', ')}</button>`:''}
+      ${!pend&&!porConf&&!K.mora&&!sinAlta.length?'<span class="muted">Nada pendiente 🎉</span>':''}
+    </div></div>`;
+
+  h+=`<div class="grid2"><div class="card"><div class="card-h"><h2>Contratos en el suite</h2>
+    <button class="btn btn-primary btn-sm" onclick="setView('contratos')">Ver todos</button></div>
+    <div class="card-b" style="padding:0"><table class="data"><thead><tr>
+      <th>Contrato</th><th>Lote</th><th>Cliente</th><th class="num">Valor</th><th>Estado</th></tr></thead><tbody>`;
+  DB.contratos.slice().sort((a,b)=>b.no.localeCompare(a.no)).slice(0,9).forEach(c=>{
+    h+=`<tr class="click" onclick="abrirContrato('${c.id}')"><td><b>${c.no}</b></td><td>${c.lote}</td>
+      <td>${esc(nombreCliente(c.clienteId))}</td><td class="num">${Qk(c.precio)}</td><td>${estadoBadge(c.estado)}</td></tr>`;});
+  h+=`</tbody></table></div>
+    <div class="card-b" style="border-top:1px solid var(--line)"><div class="hint">Solo se muestran los ${DB.contratos.length} contratos con datos verificados. Los 112 de la cartera se cargarán al conectar el API del CRM.</div></div></div>`;
+
+  const mz={}; DB.lotes.forEach(l=>{mz[l.manzana]=mz[l.manzana]||{t:0,v:0};mz[l.manzana].t++;if(l.estado==='vendido')mz[l.manzana].v++;});
+  h+=`<div class="card"><div class="card-h"><h2>Avance por manzana</h2></div><div class="card-b">`;
+  Object.keys(mz).sort().forEach(m=>{const p=Math.round(mz[m].v/mz[m].t*100);
+    h+=`<div class="bar-row"><div class="bar-lbl">Mz ${m}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${p}%"></div></div>
+      <div class="bar-val">${mz[m].v}/${mz[m].t} · ${p}%</div></div>`;});
+  h+=`</div></div></div>`;
+  C().innerHTML=h;
+}
+
+/* ============================================================ MAPA REAL DEL PLANO */
+const ESTADO_MAP={
+  disponible:{fill:'#8FB09B',stroke:'#5d8a71',label:'Disponible'},
+  reservado :{fill:'#E0A72E',stroke:'#a87c15',label:'Reservado'},
+  vendido   :{fill:'#B85042',stroke:'#8a382c',label:'Vendido'},
+};
+let vb=null, dragMoved=false, geomLista=false;
+
+/* Calcula, para cada lote, la orientación y el tamaño reales según el plano:
+   - ángulo: dirección de la fila (vecinos de la misma manzana)
+   - ancho: frente del lote (separación al vecino)
+   - fondo: 15 m ≈ 40 px (constante, verificado contra la separación entre filas) */
+const DEPTH_PX = 40, MAX_NEIGHBOR = 36;
+function calcularGeometria(){
+  if(geomLista) return;
+  // 1) Geometría exacta medida del plano (assets/lotes-shape.js)
+  const S=window.LOT_SHAPE||{};
+  DB.lotes.forEach(l=>{
+    const s=S[l.codigo];
+    if(s){ l.x=s.x; l.y=s.y; l.poly=s.p; l.exacto=true; }
+  });
+  // 2) Los que no tengan forma exacta se estiman por vecinos
+  const by={};
+  DB.lotes.filter(l=>l.x!=null&&!l.exacto).forEach(l=>{(by[l.manzana]=by[l.manzana]||[]).push(l);});
+  Object.values(by).forEach(list=>{
+    // ángulo mediano de la manzana (respaldo estable)
+    const angs=[];
+    for(let i=1;i<list.length;i++){
+      const a=list[i-1],b=list[i], d=Math.hypot(b.x-a.x,b.y-a.y);
+      if(d<MAX_NEIGHBOR) angs.push(norm(Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI));
+    }
+    const angMz = angs.length? mediana(angs) : -51.5;
+    const spans=[];
+    list.forEach(l=>{
+      const cercanos=list.filter(o=>o!==l).map(o=>({o,d:Math.hypot(o.x-l.x,o.y-l.y)}))
+                         .filter(x=>x.d<MAX_NEIGHBOR).sort((a,b)=>a.d-b.d).slice(0,2);
+      // solo vecinos alineados con la fila (descarta el de la fila de enfrente)
+      const enFila=cercanos.filter(c=>{
+        const a=norm(Math.atan2(c.o.y-l.y,c.o.x-l.x)*180/Math.PI);
+        return Math.abs(difAng(a,angMz))<=30;
+      });
+      if(enFila.length){
+        const as=enFila.map(c=>norm(Math.atan2(c.o.y-l.y,c.o.x-l.x)*180/Math.PI));
+        l.ang = mediana(as.concat(angMz));
+        l.w = Math.max(11, enFila[0].d*0.94);
+        spans.push(enFila[0].d);
+      } else { l.ang=angMz; l.w=null; }
+      l.h = DEPTH_PX;
+    });
+    const wMz = spans.length? mediana(spans)*0.94 : 17;
+    list.forEach(l=>{ if(l.w==null) l.w=wMz; });
+  });
+  geomLista=true;
+}
+function norm(a){ while(a>90)a-=180; while(a<-90)a+=180; return a; }
+function difAng(a,b){ return norm(a-b); }
+function mediana(arr){ const s=arr.slice().sort((a,b)=>a-b); return s[Math.floor(s.length/2)]; }
+function renderInventario(){
+  const conCoord=DB.lotes.filter(l=>l.x!=null).length;
+  let h=`<div class="chips">`+
+    [['todos','Todos'],['disponible','Disponibles'],['reservado','Reservados'],['vendido','Vendidos']].map(([k,l])=>
+      `<button class="chip ${filtro===k?'active':''}" onclick="setFiltro('${k}')">${l}</button>`).join('')+
+    `<input id="qmap" class="chip" style="min-width:220px" placeholder="Buscar lote o cliente…" value="${esc(busqueda)}" oninput="busqueda=this.value;pintarMapa()"></div>`;
+  h+=`<div class="map-legend">`+Object.keys(ESTADO_MAP).map(k=>
+      `<span><i class="dot" style="background:${ESTADO_MAP[k].fill}"></i>${ESTADO_MAP[k].label}</span>`).join('')+
+      `<span style="margin-left:auto;color:var(--muted)">${conCoord} de ${DB.lotes.length} lotes ubicados en el plano</span></div>`;
+  h+=`<div class="card"><div class="map-wrap">
+      <svg id="mapSvg" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="map-zoom">
+        <button onclick="zoomBtn(0.75)" title="Acercar">+</button>
+        <button onclick="zoomBtn(1.33)" title="Alejar">−</button>
+        <button onclick="zoomReset()" title="Ver todo">⤢</button>
+      </div>
+      <div class="tooltip" id="tip" hidden></div>
+    </div></div>`;
+  const sin=DB.lotes.filter(l=>l.x==null);
+  if(sin.length){
+    h+=`<div class="card"><div class="card-h"><h2>Sin ubicación en el plano · ${sin.length} lotes</h2></div>
+      <div class="card-b"><div class="lot-grid">`+
+      sin.map(l=>`<div class="lot ${l.estado==='vendido'?'vend':(l.estado==='reservado'?'apar':'disp')}" onclick="abrirLote('${l.codigo}')">
+        <div class="lc">${l.codigo}</div><div class="la">${l.area} m²</div></div>`).join('')+
+      `</div><div class="hint">Estos lotes existen en el CRM pero no traen coordenadas en el plano.</div></div></div>`;
+  }
+  C().innerHTML=h;
+  dibujarMapa();
+}
+function dibujarMapa(){
+  const svg=document.getElementById('mapSvg'); if(!svg||!window.PLAN_CLIP)return;
+  const clip=window.PLAN_CLIP, NS='http://www.w3.org/2000/svg';
+  svg.innerHTML='';
+  const img=document.createElementNS(NS,'image');
+  img.setAttribute('x',clip.x);img.setAttribute('y',clip.y);
+  img.setAttribute('width',clip.w);img.setAttribute('height',clip.h);
+  img.setAttribute('preserveAspectRatio','none');
+  img.setAttribute('href','assets/plano.png');
+  img.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href','assets/plano.png');
+  svg.appendChild(img);
+  calcularGeometria();
+  DB.lotes.forEach(l=>{
+    if(l.x==null)return;
+    const m=ESTADO_MAP[l.estado]||ESTADO_MAP.disponible;
+    let r;
+    if(l.poly&&l.poly.length>2){                       // contorno exacto del plano
+      r=document.createElementNS(NS,'polygon');
+      r.setAttribute('points', l.poly.map(p=>p.join(',')).join(' '));
+    } else {                                            // respaldo: rectángulo estimado
+      const w=l.w||17, h=l.h||DEPTH_PX;
+      r=document.createElementNS(NS,'rect');
+      r.setAttribute('x',l.x-w/2); r.setAttribute('y',l.y-h/2);
+      r.setAttribute('width',w); r.setAttribute('height',h); r.setAttribute('rx',1.5);
+      r.setAttribute('transform',`rotate(${l.ang||-51.5} ${l.x} ${l.y})`);
+    }
+    r.setAttribute('fill',m.fill); r.setAttribute('fill-opacity',0.55);
+    r.setAttribute('stroke',m.stroke); r.setAttribute('stroke-width',0.6);
+    r.setAttribute('class','lotm'); r.dataset.id=l.codigo;
+    r.addEventListener('click',()=>{if(!dragMoved)abrirLote(l.codigo);});
+    r.addEventListener('mousemove',e=>mostrarTip(e,l));
+    r.addEventListener('mouseleave',()=>{document.getElementById('tip').hidden=true;});
+    svg.appendChild(r);
+  });
+  setViewBox(clip.x,clip.y,clip.w,clip.h);
+  panZoom(svg);
+  pintarMapa();
+}
+function pintarMapa(){
+  const t=(busqueda||'').toLowerCase();
+  document.querySelectorAll('.lotm').forEach(r=>{
+    const l=getLote(r.dataset.id); if(!l)return;
+    let ok = filtro==='todos'||l.estado===filtro;
+    if(ok&&t){ const ct=contratoDeLote(l.codigo);
+      const hay=[l.codigo,ct?nombreCliente(ct.clienteId):''].join(' ').toLowerCase();
+      ok=hay.includes(t); }
+    r.style.opacity=ok?1:0.12;
+    r.style.pointerEvents=ok?'auto':'none';
+  });
+}
+function setFiltro(f){filtro=f;renderInventario();}
+function mostrarTip(e,l){
+  const tip=document.getElementById('tip'), wrap=document.querySelector('.map-wrap');
+  const ct=contratoDeLote(l.codigo), m=ESTADO_MAP[l.estado]||ESTADO_MAP.disponible;
+  tip.innerHTML=`<b>Lote ${l.codigo}</b> · ${l.area} m²<br>${l.precio?Qk(l.precio):'Precio por definir'}
+    ${ct?'<br>'+esc(nombreCliente(ct.clienteId)):''}
+    <div class="tt-badge" style="background:${m.fill}">${m.label}</div>`;
+  tip.hidden=false;
+  const r=wrap.getBoundingClientRect();
+  tip.style.left=(e.clientX-r.left+12)+'px'; tip.style.top=(e.clientY-r.top-10)+'px';
+}
+function setViewBox(x,y,w,h){vb={x,y,w,h};document.getElementById('mapSvg').setAttribute('viewBox',`${x} ${y} ${w} ${h}`);}
+function zoomAt(cx,cy,scale){
+  const svg=document.getElementById('mapSvg'),clip=window.PLAN_CLIP,r=svg.getBoundingClientRect();
+  const mx=vb.x+(cx-r.left)/r.width*vb.w, my=vb.y+(cy-r.top)/r.height*vb.h;
+  const nw=Math.max(clip.w*0.08,Math.min(clip.w,vb.w*scale)), nh=nw*(clip.h/clip.w);
+  setViewBox(mx-(mx-vb.x)*(nw/vb.w), my-(my-vb.y)*(nh/vb.h), nw, nh);
+}
+function zoomBtn(s){const r=document.getElementById('mapSvg').getBoundingClientRect();zoomAt(r.left+r.width/2,r.top+r.height/2,s);}
+function zoomReset(){const c=window.PLAN_CLIP;setViewBox(c.x,c.y,c.w,c.h);}
+function panZoom(svg){
+  let drag=false,sx=0,sy=0,pid=null,cap=false;
+  svg.onwheel=e=>{e.preventDefault();zoomAt(e.clientX,e.clientY,e.deltaY<0?0.85:1.18);};
+  svg.onpointerdown=e=>{drag=true;dragMoved=false;cap=false;pid=e.pointerId;sx=e.clientX;sy=e.clientY;};
+  svg.onpointermove=e=>{
+    if(!drag)return;
+    if(!dragMoved&&Math.abs(e.clientX-sx)+Math.abs(e.clientY-sy)>3){dragMoved=true;cap=true;svg.classList.add('grabbing');try{svg.setPointerCapture(pid);}catch(_){}}
+    if(!dragMoved)return;
+    const r=svg.getBoundingClientRect();
+    setViewBox(vb.x-(e.clientX-sx)*vb.w/r.width, vb.y-(e.clientY-sy)*vb.h/r.height, vb.w, vb.h);
+    sx=e.clientX;sy=e.clientY;
+  };
+  const end=()=>{drag=false;svg.classList.remove('grabbing');if(cap){try{svg.releasePointerCapture(pid);}catch(_){}cap=false;}};
+  svg.onpointerup=end;svg.onpointercancel=end;
+}
+
+/* ============================================================ VENDER */
+function renderVender(){
+  const mios=DB.contratos.filter(c=>ROLE!=='vendedor'||c.vendedor===(window.__user&&window.__user.name)||true);
+  let h=`<div class="card"><div class="card-b" style="text-align:center;padding:34px 24px">
+    <h2 style="color:var(--dark);font-size:20px;margin-bottom:6px">Registra una nueva venta</h2>
+    <p class="hint" style="margin-bottom:18px">Captura el lote y los datos del cliente. La venta se envía al comité de crédito.</p>
+    <button class="btn btn-primary" style="font-size:15px;padding:12px 26px" onclick="modalNuevoContrato()">＋ Ingresar venta</button>
+    </div></div>
+    <div class="card"><div class="card-h"><h2>Ventas ingresadas</h2></div><div class="card-b" style="padding:0">
+    <table class="data"><thead><tr><th>No.</th><th>Lote</th><th>Cliente</th><th>Fecha</th><th class="num">Valor</th><th>Estado</th></tr></thead><tbody>`;
+  if(!mios.length)h+=`<tr><td colspan="6" class="empty">Aún no hay ventas registradas</td></tr>`;
+  mios.slice().sort((a,b)=>b.no.localeCompare(a.no)).forEach(c=>{
+    h+=`<tr class="click" onclick="abrirContrato('${c.id}')"><td><b>${c.no}</b></td><td>${c.lote}</td>
+      <td>${esc(nombreCliente(c.clienteId))}</td><td>${fmtD(c.fecha)}</td>
+      <td class="num">${Qk(c.precio)}</td><td>${estadoBadge(c.estado)}</td></tr>`;});
+  h+=`</tbody></table></div></div>`;
+  C().innerHTML=h;
+}
+
+/* ============================================================ CONTRATOS */
+function renderContratos(){
+  let h=`<div class="card"><div class="card-h"><h2>Contratos · ${DB.contratos.length}</h2>
+    <button class="btn btn-primary btn-sm" onclick="modalNuevoContrato()">+ Nuevo contrato</button></div>
+    <div class="card-b" style="padding:0"><table class="data"><thead><tr>
+    <th>No.</th><th>Lote</th><th>Cliente</th><th>Origen</th><th>Fecha</th>
+    <th class="num">Valor</th><th class="num">Recaudado</th><th>Estado</th></tr></thead><tbody>`;
+  DB.contratos.slice().sort((a,b)=>b.no.localeCompare(a.no)).forEach(c=>{
+    const ec=estadoCuenta(c);
+    h+=`<tr class="click" onclick="abrirContrato('${c.id}')"><td><b>${c.no}</b></td><td>${c.lote}</td>
+      <td>${esc(nombreCliente(c.clienteId))}</td><td><span class="pill">${c.origen}</span></td>
+      <td>${fmtD(c.fecha)}</td><td class="num">${Qk(c.precio)}</td><td class="num">${Qk(ec.recaudado)}</td>
+      <td>${estadoBadge(c.estado)}</td></tr>`;});
+  h+=`</tbody></table></div></div>`;
+  C().innerHTML=h;
+}
+/* Un lote que está en el plano pero sin alta completa. */
+const LOTE_ALTA_PENDIENTE = 'por_dar_de_alta';
+
+function estadoBadge(e){
+  const m={aprobado:['b-ok','Aprobado'],en_aprobacion:['b-pend','En aprobación'],anulado:['b-mora','Anulado'],borrador:['b-nod','Borrador']};
+  const [c,l]=m[e]||['b-nod',e];return `<span class="badge ${c}">${l}</span>`;
+}
+
+/* ============================================================ CLIENTES */
+function renderClientes(){
+  let h=`<div class="card"><div class="card-h"><h2>Clientes · ${DB.clientes.length}</h2>
+    <input class="chip" style="min-width:220px" placeholder="Buscar por nombre o DPI…" oninput="filtrarClientes(this.value)"></div>
+    <div class="card-b" style="padding:0"><table class="data" id="tblClientes"><thead><tr>
+    <th>Cliente</th><th>DPI / CUI</th><th>Teléfono</th><th>Correo</th><th>Contratos</th></tr></thead><tbody>`;
+  h+=filasClientes(''); h+=`</tbody></table></div></div>`;
+  C().innerHTML=h;
+}
+function filasClientes(t){
+  t=(t||'').toLowerCase();
+  const list=DB.clientes.filter(c=>!t||`${c.nombre} ${c.apellido} ${c.dpi}`.toLowerCase().includes(t));
+  if(!list.length)return `<tr><td colspan="5" class="empty">Sin clientes que coincidan</td></tr>`;
+  return list.map(c=>{
+    const cts=DB.contratos.filter(x=>x.clienteId===c.id);
+    return `<tr class="click" onclick="abrirCliente('${c.id}')">
+      <td><b>${esc(c.nombre)} ${esc(c.apellido)}</b></td><td>${esc(c.dpi)||'<span class="muted">—</span>'}</td>
+      <td>${esc(c.telefono)||'—'}</td><td>${esc(c.email)||'—'}</td>
+      <td>${cts.map(x=>`<span class="pill">${x.no}</span>`).join(' ')||'—'}</td></tr>`;
+  }).join('');
+}
+function filtrarClientes(t){document.querySelector('#tblClientes tbody').innerHTML=filasClientes(t);}
+
+/* ============================================================ COTIZADOR */
+let cot={lote:null,precio:0,enganche:ENGANCHE_MIN,plazo:60,cliente:''};
+/* Los datos que van en cualquiera de las dos hojas. */
+function datosCotizacion(){
+  return { lote:cot.lote, precio:cot.precio,
+           enganche:+cot.enganche||ENGANCHE_MIN, plazo:+cot.plazo||60,
+           cliente:cot.cliente, telefono:cot.telefono,
+           vendedor:(window.__user?window.__user.name:''),
+           ingreso:+cot.ingreso||0 };
+}
+function doHoja(tipo){ abrirHoja(tipo, datosCotizacion()); }
+function doWhatsAppCot(){
+  const d=datosCotizacion();
+  if(!d.telefono){ toast('Anota el teléfono del cliente para poder enviarle el PDF'); return; }
+  enviarCotizacionWhatsApp(d);
+}
+
+function renderCotizador(){
+  const disp=DB.lotes.filter(l=>l.estado==='disponible'&&l.precio>0)
+                     .sort((a,b)=>a.codigo.localeCompare(b.codigo));
+  if(!cot.lote&&disp.length){cot.lote=disp[0].codigo;cot.precio=disp[0].precio;}
+  let h=`<div class="cot">
+    <div class="cot-form card">
+      <div class="card-h"><h2>Datos de la cotización</h2></div>
+      <div class="card-b">
+        <div class="field" style="margin-bottom:12px"><label>Cliente (opcional)</label>
+          <input id="ct-cli" value="${esc(cot.cliente)}" placeholder="Nombre del prospecto" oninput="cot.cliente=this.value"></div>
+        <div class="field" style="margin-bottom:12px"><label>Lote</label>
+          <select id="ct-lote" onchange="cotLote(this.value)">
+            ${disp.map(l=>`<option value="${l.codigo}" ${l.codigo===cot.lote?'selected':''}>${l.codigo} · ${l.area} m² · ${Qk(l.precio)}</option>`).join('')}
+            <option value="__libre" ${cot.lote==='__libre'?'selected':''}>— Precio libre —</option>
+          </select></div>
+        <div class="field" style="margin-bottom:12px"><label>Precio de venta (Q)</label>
+          <input id="ct-precio" type="number" value="${cot.precio}" oninput="cot.precio=+this.value||0;pintarCot()"></div>
+        <div class="field" style="margin-bottom:4px"><label>Enganche (Q) · mínimo ${Qk(ENGANCHE_MIN)}</label>
+          <input id="ct-eng" type="number" min="${ENGANCHE_MIN}" value="${cot.enganche}" oninput="cot.enganche=+this.value||0;pintarCot()"></div>
+        <div class="cot-quick">${[2500,5000,10000,20000].map(v=>
+          `<button class="chip" onclick="cot.enganche=${v};renderCotizador()">${Qk(v)}</button>`).join('')}</div>
+        <div class="field" style="margin:12px 0 4px"><label>Plazo</label>
+          <select id="ct-plazo" onchange="cot.plazo=+this.value;pintarCot()">
+            ${PLAZOS.map(p=>`<option value="${p}" ${p===cot.plazo?'selected':''}>${p} meses (${(p/12).toFixed(0)} años)</option>`).join('')}
+          </select></div>
+        <div class="hint">Tasa ${(TASA_MENSUAL*100).toFixed(1)}% mensual sobre el saldo financiado.</div>
+      </div>
+    </div>
+    <div class="cot-res" id="cotRes"></div>
+  </div>`;
+  C().innerHTML=h; pintarCot();
+}
+function cotLote(v){
+  cot.lote=v;
+  if(v!=='__libre'){const l=getLote(v); if(l)cot.precio=l.precio;}
+  renderCotizador();
+}
+function pintarCot(){
+  if(cot.enganche<ENGANCHE_MIN) cot.enganche=ENGANCHE_MIN;
+  const p=planFinanciamiento(cot.precio,cot.enganche,cot.plazo);
+  const l=cot.lote!=='__libre'?getLote(cot.lote):null;
+  let h=`<div class="cot-card">
+    <div class="cot-top">
+      <div class="cot-lbl">Cuota mensual</div>
+      <div class="cot-big">${Q(p.cuota)}</div>
+      <div class="cot-sub">${p.plazo} pagos mensuales</div>
+    </div>
+    <div class="cot-body">
+      ${l?`<div class="cot-row"><span>Lote</span><b>${l.codigo} · ${l.area} m²</b></div>`:''}
+      <div class="cot-row"><span>Precio de venta</span><b>${Q(p.precio)}</b></div>
+      <div class="cot-row"><span>Enganche (cuota inicial)</span><b>${Q(p.enganche)}</b></div>
+      <div class="cot-row"><span>Saldo a financiar</span><b>${Q(p.saldo)}</b></div>
+      <div class="cot-row"><span>Plazo</span><b>${p.plazo} meses</b></div>
+      <div class="cot-row tot"><span>Total del plan</span><b>${Q(p.total)}</b></div>
+    </div>
+    <div class="cot-acc">
+        <button class="btn btn-primary" onclick="doHoja('cliente')">Hoja para el cliente</button>
+        <button class="btn btn-ghost" onclick="doHoja('interna')">Hoja interna</button>
+        <button class="btn btn-ghost" onclick="doWhatsAppCot()">Enviar PDF por WhatsApp</button>
+      <button class="btn btn-primary" onclick="cotVender()">Convertir en venta →</button>
+      <button class="btn btn-ghost" onclick="cotCompartir()">Compartir por WhatsApp</button>
+      <button class="btn btn-ghost" onclick="window.print()">Imprimir</button>
+    </div>
+  </div>`;
+  // comparativa de plazos
+  h+=`<div class="card"><div class="card-h"><h2>Compara los plazos</h2></div>
+    <div class="card-b" style="padding:0"><table class="data"><thead><tr>
+    <th>Plazo</th><th class="num">Cuota mensual</th><th class="num">Total del plan</th></tr></thead><tbody>`;
+  PLAZOS.forEach(n=>{const q=planFinanciamiento(cot.precio,cot.enganche,n);
+    h+=`<tr class="click ${n===cot.plazo?'cot-sel':''}" onclick="cot.plazo=${n};renderCotizador()">
+      <td><b>${n} meses</b></td><td class="num">${Q(q.cuota)}</td>
+      <td class="num">${Qk(q.total)}</td></tr>`;});
+  h+=`</tbody></table></div></div>`;
+  document.getElementById('cotRes').innerHTML=h;
+}
+function cotCompartir(){
+  const p=planFinanciamiento(cot.precio,cot.enganche,cot.plazo);
+  const l=cot.lote!=='__libre'?getLote(cot.lote):null;
+  const txt=`*La Esperanza Residencial*\n`+
+    (cot.cliente?`Cotización para ${cot.cliente}\n`:'')+
+    (l?`Lote ${l.codigo} · ${l.area} m²\n`:'')+
+    `\nPrecio: ${Q(p.precio)}\nEnganche: ${Q(p.enganche)}\n`+
+    `Plazo: ${p.plazo} meses\n*Cuota mensual: ${Q(p.cuota)}*\n`+
+    `Total del plan: ${Q(p.total)}\n\nSOL Desarrollos`;
+  window.open('https://wa.me/?text='+encodeURIComponent(txt),'_blank');
+  toast('Cotización lista para enviar');
+}
+function cotVender(){
+  if(cot.lote==='__libre'){toast('Elige un lote real para crear la venta');return;}
+  modalNuevoContrato(cot.lote,{enganche:cot.enganche,plazo:cot.plazo,nombre:cot.cliente});
+}
+
+/* ============================================================ AGENDA DE COBRANZA */
+let agSemana=0;   // 0 = esta semana, 1 = la siguiente…
+const HOY_D = ()=>new Date(HOY_ISO+'T00:00:00');
+const isoMas = (base,n)=>{const d=new Date(base+'T00:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);};
+const diasEnt = (a,b)=>Math.round((new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/86400000);
+
+function renderAgenda(){
+  if(typeof CALENDARIO==='undefined'){
+    C().innerHTML=`<div class="card"><div class="empty">No se encontró el calendario de cobranza.</div></div>`;return;}
+  const desde=isoMas(HOY_ISO, agSemana*7);
+  const hasta=isoMas(desde,6);
+  const sem=CALENDARIO.filter(c=>c.f>=desde&&c.f<=hasta);
+  const vencidas=CALENDARIO.filter(c=>c.f<HOY_ISO);
+  const monto=sem.reduce((s,c)=>s+c.m,0);
+
+  let h=`<div class="kpis">
+    <div class="kpi"><div class="kpi-label">Cuotas de la semana</div><div class="kpi-value">${sem.length}</div>
+      <div class="kpi-sub">${fmtD(desde)} al ${fmtD(hasta)}</div></div>
+    <div class="kpi accent"><div class="kpi-label">Por cobrar</div><div class="kpi-value sm">${Qk(monto)}</div>
+      <div class="kpi-sub">esta semana</div></div>
+    <div class="kpi warn"><div class="kpi-label">Vencidas acumuladas</div><div class="kpi-value">${vencidas.length}</div>
+      <div class="kpi-sub">${Qk(vencidas.reduce((s,c)=>s+c.m,0))}</div></div>
+    <div class="kpi"><div class="kpi-label">Contratos en el plan</div><div class="kpi-value">${new Set(CALENDARIO.map(c=>c.c)).size}</div>
+      <div class="kpi-sub">${CALENDARIO.length} cuotas programadas</div></div>
+  </div>`;
+
+  h+=`<div class="card"><div class="card-b" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <button class="btn btn-ghost btn-sm" onclick="agSemana--;renderAgenda()">← Semana anterior</button>
+    <b style="color:var(--dark)">${agSemana===0?'Esta semana':(agSemana===1?'Próxima semana':'Semana '+(agSemana+1))}</b>
+    <button class="btn btn-ghost btn-sm" onclick="agSemana++;renderAgenda()">Semana siguiente →</button>
+    ${agSemana!==0?'<button class="btn btn-ghost btn-sm" onclick="agSemana=0;renderAgenda()">Volver a hoy</button>':''}
+    <span style="margin-left:auto" class="hint">Toca una fila para copiar el mensaje</span>
+  </div></div>`;
+
+  // agrupado por día
+  const porDia={};
+  sem.forEach(c=>{(porDia[c.f]=porDia[c.f]||[]).push(c);});
+  const dias=Object.keys(porDia).sort();
+  if(!dias.length) h+=`<div class="card"><div class="empty">No hay cuotas programadas esta semana.</div></div>`;
+  dias.forEach(f=>{
+    const lista=porDia[f], mt=lista.reduce((s,c)=>s+c.m,0);
+    const dif=diasEnt(HOY_ISO,f);
+    const etiqueta = dif===0?'HOY':(dif===1?'mañana':(dif<0?`hace ${-dif} días`:`en ${dif} días`));
+    h+=`<div class="card"><div class="card-h">
+      <h2>${lista[0].d.charAt(0).toUpperCase()+lista[0].d.slice(1)} ${fmtD(f)}
+        <span class="pill" style="margin-left:8px">${etiqueta}</span></h2>
+      <div><b>${lista.length} cuota(s)</b> · ${Qk(mt)}</div></div>
+      <div class="card-b" style="padding:0"><table class="data"><thead><tr>
+      <th>Contrato</th><th>Cliente</th><th>Lote</th><th>Cuota</th>
+      <th class="num">Monto</th><th>Estado</th><th></th></tr></thead><tbody>`;
+    lista.forEach(c=>{
+      h+=`<tr class="click" onclick="copiarRecordatorio('${c.c}','${c.f}')">
+        <td><b>${c.c}</b></td><td>${esc(c.n)}</td><td>${c.l}</td>
+        <td>${c.q}/${c.p}</td><td class="num">${Q(c.m)}</td>
+        <td>${c.r?'<span class="badge b-mora">En mora</span>':'<span class="badge b-ok">Al día</span>'}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();copiarRecordatorio('${c.c}','${c.f}')">Copiar</button></td>
+      </tr>`;});
+    h+=`</tbody></table></div></div>`;
+  });
+  C().innerHTML=h;
+}
+
+/* Redacta el recordatorio según el momento y lo copia al portapapeles. */
+function mensajeRecordatorio(c){
+  const nombre=String(c.n||'').split(' ')[0];
+  const dif=diasEnt(HOY_ISO,c.f);
+  const fecha=new Date(c.f+'T00:00:00').toLocaleDateString('es-GT',{day:'2-digit',month:'long'});
+  const pago='https://pago.recurrente.com/editorialsol';
+  if(dif>0) return `Hola ${nombre}, le saluda La Esperanza 🌿\n\nLe recordamos su cuota ${c.q}/${c.p} del lote ${c.l} por *${Q(c.m)}*, con fecha de pago el *${fecha}*.\n\nPuede pagar aquí: ${pago}\n\nGracias por su puntualidad.`;
+  if(dif===0) return `Hola ${nombre}, hoy vence su cuota ${c.q}/${c.p} del lote ${c.l} por *${Q(c.m)}*.\n\n${pago}`;
+  return `Hola ${nombre}, notamos que su cuota ${c.q}/${c.p} del lote ${c.l} por ${Q(c.m)} sigue pendiente.\n\nA partir del vencimiento corre una mora del 2% mensual.\n\nPuede regularizar aquí: ${pago}\n\nSi tiene alguna dificultad, escríbanos — buscamos la manera de ayudarle.`;
+}
+function copiarRecordatorio(contrato,fecha){
+  const c=CALENDARIO.find(x=>x.c===contrato&&x.f===fecha); if(!c)return;
+  const txt=mensajeRecordatorio(c);
+  const fin=()=>toast('Mensaje de '+esc(c.n).split(' ')[0]+' copiado ✓');
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(fin).catch(()=>modalMensaje(txt));
+  else modalMensaje(txt);
+}
+function modalMensaje(txt){
+  openModal(`<div class="modal-h"><h3>Mensaje de cobranza</h3><p>Cópialo y pégalo en WhatsApp</p></div>
+    <div class="modal-b"><div class="wa"><div class="wa-b bot" style="max-width:100%">${esc(txt).replace(/\n/g,'<br>')}</div></div></div>
+    <div class="modal-f"><button class="btn btn-primary" onclick="closeModal()">Listo</button></div>`);
+}
+
+
+
+/* ============================================================ CUADRE BANCARIO
+   La pantalla de Edwin y David.
+
+   Edwin sube el estado de cuenta y resuelve a quién le pertenece
+   cada depósito. David confirma. Ninguno hace las dos cosas: el
+   sistema lo impide, no es una regla de buena voluntad.
+
+   Lo que se buscó al diseñarla: que la mayor parte del tiempo
+   Edwin no tenga que decidir nada — solo revisar lo que ya se
+   resolvió solo y atender los pocos casos con duda real. */
+let cnTab='resolver';
+
+function esFinanciero(){
+  const p=DB.equipo.find(x=>x.nombre===(window.__user?window.__user.name:''));
+  return ROLE==='admin' || (p && (p.rol==='financiero'||p.rol==='confirmacion'));
+}
+
+function renderConciliacion(){
+  const R=correrConciliacion();
+  const pendientes=R.ambiguos.length+R.revisar.length+R.huerfanos.length;
+
+  let h=`<div class="kpis">
+    <div class="kpi"><div class="kpi-label">Depósitos sin aplicar</div><div class="kpi-value">${R.total}</div>
+      <div class="kpi-sub">${Qk(R.montoDepositado)} en el banco</div></div>
+    <div class="kpi accent"><div class="kpi-label">Se resolvieron solos</div><div class="kpi-value">${R.automaticos.length}</div>
+      <div class="kpi-sub">${Math.round(R.automatizable*100)}% de lo que entró</div></div>
+    <div class="kpi warn"><div class="kpi-label">Necesitan que decidas</div><div class="kpi-value">${pendientes}</div>
+      <div class="kpi-sub">ambiguos, parciales y huérfanos</div></div>
+    <div class="kpi"><div class="kpi-label">Esperan a David</div><div class="kpi-value">${R.pendConfirmar.length}</div>
+      <div class="kpi-sub">${Qk(R.montoConfirmado)} ya confirmado</div></div>
+  </div>`;
+
+  h+=`<div class="card"><div class="card-b" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    ${[['resolver','Por resolver ('+pendientes+')'],
+       ['sugeridos','Listos para aplicar ('+(R.automaticos.length+R.sugeridos.length)+')'],
+       ['confirmar','Por confirmar ('+R.pendConfirmar.length+')'],
+       ['faltantes','Sin depósito ('+R.sinDeposito.length+')'],
+       ['importar','Subir estado de cuenta']]
+      .map(([k,l])=>`<button class="btn btn-sm ${cnTab===k?'btn-primary':'btn-ghost'}" onclick="cnTab='${k}';renderConciliacion()">${l}</button>`).join('')}
+  </div></div>`;
+
+  if(cnTab==='importar')       h+=vistaImportar();
+  else if(cnTab==='sugeridos') h+=vistaSugeridos(R);
+  else if(cnTab==='confirmar') h+=vistaPorConfirmar(R);
+  else if(cnTab==='faltantes') h+=vistaSinDeposito(R);
+  else                         h+=vistaPorResolver(R);
+
+  C().innerHTML=h;
+}
+
+/* --- Subir el estado de cuenta --- */
+function vistaImportar(){
+  return `<div class="card"><div class="card-h"><h2>Estado de cuenta de Banrural</h2>
+      <div class="hint">Pega aquí lo que descargues de la banca en línea</div></div>
+    <div class="card-b">
+      <div class="field"><label>Cuenta</label>
+        <select id="cnCuenta"><option>Banrural 3445903856 · ALJIBE</option>
+          <option>Banrural 3394008560 · SOL Desarrollos</option>
+          <option>Banco Industrial</option></select></div>
+      <div class="field"><label>Pega el contenido (CSV, o copiado de Excel)</label>
+        <textarea id="cnTexto" rows="9" placeholder="Fecha,Documento,Descripcion,Credito
+06/08/2026,65813833,DEPOSITO,1393.51
+07/08/2026,835716978,TRANSFERENCIA,2902.00"></textarea></div>
+      <div class="hint" style="margin-bottom:12px">Reconozco las columnas por el nombre del encabezado — sirve <b>fecha</b>, <b>monto</b> o <b>crédito</b>, <b>documento</b> o <b>referencia</b>. Los cargos se ignoran: solo entran los abonos. Si subes dos veces el mismo archivo, no se duplica.</div>
+      <button class="btn btn-primary" onclick="doImportarEstado()">Leer y cargar</button>
+      ${(DB.movimientos||[]).length?`<span class="hint" style="margin-left:12px">${DB.movimientos.length} movimiento(s) cargados</span>`:''}
+    </div></div>`;
+}
+function doImportarEstado(){
+  const t=document.getElementById('cnTexto').value;
+  const r=leerEstadoCuenta(t);
+  if(r.error){toast(r.error);return;}
+  if(!r.movimientos.length){toast('No encontré ningún abono en lo que pegaste');return;}
+  const imp=importarMovimientos(r.movimientos, document.getElementById('cnCuenta').value);
+  toast(`${imp.nuevos} movimiento(s) cargados${imp.repetidos?' · '+imp.repetidos+' ya estaban':''}`);
+  cnTab='resolver'; renderConciliacion();
+}
+
+/* --- Lo que se resolvió solo --- */
+function vistaSugeridos(R){
+  const todos=[...R.automaticos,...R.sugeridos];
+  if(!todos.length) return `<div class="card"><div class="empty">No hay depósitos resueltos pendientes de aplicar.</div></div>`;
+  let h='';
+  if(R.automaticos.length)
+    h+=`<div class="card"><div class="card-b" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="doAplicarTodo()">Aplicar los ${R.automaticos.length} que calzan por referencia</button>
+      <span class="hint">Solo estos: la referencia del banco coincide con la del cliente. Los demás los decides tú.</span>
+    </div></div>`;
+  else
+    h+=`<div class="hint" style="margin-bottom:14px">Ninguno calza por número de referencia, así que ninguno se aplica solo. Los de abajo coinciden en monto y fecha — es indicio, no prueba. Revísalos antes de aplicar.</div>`;
+  h+=`<div class="card"><div class="card-b" style="padding:0"><table class="data"><thead><tr>
+    <th>Fecha</th><th>Referencia</th><th class="num">Monto</th><th>Se aplica a</th><th>Por qué</th><th></th></tr></thead><tbody>`;
+  todos.forEach(s=>{
+    const d=repartir(s.libre,s.cuota.c);
+    h+=`<tr><td>${fmtD(s.mov.fecha)}</td><td>${esc(s.mov.ref||'—')}</td><td class="num">${Q(s.libre)}</td>
+      <td><b>${s.cuota.c}</b> · ${esc(s.cuota.n)}<div class="hint">lote ${s.cuota.l} · ${d.partes.length>1?d.partes.length+' cuotas':'cuota '+s.cuota.q+'/'+s.cuota.p}${d.sobrante>0.009?' · sobran '+Q(d.sobrante):''}</div></td>
+      <td>${viaTexto(s.via)}<div class="hint">${s.nota||''}</div></td>
+      <td><button class="btn ${s.confianza>=0.9?'btn-primary':'btn-ghost'} btn-sm" onclick="doAplicarUno('${s.mov.id}','${s.cuota.c}')">Aplicar</button></td></tr>`;});
+  h+=`</tbody></table></div></div>`;
+  return h;
+}
+const viaTexto = v => ({referencia:'<span class="badge b-ok">Referencia coincide</span>',
+  monto_fecha:'<span class="badge">Monto y fecha únicos</span>',
+  parcial:'<span class="badge b-pend">Monto parcial</span>'}[v]||'<span class="badge">'+esc(v||'')+'</span>');
+
+function doAplicarTodo(){
+  const r=aplicarTodoSugerido();
+  toast(`${r.aplicados} depósito(s) aplicados${r.fallos.length?' · '+r.fallos.length+' con problema':''}`);
+  renderConciliacion();
+}
+function doAplicarUno(movId,contrato){
+  const mov=DB.movimientos.find(m=>m.id===movId);
+  const d=repartir(saldoLibre(mov),contrato);
+  if(!d.partes.length){toast('Ese contrato ya no tiene cuotas pendientes');return;}
+  try{ aplicarConciliacion({movimientoId:movId,asignaciones:d.partes,via:'manual'});
+       toast('Aplicado · queda esperando a David'); }
+  catch(e){ toast(e.message); }
+  renderConciliacion();
+}
+
+/* --- Lo que necesita una persona --- */
+function vistaPorResolver(R){
+  const items=[...R.ambiguos,...R.revisar,...R.huerfanos];
+  if(!items.length) return `<div class="card"><div class="empty">Nada pendiente de resolver. Todo lo que entró tiene dueño.</div></div>`;
+  let h='';
+  items.forEach(s=>{
+    const etiqueta={ambiguo:'<span class="badge b-pend">Varios candidatos</span>',
+                    revisar:'<span class="badge b-pend">Revisar</span>',
+                    huerfano:'<span class="badge b-mora">Sin dueño</span>'}[s.estado];
+    h+=`<div class="card"><div class="card-h">
+      <h2>${Q(s.libre)} · ${fmtD(s.mov.fecha)} ${etiqueta}</h2>
+      <div class="hint">${s.mov.ref?'Ref '+esc(s.mov.ref):'sin referencia'}${s.mov.descripcion?' · '+esc(s.mov.descripcion):''}</div></div>
+      <div class="card-b">
+      <p class="hint" style="margin-bottom:12px">${esc(s.nota||'')}</p>`;
+
+    if(s.candidatos&&s.candidatos.length){
+      h+=`<table class="data"><thead><tr><th>Contrato</th><th>Cliente</th><th>Lote</th>
+        <th>Cuota</th><th class="num">Debe</th><th>Señales</th><th></th></tr></thead><tbody>`;
+      s.candidatos.slice(0,8).forEach(c=>{
+        const q=c.cuota;
+        h+=`<tr><td><b>${q.c}</b></td><td>${esc(q.n)}</td><td>${q.l}</td><td>${q.q}/${q.p}</td>
+          <td class="num">${Q(q.m)}</td><td class="hint">${c.señales.join(' · ')||'—'}</td>
+          <td><button class="btn btn-primary btn-sm" onclick="doAsignar('${s.mov.id}','${q.c}','${q.f}')">Es de este</button></td></tr>`;});
+      h+=`</tbody></table>`;
+    }
+    h+=`<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="doBuscarContrato('${s.mov.id}')">Buscar otro contrato</button>
+        <button class="btn btn-ghost btn-sm" onclick="doMarcarAjeno('${s.mov.id}')">No es de La Esperanza</button>
+      </div></div></div>`;});
+  return h;
+}
+
+function doAsignar(movId,contrato,vence){
+  const mov=DB.movimientos.find(m=>m.id===movId);
+  const libre=saldoLibre(mov);
+  const d=repartir(libre,contrato);
+  const resumen=d.partes.map(p=>`cuota ${p.cuota} · ${Q(p.monto)}${p.completa?'':' (parcial)'}`).join('<br>');
+  openModal(`<div class="modal-h"><h3>Aplicar ${Q(libre)} a ${contrato}</h3>
+      <p>Así se repartiría entre sus cuotas pendientes</p></div>
+    <div class="modal-b">
+      <div class="hint" style="margin-bottom:10px">${resumen||'Sin cuotas pendientes'}</div>
+      ${d.sobrante>0.009?`<div class="hint">Sobrarían <b>${Q(d.sobrante)}</b> sin aplicar — quedan disponibles en el depósito.</div>`:''}
+      <div class="field" style="margin-top:12px"><label>Nota (por qué decidiste esto)</label>
+        <input id="cnNota" placeholder="Ej. el cliente confirmó por WhatsApp"></div>
+      <div class="hint">Queda <b>conciliado</b>, no confirmado. Lo confirma el financiero.</div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="doAsignarOk('${movId}','${contrato}')">Aplicar</button></div>`);
+}
+function doAsignarOk(movId,contrato){
+  const mov=DB.movimientos.find(m=>m.id===movId);
+  const d=repartir(saldoLibre(mov),contrato);
+  try{ aplicarConciliacion({movimientoId:movId,asignaciones:d.partes,via:'manual',
+        nota:document.getElementById('cnNota').value.trim()});
+       closeModal(); toast('Aplicado · queda esperando confirmación'); }
+  catch(e){ toast(e.message); }
+  renderConciliacion();
+}
+function doBuscarContrato(movId){
+  openModal(`<div class="modal-h"><h3>Buscar contrato</h3><p>Escribe el número, el lote o el nombre</p></div>
+    <div class="modal-b"><div class="field"><input id="cnBusca" placeholder="SD-34, G-05, Rosa..." oninput="cnResultados('${movId}')"></div>
+      <div id="cnLista"></div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>`);
+  setTimeout(()=>document.getElementById('cnBusca').focus(),50);
+}
+function cnResultados(movId){
+  const t=document.getElementById('cnBusca').value.trim().toLowerCase();
+  const L=document.getElementById('cnLista');
+  if(t.length<2){L.innerHTML='';return;}
+  const vistos={};
+  (typeof CALENDARIO!=='undefined'?CALENDARIO:[]).forEach(c=>{
+    if(vistos[c.c])return;
+    if(String(c.c).toLowerCase().includes(t)||String(c.l).toLowerCase().includes(t)||String(c.n).toLowerCase().includes(t))
+      vistos[c.c]=c;});
+  const arr=Object.values(vistos).slice(0,10);
+  L.innerHTML=arr.length?`<table class="data"><tbody>${arr.map(c=>
+    `<tr><td><b>${c.c}</b></td><td>${esc(c.n)}</td><td>${c.l}</td>
+     <td><button class="btn btn-primary btn-sm" onclick="closeModal();doAsignar('${movId}','${c.c}','${c.f}')">Elegir</button></td></tr>`).join('')}</tbody></table>`
+    :`<div class="empty">Sin resultados</div>`;
+}
+function doMarcarAjeno(movId){
+  const m=DB.movimientos.find(x=>x.id===movId); if(!m)return;
+  m.ajeno=true; saveDB();
+  toast('Marcado como ajeno a La Esperanza');
+  renderConciliacion();
+}
+
+/* --- La bandeja de David --- */
+function vistaPorConfirmar(R){
+  if(!R.pendConfirmar.length) return `<div class="card"><div class="empty">No hay nada esperando confirmación.</div></div>`;
+  const puedo=esFinanciero();
+  let h=`<div class="hint" style="margin-bottom:14px">${puedo
+    ? 'Al confirmar, el pago entra a la cartera del contrato. No se puede deshacer después.'
+    : 'Solo el financiero puede confirmar. Aquí ves el estado de lo que conciliaste.'}</div>`;
+  h+=`<div class="card"><div class="card-b" style="padding:0"><table class="data"><thead><tr>
+    <th>Fecha</th><th>Contrato</th><th>Cliente</th><th>Cuota</th><th class="num">Monto</th>
+    <th>Referencia</th><th>Concilió</th><th></th></tr></thead><tbody>`;
+  R.pendConfirmar.forEach(k=>{
+    const mio=k.conciliadoPor===(window.__user?window.__user.name:'');
+    h+=`<tr><td>${fmtD(k.fecha)}</td><td><b>${k.contrato}</b></td><td>${esc(k.cliente)}</td>
+      <td>${fmtD(k.vence)}${k.completa?'':' <span class="badge b-pend">parcial</span>'}</td>
+      <td class="num">${Q(k.monto)}</td><td>${esc(k.ref||'—')}</td>
+      <td>${esc(k.conciliadoPor)}${k.nota?'<div class="hint">'+esc(k.nota)+'</div>':''}</td>
+      <td>${puedo&&!mio
+        ? `<button class="btn btn-primary btn-sm" onclick="doConfirmarCn('${k.id}',true)">Confirmar</button>
+           <button class="btn btn-ghost btn-sm" onclick="doConfirmarCn('${k.id}',false)">Rechazar</button>`
+        : (mio?'<span class="hint">lo conciliaste tú</span>':'<span class="hint">—</span>')}</td></tr>`;});
+  h+=`</tbody></table></div></div>`;
+  return h;
+}
+function doConfirmarCn(id,ok){
+  try{ confirmarConciliacion(id,ok); toast(ok?'Confirmado · entró a la cartera':'Rechazado'); }
+  catch(e){ toast(e.message); }
+  renderConciliacion();
+}
+
+/* --- Cuotas de las que no entró nada --- */
+function vistaSinDeposito(R){
+  if(!R.sinDeposito.length) return `<div class="card"><div class="empty">Todas las cuotas del período tienen su depósito.</div></div>`;
+  const total=R.sinDeposito.reduce((t,c)=>t+c.m,0);
+  let h=`<div class="hint" style="margin-bottom:14px">Cuotas que vencieron entre ${fmtD(R.desde)} y ${fmtD(R.hasta)} y de las que <b>no entró dinero</b> — ${Qk(total)} en total. Es el otro lado del cuadre.</div>`;
+  h+=`<div class="card"><div class="card-b" style="padding:0"><table class="data"><thead><tr>
+    <th>Vence</th><th>Contrato</th><th>Cliente</th><th>Lote</th><th>Cuota</th><th class="num">Monto</th><th>Estado</th></tr></thead><tbody>`;
+  R.sinDeposito.slice(0,60).forEach(c=>{
+    h+=`<tr><td>${fmtD(c.f)}</td><td><b>${c.c}</b></td><td>${esc(c.n)}</td><td>${c.l}</td>
+      <td>${c.q}/${c.p}</td><td class="num">${Q(c.m)}</td>
+      <td>${c.r?'<span class="badge b-mora">Venía en mora</span>':'<span class="badge b-pend">Sin pago</span>'}</td></tr>`;});
+  h+=`</tbody></table></div></div>`;
+  if(R.sinDeposito.length>60) h+=`<div class="hint">Se muestran las primeras 60 de ${R.sinDeposito.length}.</div>`;
+  return h;
+}
+
+/* ============================================================ RECAUDACIÓN DE LA SEMANA
+   Aquí se cierra el ciclo: Slack avisó qué vence, y aquí se
+   registra qué pasó con cada cuota. Nada se da por cobrado solo
+   por estar programado. */
+let recSemana=0, recFiltro='pendiente';
+
+function renderRecaudacion(){
+  if(typeof CALENDARIO==='undefined'){
+    C().innerHTML=`<div class="card"><div class="empty">No se encontró el calendario de cobranza.</div></div>`;return;}
+  const desde=isoMas(HOY_ISO, recSemana*7), hasta=isoMas(desde,6);
+  const R=resumenRecaudacion(desde,hasta);
+  const pct=Math.round(R.efectividad*100);
+
+  let h=`<div class="kpis">
+    <div class="kpi"><div class="kpi-label">Programado</div><div class="kpi-value sm">${Qk(R.programado)}</div>
+      <div class="kpi-sub">${R.filas.length} cuota(s) · ${fmtD(desde)} al ${fmtD(hasta)}</div></div>
+    <div class="kpi accent"><div class="kpi-label">Recaudado</div><div class="kpi-value sm">${Qk(R.recaudado)}</div>
+      <div class="kpi-sub">${pct}% de lo programado</div></div>
+    <div class="kpi warn"><div class="kpi-label">Sin gestionar</div><div class="kpi-value">${R.pendientes.length}</div>
+      <div class="kpi-sub">${Qk(R.pendientes.reduce((s,f)=>s+f.cuota.m,0))} sin marcar</div></div>
+    <div class="kpi"><div class="kpi-label">Por confirmar</div><div class="kpi-value">${R.porConfirmar}</div>
+      <div class="kpi-sub">esperan al financiero</div></div>
+  </div>`;
+
+  // barra de avance
+  const anchoCob=R.programado?Math.min(100,R.recaudado/R.programado*100):0;
+  h+=`<div class="card"><div class="card-b">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+      <button class="btn btn-ghost btn-sm" onclick="recSemana--;renderRecaudacion()">← Semana anterior</button>
+      <b style="color:var(--dark)">${recSemana===0?'Esta semana':(recSemana===-1?'Semana pasada':(recSemana===1?'Próxima semana':fmtD(desde)))}</b>
+      <button class="btn btn-ghost btn-sm" onclick="recSemana++;renderRecaudacion()">Semana siguiente →</button>
+      ${recSemana!==0?'<button class="btn btn-ghost btn-sm" onclick="recSemana=0;renderRecaudacion()">Volver a hoy</button>':''}
+      <span style="margin-left:auto;display:flex;gap:6px">
+        ${['pendiente','cobrada','no_cobrada','todas'].map(f=>
+          `<button class="btn btn-sm ${recFiltro===f?'btn-primary':'btn-ghost'}" onclick="recFiltro='${f}';renderRecaudacion()">${
+            {pendiente:'Sin gestionar',cobrada:'Cobradas',no_cobrada:'No cobradas',todas:'Todas'}[f]}</button>`).join('')}
+      </span>
+    </div>
+    <div style="height:10px;border-radius:99px;background:#eceae4;overflow:hidden;display:flex">
+      <div style="width:${anchoCob}%;background:var(--accent,#7a8b5a)"></div>
+    </div>
+    <div class="hint" style="margin-top:8px">${R.cobradas.length} cobrada(s) · ${R.noCobradas.length} no cobrada(s) · ${R.pendientes.length} sin gestionar</div>
+  </div></div>`;
+
+  const filas=R.filas.filter(f=>recFiltro==='todas'||f.estado===recFiltro)
+                     .sort((a,b)=>a.cuota.f<b.cuota.f?-1:1);
+
+  h+=`<div class="card"><div class="card-h"><h2>Cuotas de la semana</h2>
+      <div class="hint">Marca lo que ocurrió con cada una</div></div>
+    <div class="card-b" style="padding:0"><table class="data"><thead><tr>
+    <th>Vence</th><th>Contrato</th><th>Cliente</th><th>Lote</th><th>Cuota</th>
+    <th class="num">Monto</th><th>Estado</th><th>Acción</th></tr></thead><tbody>`;
+  if(!filas.length) h+=`<tr><td colspan="8" class="empty">No hay cuotas en este filtro.</td></tr>`;
+  filas.forEach(f=>{
+    const c=f.cuota, r=f.reg;
+    let est, acc;
+    if(f.estado==='cobrada'){
+      const pago=DB.pagos.find(p=>p.id===r.pagoId);
+      const eP=pago?pago.estado:'registrado';
+      est=`<span class="badge b-ok">Cobrada</span>${eP==='confirmado'?' <span class="badge b-ok">Confirmada</span>':(eP==='rechazado'?' <span class="badge b-mora">Rechazada</span>':' <span class="badge">Por confirmar</span>')}
+           <div class="hint">${esc(r.referencia||'sin boleta')} · ${Q(r.monto)}</div>`;
+      acc=`<button class="btn btn-ghost btn-sm" onclick="deshacerRecaudo('${c.c}','${c.f}')">Deshacer</button>`;
+    } else if(f.estado==='no_cobrada'){
+      est=`<span class="badge b-mora">No cobrada</span>
+           <div class="hint">${esc(motivoLabel(r.motivo))}${r.promesa?' · promete el '+fmtD(r.promesa):''}</div>`;
+      acc=`<button class="btn btn-ghost btn-sm" onclick="deshacerRecaudo('${c.c}','${c.f}')">Deshacer</button>`;
+    } else {
+      est=c.r?'<span class="badge b-mora">Venía en mora</span>':'<span class="badge">Sin gestionar</span>';
+      acc=`<button class="btn btn-primary btn-sm" onclick="modalCobro('${c.c}','${c.f}')">Cobrada</button>
+           <button class="btn btn-ghost btn-sm" onclick="modalNoCobro('${c.c}','${c.f}')">No se cobró</button>`;
+    }
+    h+=`<tr><td>${fmtD(c.f)}</td><td><b>${c.c}</b></td><td>${esc(c.n)}</td><td>${c.l}</td>
+      <td>${c.q}/${c.p}</td><td class="num">${Q(c.m)}</td><td>${est}</td><td>${acc}</td></tr>`;});
+  h+=`</tbody></table></div></div>`;
+
+  // Cierre de semana
+  h+=`<div class="card"><div class="card-h"><h2>Cierre de la semana</h2></div><div class="card-b">
+    <p class="hint" style="margin-bottom:12px">${R.pendientes.length
+      ? `Faltan <b>${R.pendientes.length}</b> cuota(s) por gestionar. Cuando no quede ninguna sin marcar, se puede cerrar la semana y el resultado vuelve a Slack.`
+      : 'Toda la semana está gestionada. Puedes publicar el cierre al canal de cobranza.'}</p>
+    <button class="btn ${R.pendientes.length?'btn-ghost':'btn-primary'}" onclick="modalCierreSemana()">Ver el reporte de cierre</button>
+  </div></div>`;
+  C().innerHTML=h;
+}
+
+/* --- Registrar un cobro --- */
+function modalCobro(contrato,fecha){
+  const c=CALENDARIO.find(x=>x.c===contrato&&x.f===fecha); if(!c)return;
+  openModal(`<div class="modal-h"><h3>Registrar cobro</h3>
+      <p>${esc(c.n)} · lote ${c.l} · cuota ${c.q}/${c.p}</p></div>
+    <div class="modal-b">
+      <div class="field"><label>Monto recibido</label>
+        <input id="rcMonto" type="number" step="0.01" value="${(Math.round(c.m*100)/100)}"></div>
+      <div class="field"><label>Forma de pago</label>
+        <select id="rcForma"><option>Depósito bancario</option><option>Transferencia</option>
+          <option>Efectivo en sala de venta</option><option>Pago en línea</option></select></div>
+      <div class="field"><label>Cuenta acreditada</label>
+        <select id="rcCuenta"><option>Banrural 3445903856 · SOL Desarrollos</option>
+          <option>Banrural 3394008560 · ALJIBE</option></select></div>
+      <div class="field"><label>No. de boleta o referencia</label>
+        <input id="rcRef" placeholder="Ej. 4429871"></div>
+      <div class="field"><label>Nota (opcional)</label><input id="rcNota" placeholder=""></div>
+      <div class="hint">Queda como <b>pago registrado</b>. Lo aplica a la cartera el financiero al confirmarlo — quien cobra no confirma su propio cobro.</div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarCobro('${contrato}','${fecha}')">Registrar cobro</button></div>`);
+}
+function guardarCobro(contrato,fecha){
+  const monto=+document.getElementById('rcMonto').value;
+  if(!(monto>0)){toast('El monto debe ser mayor que cero');return;}
+  const ref=document.getElementById('rcRef').value.trim();
+  if(!ref){toast('Anota el número de boleta o referencia');return;}
+  marcarCobrada(contrato,fecha,{monto,
+    forma:document.getElementById('rcForma').value,
+    cuenta:document.getElementById('rcCuenta').value,
+    referencia:ref, nota:document.getElementById('rcNota').value.trim()});
+  closeModal(); toast('Cobro registrado · pendiente de confirmar ✓'); renderRecaudacion();
+}
+
+/* --- Registrar que no se cobró --- */
+function modalNoCobro(contrato,fecha){
+  const c=CALENDARIO.find(x=>x.c===contrato&&x.f===fecha); if(!c)return;
+  openModal(`<div class="modal-h"><h3>No se cobró</h3>
+      <p>${esc(c.n)} · lote ${c.l} · cuota ${c.q}/${c.p} · ${Q(c.m)}</p></div>
+    <div class="modal-b">
+      <div class="field"><label>¿Qué pasó?</label><select id="ncMotivo" onchange="ncToggle()">
+        ${MOTIVOS_NO_COBRO.map(m=>`<option value="${m.id}">${m.label}</option>`).join('')}</select></div>
+      <div class="field" id="ncPromesaBox" hidden><label>¿Para qué fecha prometió pagar?</label>
+        <input id="ncPromesa" type="date" value="${isoMas(HOY_ISO,7)}"></div>
+      <div class="field"><label>Detalle</label><input id="ncNota" placeholder="Lo que dijo el cliente"></div>
+      <div class="hint">Esto no es burocracia: el motivo alimenta el resumen del lunes y decide a quién se escala.</div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarNoCobro('${contrato}','${fecha}')">Guardar</button></div>`);
+  ncToggle();
+}
+function ncToggle(){
+  const m=document.getElementById('ncMotivo'); if(!m)return;
+  document.getElementById('ncPromesaBox').hidden = m.value!=='promesa';
+}
+function guardarNoCobro(contrato,fecha){
+  const motivo=document.getElementById('ncMotivo').value;
+  marcarNoCobrada(contrato,fecha,{motivo,
+    nota:document.getElementById('ncNota').value.trim(),
+    promesa: motivo==='promesa'?document.getElementById('ncPromesa').value:null});
+  closeModal(); toast('Registrado'); renderRecaudacion();
+}
+function deshacerRecaudo(contrato,fecha){
+  desmarcarCuota(contrato,fecha); toast('Marca deshecha'); renderRecaudacion();
+}
+
+/* --- Reporte de cierre: lo que vuelve a Slack --- */
+function textoCierre(R){
+  const l=[];
+  l.push(`*✅ Cierre de cobranza · ${fmtD(R.desde)} al ${fmtD(R.hasta)}*`);
+  l.push('');
+  l.push(`• Programado: *${Qk(R.programado)}* en ${R.filas.length} cuota(s)`);
+  l.push(`• Recaudado: *${Qk(R.recaudado)}* (${Math.round(R.efectividad*100)}%)`);
+  l.push(`• Cobradas: ${R.cobradas.length} · No cobradas: ${R.noCobradas.length} · Sin gestionar: ${R.pendientes.length}`);
+  if(R.porConfirmar) l.push(`• ${R.porConfirmar} pago(s) esperan confirmación del financiero`);
+  l.push('');
+  if(R.noCobradas.length){
+    const porMotivo={};
+    R.noCobradas.forEach(f=>{porMotivo[f.reg.motivo]=(porMotivo[f.reg.motivo]||0)+1;});
+    l.push('*Por qué no se cobró:*');
+    Object.keys(porMotivo).sort((a,b)=>porMotivo[b]-porMotivo[a])
+      .forEach(m=>l.push(`• ${motivoLabel(m)} — ${porMotivo[m]}`));
+    l.push('');
+    const prom=R.noCobradas.filter(f=>f.reg.promesa);
+    if(prom.length){
+      l.push('*Promesas de pago a dar seguimiento:*');
+      prom.sort((a,b)=>a.reg.promesa<b.reg.promesa?-1:1)
+        .forEach(f=>l.push(`• ${f.cuota.n} (${f.cuota.c}) — ${Q(f.cuota.m)} el ${fmtD(f.reg.promesa)}`));
+      l.push('');
+    }
+  }
+  if(R.pendientes.length){
+    l.push(`⚠️ *${R.pendientes.length} cuota(s) quedaron sin gestionar* por ${Qk(R.pendientes.reduce((s,f)=>s+f.cuota.m,0))}. Pasan al resumen del próximo lunes.`);
+    l.push('');
+  }
+  l.push('_🌿 Suite Sol Inmobiliaria · generado desde la Recaudación de la semana_');
+  return l.join('\n');
+}
+function modalCierreSemana(){
+  const desde=isoMas(HOY_ISO,recSemana*7);
+  const R=resumenRecaudacion(desde,isoMas(desde,6));
+  const txt=textoCierre(R);
+  openModal(`<div class="modal-h"><h3>Reporte de cierre</h3>
+      <p>Esto es lo que se publica en #proy-la-esperanza-cobranza</p></div>
+    <div class="modal-b"><div class="wa"><div class="wa-b bot" style="max-width:100%">${esc(txt).replace(/\n/g,'<br>')}</div></div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
+      <button class="btn btn-primary" onclick="copiarCierre()">Copiar el reporte</button></div>`);
+  window.__cierreTxt=txt;
+}
+function copiarCierre(){
+  const t=window.__cierreTxt||'';
+  const fin=()=>toast('Reporte copiado ✓');
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(fin).catch(fin);
+  else fin();
+}
+
+/* ============================================================ EQUIPO */
+function renderEquipo(){
+  const act=DB.equipo.filter(p=>p.activo), inac=DB.equipo.filter(p=>!p.activo);
+  const sinAsig=DB.contratos.filter(c=>c.estado!=='anulado'&&(!c.vendedor||c.vendedor==='Sin asignar'));
+  let h=`<div class="kpis">
+    <div class="kpi"><div class="kpi-label">Personas activas</div><div class="kpi-value">${act.length}</div><div class="kpi-sub">${vendedores().length} vendedores</div></div>
+    <div class="kpi"><div class="kpi-label">Inactivas</div><div class="kpi-value">${inac.length}</div><div class="kpi-sub">sin acceso</div></div>
+    <div class="kpi ${sinAsig.length?'warn':''}"><div class="kpi-label">Contratos sin vendedor</div><div class="kpi-value">${sinAsig.length}</div><div class="kpi-sub">${sinAsig.length?'requieren asignación':'todo asignado'}</div></div>
+  </div>`;
+  if(sinAsig.length)
+    h+=`<div class="card"><div class="card-b" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <b style="color:var(--dark)">${sinAsig.length} contratos no tienen vendedor asignado.</b>
+      <button class="btn btn-gold btn-sm" onclick="modalReasignar('Sin asignar')">Asignarlos a alguien</button></div></div>`;
+
+  h+=`<div class="card"><div class="card-h"><h2>Equipo</h2>
+    <button class="btn btn-primary btn-sm" onclick="modalPersona()">+ Agregar persona</button></div>
+    <div class="card-b" style="padding:0"><table class="data"><thead><tr>
+    <th>Nombre</th><th>Código</th><th>Rol</th><th class="num">Contratos</th>
+    <th class="num">Vendido</th><th class="num">Comisión 2%</th><th>Estado</th><th>Acción</th></tr></thead><tbody>`;
+  const fila=p=>{
+    const cts=contratosDe(p.nombre);
+    const val=cts.reduce((s,c)=>s+c.precio,0);
+    const com=rolComisiona(p.rol)?cts.reduce((s,c)=>s+calcularComision(c),0):0;
+    return `<tr${p.activo?'':' style="opacity:.55"'}>
+      <td><b>${esc(p.nombre)}</b>${p.nota?`<div class="ec-obl">${esc(p.nota)}</div>`:''}</td>
+      <td><span class="pill">${esc(p.codigo||'—')}</span></td>
+      <td>${rolLabel(p.rol)}</td>
+      <td class="num">${cts.length}</td>
+      <td class="num">${val?Qk(val):'—'}</td>
+      <td class="num">${com?Q(com):'—'}</td>
+      <td>${p.activo?'<span class="badge b-ok">Activo</span>':'<span class="badge b-nod">Inactivo</span>'}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="modalPersona('${p.id}')">Editar</button>
+        ${cts.length?`<button class="btn btn-ghost btn-sm" onclick="modalReasignar('${esc(p.nombre)}')">Reasignar</button>`:''}
+      </td></tr>`;
+  };
+  act.forEach(p=>h+=fila(p));
+  if(inac.length){h+=`<tr><td colspan="8" style="background:var(--tint);font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:700">Inactivos</td></tr>`;
+    inac.forEach(p=>h+=fila(p));}
+  h+=`</tbody></table></div></div>
+    <div class="hint">Solo el rol <b>Vendedor</b> genera comisión. Desactivar a alguien conserva su historial pero le quita el acceso.</div>`;
+  C().innerHTML=h;
+}
+function modalPersona(id){
+  const p=id?DB.equipo.find(x=>x.id===id):null;
+  openModal(`<div class="modal-h"><h3>${p?'Editar persona':'Agregar persona'}</h3>
+    <p>${p?esc(p.nombre):'Nuevo miembro del equipo'}</p></div>
+    <div class="modal-b"><div class="form-grid">
+      <div class="field"><label>Nombre completo *</label><input id="e-nom" value="${esc(p?p.nombre:'')}"></div>
+      <div class="field"><label>Código</label><input id="e-cod" value="${esc(p?p.codigo:'')}" placeholder="Ej. AND"></div>
+      <div class="field"><label>Rol</label><select id="e-rol">
+        ${ROLES_EQUIPO.map(r=>`<option value="${r.id}" ${p&&p.rol===r.id?'selected':''}>${r.label}${r.comisiona?' · comisiona':''}</option>`).join('')}</select></div>
+      <div class="field"><label>Estado</label><select id="e-act">
+        <option value="1" ${!p||p.activo?'selected':''}>Activo</option>
+        <option value="0" ${p&&!p.activo?'selected':''}>Inactivo</option></select></div>
+      <div class="field"><label>Teléfono</label><input id="e-tel" value="${esc(p?p.telefono:'')}"></div>
+      <div class="field"><label>Correo</label><input id="e-mail" value="${esc(p?p.email:'')}"></div>
+      <div class="field full"><label>Nota</label><input id="e-nota" value="${esc(p?(p.nota||''):'')}" placeholder="Ej. ya no labora en la empresa"></div>
+    </div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarEquipo('${id||''}')">Guardar</button></div>`);
+}
+function guardarEquipo(id){
+  const nom=v('e-nom').trim(); if(!nom){toast('El nombre es obligatorio');return;}
+  const antes=id?(DB.equipo.find(x=>x.id===id)||{}).nombre:null;
+  guardarPersona({id:id||undefined,nombre:nom,codigo:v('e-cod').trim().toUpperCase(),
+    rol:v('e-rol'),activo:v('e-act')==='1',telefono:v('e-tel'),email:v('e-mail'),nota:v('e-nota').trim()});
+  if(antes&&antes!==nom) reasignarContratos(antes,nom);   // mantiene el historial ligado
+  closeModal(); toast('Equipo actualizado ✓'); renderEquipo();
+}
+function modalReasignar(de){
+  const cts=de==='Sin asignar'
+    ? DB.contratos.filter(c=>c.estado!=='anulado'&&(!c.vendedor||c.vendedor==='Sin asignar'))
+    : contratosDe(de);
+  const opts=vendedores().filter(p=>p.nombre!==de);
+  openModal(`<div class="modal-h"><h3>Reasignar contratos</h3>
+    <p>${cts.length} contrato(s) de <b>${esc(de)}</b></p></div>
+    <div class="modal-b">
+      <div class="field"><label>Asignar a</label><select id="r-dest">
+        ${opts.map(p=>`<option value="${esc(p.nombre)}">${esc(p.nombre)} · ${esc(p.codigo||'')}</option>`).join('')}
+      </select></div>
+      <div class="hint">Se moverán los ${cts.length} contratos y su comisión al nuevo vendedor.</div>
+      <div style="max-height:180px;overflow:auto;margin-top:12px">
+        ${cts.slice(0,40).map(c=>`<div class="money-row"><span>${c.no} · Lote ${c.lote}</span><span>${Qk(c.precio)}</span></div>`).join('')}
+        ${cts.length>40?`<div class="hint">…y ${cts.length-40} más</div>`:''}
+      </div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="hacerReasignacion('${esc(de)}')">Reasignar</button></div>`);
+}
+function hacerReasignacion(de){
+  const dest=v('r-dest'); if(!dest){toast('Elige un vendedor');return;}
+  const n=reasignarContratos(de,dest);
+  closeModal(); toast(n+' contrato(s) reasignados a '+dest); renderEquipo();
+}
+
+/* ============================================================ LEADS DEL EMBUDO */
+function renderLeads(){
+  const L=(DB.leadsFunnel||[]).slice().reverse();
+  const conv=L.filter(x=>x.estado==='convertido').length;
+  const porOrigen={}; L.forEach(x=>{porOrigen[x.origen]=(porOrigen[x.origen]||0)+1;});
+  let h=`<div class="kpis">
+    <div class="kpi"><div class="kpi-label">Leads capturados</div><div class="kpi-value">${L.length}</div><div class="kpi-sub">desde el embudo público</div></div>
+    <div class="kpi accent"><div class="kpi-label">Convertidos</div><div class="kpi-value">${conv}</div><div class="kpi-sub">${L.length?Math.round(conv/L.length*100):0}% de conversión</div></div>
+    <div class="kpi"><div class="kpi-label">Sin cerrar</div><div class="kpi-value">${L.length-conv}</div><div class="kpi-sub">para dar seguimiento</div></div>
+  </div>`;
+  if(Object.keys(porOrigen).length){
+    h+=`<div class="card"><div class="card-h"><h2>Por origen</h2></div><div class="card-b">`;
+    const max=Math.max(...Object.values(porOrigen));
+    Object.entries(porOrigen).sort((a,b)=>b[1]-a[1]).forEach(([o,n])=>{
+      h+=`<div class="bar-row"><div class="bar-lbl">${esc(o)}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${n/max*100}%"></div></div>
+        <div class="bar-val">${n} lead(s)</div></div>`;});
+    h+=`</div></div>`;
+  }
+  h+=`<div class="card"><div class="card-h"><h2>Prospectos</h2></div><div class="card-b" style="padding:0">
+    <table class="data"><thead><tr><th>Nombre</th><th>Teléfono</th><th>Lote</th>
+    <th class="num">Enganche</th><th>Origen</th><th>Fecha</th><th>Estado</th></tr></thead><tbody>`;
+  if(!L.length)h+=`<tr><td colspan="7" class="empty">Aún no hay leads. Se capturan desde <b>comprar.html</b> (el link para redes sociales).</td></tr>`;
+  L.forEach(x=>{h+=`<tr><td><b>${esc(x.nombre)}</b></td><td>${esc(x.telefono)}</td><td>${esc(x.lote)}</td>
+    <td class="num">${Qk(x.enganche||0)}</td><td><span class="pill">${esc(x.origen)}</span></td>
+    <td>${(x.fecha||'').slice(0,10)}</td>
+    <td>${x.estado==='convertido'?`<span class="badge b-ok">Convertido ${esc(x.contrato||'')}</span>`:'<span class="badge b-pend">Por contactar</span>'}</td></tr>`;});
+  h+=`</tbody></table></div></div>
+    <div class="hint">Los leads se guardan aunque el prospecto no termine la solicitud — ahí está el valor del embudo. Al conectar KOMMO, cada uno entra automáticamente a su embudo.</div>`;
+  C().innerHTML=h;
+}
+
+/* ============================================================ APROBACIÓN */
+function renderAprobacion(){
+  const pend=DB.contratos.filter(c=>c.estado==='en_aprobacion');
+  let h=`<div class="card"><div class="card-h"><h2>Bandeja del comité · ${pend.length} pendientes</h2></div>
+    <div class="card-b" style="padding:0"><table class="data"><thead><tr>
+    <th>No.</th><th>Lote</th><th>Cliente</th><th>Origen</th><th class="num">Valor</th><th>Expediente</th><th>Acción</th></tr></thead><tbody>`;
+  if(!pend.length)h+=`<tr><td colspan="7" class="empty">Sin solicitudes pendientes</td></tr>`;
+  pend.forEach(c=>{
+    const cli=getCliente(c.clienteId), docs=documentosDe(c.id).length;
+    const completo=cli&&cli.dpi&&cli.telefono;
+    h+=`<tr><td><b>${c.no}</b></td><td>${c.lote}</td><td>${esc(nombreCliente(c.clienteId))}</td>
+      <td><span class="pill">${c.origen}</span></td><td class="num">${Qk(c.precio)}</td>
+      <td>${completo?'<span class="badge b-ok">Completo</span>':'<span class="badge b-pend">Falta info</span>'} <span class="muted">${docs} doc.</span></td>
+      <td><button class="btn btn-ghost btn-sm" onclick="abrirContrato('${c.id}')">Ver</button>
+          <button class="btn btn-primary btn-sm" onclick="doAprobar('${c.id}')">Aprobar</button>
+          <button class="btn btn-ghost btn-sm" onclick="doRechazar('${c.id}')">Rechazar</button></td></tr>`;});
+  h+=`</tbody></table></div></div>
+    <div class="hint">Aprobar genera el plan de giros (Reserva + Cuota Inicial + Saldo Deudor) y marca el lote como vendido.</div>`;
+  C().innerHTML=h;
+}
+function doAprobar(id){aprobarContrato(id);toast('Contrato aprobado ✓');renderAprobacion();}
+function doRechazar(id){rechazarContrato(id);toast('Contrato rechazado · lote liberado');renderAprobacion();}
+
+/* Dónde el portal y el modelo no coinciden. Se muestra, no se esconde. */
+function verCuadreMora(){
+  const d=discrepanciasMora();
+  const mal=d.filter(x=>x.portal==='en mora'), corto=d.filter(x=>x.portal==='vigente');
+  openModal(`<div class="modal-h"><h3>Cuadre de mora</h3>
+      <p>El portal y el modelo financiero no dicen lo mismo en ${d.length} contrato(s)</p></div>
+    <div class="modal-b">
+      <div class="hint" style="margin-bottom:12px">
+        <b>${mal.length}</b> que el portal marcaba en mora y el modelo dice que están al día.
+        El portal reconstruye el calendario de pagos y no reproduce la lógica del CRM.<br>
+        <b>${corto.length}</b> que el portal daba por vigentes y el modelo reporta con atraso — esos sí hay que revisarlos.
+      </div>
+      ${corto.length?`<div class="sect-t">El portal se quedó corto</div>
+        <table class="data"><thead><tr><th>Contrato</th><th>Lote</th><th>Cliente</th><th class="num">Atraso según el modelo</th></tr></thead><tbody>
+        ${corto.map(x=>`<tr><td><b>${x.contrato}</b></td><td>${x.lote}</td><td>${esc(x.cliente)}</td><td class="num">${x.atrasoModelo}</td></tr>`).join('')}
+        </tbody></table>`:''}
+      <div class="sect-t" style="margin-top:16px">El portal marcaba de más (${mal.length})</div>
+      <div class="hint">${mal.slice(0,40).map(x=>x.contrato).join(', ')}${mal.length>40?'…':''}</div>
+    </div>
+    <div class="modal-f"><button class="btn btn-primary" onclick="closeModal()">Entendido</button></div>`);
+}
+
+/* ============================================================ COBRANZA */
+function renderCobranza(){
+  const activos=DB.contratos.filter(c=>c.estado==='aprobado');
+  const filas=activos.map(c=>({c,ec:estadoCuenta(c)}));
+  const M=resumenMora();
+  const mora=filas.filter(x=>x.ec.enMora);
+  const disc=discrepanciasMora();
+  let h=`<div class="kpis">
+    <div class="kpi"><div class="kpi-label">Contratos activos</div><div class="kpi-value">${activos.length}</div><div class="kpi-sub">${M.vigentes} al día</div></div>
+    <div class="kpi warn"><div class="kpi-label">En mora</div><div class="kpi-value">${M.enMora}</div><div class="kpi-sub">${M.cuotasAtraso} cuota(s) en atraso</div></div>
+    <div class="kpi accent"><div class="kpi-label">Saldo vencido</div><div class="kpi-value sm">${Qk(M.saldoVencido)}</div><div class="kpi-sub">a gestionar</div></div>
+    <div class="kpi"><div class="kpi-label">Nunca pagaron</div><div class="kpi-value">${M.nuncaPagaron.length}</div><div class="kpi-sub">ventas que no arrancaron</div></div>
+  </div>
+  <div class="hint" style="margin-bottom:14px">Fuente: <b>${M.fuente}</b>. El portal calcula la mora por su cuenta y no coincide — hasta que reproduzca la lógica del CRM, manda el modelo.
+    ${disc.length?` · <a href="#" onclick="verCuadreMora();return false;"><b>${disc.length} contrato(s) no cuadran</b></a>`:''}</div>`;
+
+  // Los que nunca han pagado: van primero, son otro problema
+  if(M.nuncaPagaron.length){
+    h+=`<div class="card"><div class="card-h"><h2>Ventas que nunca pagaron una cuota · ${M.nuncaPagaron.length}</h2>
+        <div class="hint">Entró el enganche y de ahí nada más</div></div>
+      <div class="card-b" style="padding:0"><table class="data"><thead><tr>
+      <th>Contrato</th><th>Lote</th><th>Cliente</th><th>Vendedor</th><th>Fecha</th>
+      <th class="num">Vencido</th><th class="num">Comisión generada</th></tr></thead><tbody>`;
+    M.nuncaPagaron.forEach(m=>{
+      const ct=DB.contratos.find(c=>c.no===m.no);
+      h+=`<tr class="click" ${ct?`onclick="abrirContrato('${ct.id}')"`:''}>
+        <td><b>${m.no}</b></td><td>${m.lote}</td>
+        <td>${ct?esc(nombreCliente(ct.clienteId)):'—'}</td>
+        <td>${ct?esc(ct.vendedor):'—'}</td><td>${ct?fmtD(ct.fecha):'—'}</td>
+        <td class="num">${Q(m.saldoVenc)}</td>
+        <td class="num">${ct?Q(calcularComision(ct)):'—'}</td></tr>`;});
+    h+=`</tbody></table></div></div>`;
+  }
+  h+=`<div class="card"><div class="card-h"><h2>Cartera</h2>
+    <input class="chip" style="min-width:200px" placeholder="Buscar cliente o lote…" oninput="filtrarCartera(this.value)"></div>
+    <div class="card-b" style="padding:0"><table class="data" id="tblCartera"><thead><tr>
+    <th>Contrato</th><th>Cliente</th><th>Lote</th><th class="num">Total giros</th>
+    <th class="num">Recaudado</th><th class="num">Saldo</th><th class="num">Giros</th><th>Estado</th></tr></thead><tbody>`;
+  h+=filasCartera(''); h+=`</tbody></table></div></div>`;
+  C().innerHTML=h;
+}
+function filasCartera(t){
+  t=(t||'').toLowerCase();
+  const rows=DB.contratos.filter(c=>c.estado==='aprobado')
+    .filter(c=>!t||`${c.no} ${c.lote} ${nombreCliente(c.clienteId)}`.toLowerCase().includes(t));
+  if(!rows.length)return `<tr><td colspan="8" class="empty">Sin resultados</td></tr>`;
+  return rows.map(c=>{const ec=estadoCuenta(c);
+    return `<tr class="click" onclick="abrirContrato('${c.id}','cuenta')"><td><b>${c.no}</b></td>
+      <td>${esc(nombreCliente(c.clienteId))}</td><td>${c.lote}</td>
+      <td class="num">${Qk(ec.totalGiros)}</td><td class="num">${Qk(ec.recaudado)}</td>
+      <td class="num">${Qk(ec.saldo)}</td><td class="num">${ec.pagadas}/${ec.totalGirosN}</td>
+      <td>${ec.vencidas>0?`<span class="badge b-mora">Mora (${ec.vencidas})</span>`:`<span class="badge b-ok">Al día</span>`}</td></tr>`;
+  }).join('');
+}
+function filtrarCartera(t){document.querySelector('#tblCartera tbody').innerHTML=filasCartera(t);}
+
+/* ============================================================ CONFIRMACIÓN DE PAGOS */
+function renderConfirmacion(){
+  const pend=DB.pagos.filter(p=>p.estado==='registrado');
+  let h=`<div class="card"><div class="card-h"><h2>Pagos por confirmar · ${pend.length}</h2></div>
+    <div class="card-b" style="padding:0"><table class="data"><thead><tr>
+    <th>Contrato</th><th>Cliente</th><th>Cuenta acreditada</th><th>Forma</th>
+    <th>Referencia</th><th class="num">Monto</th><th>Acción</th></tr></thead><tbody>`;
+  if(!pend.length)h+=`<tr><td colspan="7" class="empty">No hay pagos pendientes de confirmar</td></tr>`;
+  pend.forEach(p=>{const ct=getContrato(p.contratoId);
+    h+=`<tr><td><b>${ct?ct.no:'—'}</b></td><td>${ct?esc(nombreCliente(ct.clienteId)):'—'}</td>
+      <td>${esc(p.cuenta)}</td><td>${esc(p.forma)}</td><td>${esc(p.referencia)||'—'}</td>
+      <td class="num">${Q(p.monto)}</td>
+      <td><button class="btn btn-primary btn-sm" onclick="doConfirmar('${p.id}',true)">Confirmar</button>
+          <button class="btn btn-ghost btn-sm" onclick="doConfirmar('${p.id}',false)">Rechazar</button></td></tr>`;});
+  h+=`</tbody></table></div></div>
+    <div class="hint">Flujo real del CRM: la boleta se registra y luego contabilidad verifica el depósito antes de aplicarlo a la cartera.</div>`;
+  C().innerHTML=h;
+}
+function doConfirmar(id,ok){confirmarPago(id,ok);toast(ok?'Pago confirmado ✓':'Pago rechazado');renderConfirmacion();}
+
+/* ============================================================ COMISIONES
+   Tres pestañas: lo que se debe, lo que está en proceso, y el
+   historial de lo ya pagado. Nada se borra nunca. */
+let comTab='pendientes';
+
+function renderComisiones(){
+  const R=resumenComisiones();
+  let h=`<div class="kpis">
+    <div class="kpi"><div class="kpi-label">Por liquidar</div><div class="kpi-value sm">${Qk(R.porLiquidar)}</div>
+      <div class="kpi-sub">${R.vendedoresPend} vendedor(es)</div></div>
+    <div class="kpi ${R.retenido?'warn':''}"><div class="kpi-label">Retenidas</div><div class="kpi-value sm">${Qk(R.retenido)}</div>
+      <div class="kpi-sub">${R.contratosRetenidos} contrato(s) sin expediente</div></div>
+    <div class="kpi warn"><div class="kpi-label">Esperan factura</div><div class="kpi-value sm">${Qk(R.porFacturar)}</div>
+      <div class="kpi-sub">no se paga sin factura</div></div>
+    <div class="kpi accent"><div class="kpi-label">Listas para pagar</div><div class="kpi-value sm">${Qk(R.porPagar)}</div>
+      <div class="kpi-sub">${R.cuentaPorPagar} liquidación(es)</div></div>
+    <div class="kpi"><div class="kpi-label">Pagado</div><div class="kpi-value sm">${Qk(R.pagado)}</div>
+      <div class="kpi-sub">histórico</div></div>
+  </div>`;
+
+  h+=`<div class="card"><div class="card-b" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    ${[['pendientes','Por liquidar'],['proceso','En proceso'],['historial','Historial de pagos'],['vendedores','Por vendedor']]
+      .map(([k,l])=>`<button class="btn btn-sm ${comTab===k?'btn-primary':'btn-ghost'}" onclick="comTab='${k}';renderComisiones()">${l}</button>`).join('')}
+    <span class="hint" style="margin-left:auto">Base: ${(COMISION_PCT*100).toFixed(0)}% del valor del lote · liquidación quincenal</span>
+  </div></div>`;
+
+  if(comTab==='proceso')         h+=comProceso(R);
+  else if(comTab==='historial')  h+=comHistorial(R);
+  else if(comTab==='vendedores') h+=comPorVendedor();
+  else                           h+=comPendientes(R);
+  C().innerHTML=h;
+}
+
+function comPendientes(R){
+  if(!R.pendientes.length) return `<div class="card"><div class="empty">No hay comisiones pendientes de liquidar.</div></div>`;
+  const puedeLiberar = (typeof puede==='function') ? puede('comision.liberar') : false;
+  let h='';
+  R.pendientes.forEach(p=>{
+    h+=`<div class="card"><div class="card-h">
+      <h2>${esc(p.persona.nombre)} <span class="pill">${p.persona.codigo}</span></h2>
+      <div><b>${Q(p.total)}</b> · ${p.contratos.length} contrato(s)${p.retenidos.length?` <span class="hint">· ${Q(p.totalRetenido)} retenidos</span>`:''}</div></div>`;
+    if(p.contratos.length){
+      h+=`<div class="card-b" style="padding:0"><table class="data"><thead><tr>
+        <th>Contrato</th><th>Lote</th><th class="num">Valor del lote</th><th class="num">Comisión</th></tr></thead><tbody>`;
+      p.contratos.forEach(c=>h+=`<tr><td><b>${c.no}</b></td><td>${c.lote}</td>
+        <td class="num">${Qk(c.precio)}</td><td class="num">${Q(c.comision)}</td></tr>`);
+      h+=`</tbody><tfoot><tr><td colspan="3" style="text-align:right;font-weight:800;padding:10px 12px">Total</td>
+        <td class="num" style="font-weight:800">${Q(p.total)}</td></tr></tfoot></table></div>
+        <div class="card-b"><button class="btn btn-primary" onclick="doCrearLiq('${esc(p.persona.nombre)}')">Crear liquidación de la quincena</button>
+        <span class="hint" style="margin-left:10px">Al crearla, estos contratos quedan apartados y no se vuelven a liquidar.</span></div>`;
+    }
+    if(p.retenidos.length){
+      h+=`<div class="card-b" style="padding:0;border-top:1px solid var(--linea,#ddd)">
+        <div style="padding:10px 12px;font-weight:700">Retenidas por expediente incompleto
+        <span class="hint" style="font-weight:400">— se liquidan solas en cuanto se suba lo que falta</span></div>
+        <table class="data"><thead><tr><th>Contrato</th><th>Lote</th><th>Qué falta</th>
+        <th class="num">Comisión</th>${puedeLiberar?'<th></th>':''}</tr></thead><tbody>`;
+      p.retenidos.forEach(c=>h+=`<tr><td><b>${c.no}</b></td><td>${c.lote}</td>
+        <td style="color:#B0562F">${c.falta.map(esc).join(' · ')}</td>
+        <td class="num">${Q(c.comision)}</td>
+        ${puedeLiberar?`<td><button class="btn btn-ghost btn-sm" onclick="doLiberar('${esc(c.no)}')">Liberar</button></td>`:''}</tr>`);
+      h+=`</tbody><tfoot><tr><td colspan="3" style="text-align:right;font-weight:800;padding:10px 12px">Retenido</td>
+        <td class="num" style="font-weight:800">${Q(p.totalRetenido)}</td>${puedeLiberar?'<td></td>':''}</tr></tfoot></table></div>`;
+    }
+    h+=`</div>`;});
+  return h;
+}
+function doLiberar(contratoNo){
+  openModal(`<div class="modal-h"><h3>Liberar la comisión de ${esc(contratoNo)}</h3>
+      <p>Se va a pagar sin que el expediente esté completo.</p></div>
+    <div class="modal-b">
+      <div class="field"><label>Motivo de la liberación</label>
+        <input id="libMotivo" placeholder="Por qué se paga sin el expediente completo"></div>
+      <div class="hint">Queda registrado quién autorizó y cuándo. Si esto se vuelve costumbre,
+        el problema no es el expediente: es el proceso que lo produce.</div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarLiberacion('${esc(contratoNo)}')">Liberar</button></div>`);
+}
+function guardarLiberacion(contratoNo){
+  try{ liberarComision(contratoNo, document.getElementById('libMotivo').value);
+       closeModal(); toast('Comisión liberada'); renderComisiones(); }
+  catch(e){ toast(e.message); }
+}
+function doCrearLiq(nombre){
+  try{ const l=crearLiquidacion(nombre); toast('Liquidación '+l.numero+' creada'); comTab='proceso'; }
+  catch(e){ toast(e.message); }
+  renderComisiones();
+}
+
+function comProceso(R){
+  const ls=R.liquidaciones.filter(l=>l.estado==='borrador'||l.estado==='facturada');
+  if(!ls.length) return `<div class="card"><div class="empty">No hay liquidaciones en proceso.</div></div>`;
+  return ls.map(l=>tarjetaLiq(l,true)).join('');
+}
+function comHistorial(R){
+  const ls=R.liquidaciones.filter(l=>l.estado==='pagada'||l.estado==='anulada')
+                          .sort((a,b)=>(b.creada||'').localeCompare(a.creada||''));
+  if(!ls.length) return `<div class="card"><div class="empty">Todavía no se ha pagado ninguna comisión.</div></div>`;
+  const tot=ls.filter(l=>l.estado==='pagada').reduce((t,l)=>t+l.total,0);
+  return `<div class="hint" style="margin-bottom:14px">${ls.length} liquidación(es) cerradas · ${Qk(tot)} pagados. Este historial no se puede editar ni borrar.</div>`
+    + ls.map(l=>tarjetaLiq(l,false)).join('');
+}
+
+function tarjetaLiq(l,acciones){
+  const e=ESTADOS_LIQ[l.estado]||{label:l.estado,clase:''};
+  let h=`<div class="card"><div class="card-h">
+    <h2>${l.numero} · ${esc(l.vendedor)} <span class="badge ${e.clase}">${e.label}</span></h2>
+    <div><b>${Q(l.total)}</b> · ${etiquetaPeriodo(l.periodo)}</div></div>
+    <div class="card-b">
+    <div class="hint" style="margin-bottom:10px">${l.contratos.length} contrato(s): ${l.contratos.map(c=>c.no).join(', ')}</div>`;
+
+  if(l.factura){
+    const f=l.factura;
+    h+=`<div class="money-row"><span>Factura ${esc(f.serie?f.serie+'-':'')}${esc(f.numero)} · ${fmtD(f.fecha)}${f.nit?' · NIT '+esc(f.nit):''}</span><span>${Q(f.monto)}</span></div>`;
+    if(f.difMonto>0.5)
+      h+=`<div class="aviso-err" style="margin:8px 0">La factura dice ${Q(f.monto)} y la liquidación es de ${Q(l.total)} — diferencia de ${Q(f.difMonto)}.</div>`;
+    if(f.contenido)
+      h+=`<div style="margin:8px 0"><a class="btn btn-ghost btn-sm" href="${f.contenido}" download="${esc(f.archivo||'factura')}">Ver la factura (${esc(f.archivo||'')})</a></div>`;
+    else if(f.soloFicha)
+      h+=`<div class="hint" style="margin:8px 0">Archivo <b>${esc(f.archivo)}</b> (${Math.round(f.tamaño/1024)} KB) — demasiado grande para guardarlo en el navegador. Al pasar a Supabase se sube completo.</div>`;
+  }
+  if(l.pago)
+    h+=`<div class="money-row"><span>Pagada el ${fmtD(l.pago.fecha)} · ${esc(l.pago.forma)} ref ${esc(l.pago.referencia)}</span><span>por ${esc(l.pago.pagadaPor)}</span></div>`;
+
+  if(acciones){
+    h+=`<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">`;
+    if(l.estado==='borrador'||l.estado==='facturada')
+      h+=`<button class="btn ${l.estado==='borrador'?'btn-primary':'btn-ghost'} btn-sm" onclick="modalFactura('${l.id}')">${l.factura?'Cambiar la factura':'Subir factura'}</button>`;
+    if(l.estado==='facturada'&&esFinanciero())
+      h+=`<button class="btn btn-primary btn-sm" onclick="modalPagarLiq('${l.id}')">Marcar como pagada</button>`;
+    if(l.estado!=='pagada')
+      h+=`<button class="btn btn-ghost btn-sm" onclick="doAnularLiq('${l.id}')">Anular</button>`;
+    h+=`</div>`;
+  }
+
+  h+=`<details style="margin-top:12px"><summary class="hint" style="cursor:pointer">Historial (${l.historial.length})</summary>
+    <table class="data" style="margin-top:8px"><tbody>${l.historial.map(x=>
+      `<tr><td>${esc(x.que)}</td><td>${esc(x.detalle||'')}</td><td class="hint">${esc(x.quien)} · ${esc(x.cuando)}</td></tr>`).join('')}
+    </tbody></table></details></div></div>`;
+  return h;
+}
+
+/* --- Subir la factura --- */
+function modalFactura(id){
+  const l=DB.liquidaciones.find(x=>x.id===id); if(!l)return;
+  openModal(`<div class="modal-h"><h3>Factura de ${esc(l.vendedor)}</h3>
+      <p>${l.numero} · la liquidación es de ${Q(l.total)}</p></div>
+    <div class="modal-b"><div class="form-grid">
+      <div class="field"><label>Serie</label><input id="fa-serie" placeholder="A"></div>
+      <div class="field"><label>Número *</label><input id="fa-num"></div>
+      <div class="field"><label>Fecha</label><input id="fa-fec" type="date" value="${HOY_ISO}"></div>
+      <div class="field"><label>Monto (Q)</label><input id="fa-monto" type="number" step="0.01" value="${l.total}"></div>
+      <div class="field full"><label>NIT del vendedor</label><input id="fa-nit"></div>
+      <div class="field full"><label>Archivo de la factura (PDF o imagen)</label>
+        <input id="fa-file" type="file" accept=".pdf,image/*"></div>
+    </div>
+    <div class="hint">Se compara con el monto de la liquidación: si no cuadra, queda marcado. Sin factura no se puede pagar.</div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="doSubirFactura('${id}')">Guardar factura</button></div>`);
+}
+function doSubirFactura(id){
+  const num=v('fa-num'); if(!num){toast('Falta el número de factura');return;}
+  const el=document.getElementById('fa-file');
+  const f=el&&el.files&&el.files[0];
+  const guardar=contenido=>{
+    try{ adjuntarFactura(id,{serie:v('fa-serie'),numero:num,fecha:v('fa-fec'),
+          monto:+v('fa-monto'),nit:v('fa-nit'),
+          nombre:f?f.name:null,tipo:f?f.type:null,tamaño:f?f.size:0,contenido});
+         closeModal(); toast('Factura guardada'); renderComisiones(); }
+    catch(e){ toast(e.message); }
+  };
+  if(f&&f.size<=LIMITE_ARCHIVO){ const r=new FileReader(); r.onload=()=>guardar(r.result); r.readAsDataURL(f); }
+  else guardar(null);
+}
+
+/* --- Marcar pagada --- */
+function modalPagarLiq(id){
+  const l=DB.liquidaciones.find(x=>x.id===id); if(!l)return;
+  openModal(`<div class="modal-h"><h3>Pagar ${Q(l.total)}</h3><p>${l.numero} · ${esc(l.vendedor)}</p></div>
+    <div class="modal-b"><div class="form-grid">
+      <div class="field"><label>Fecha</label><input id="pl-fec" type="date" value="${HOY_ISO}"></div>
+      <div class="field"><label>Forma</label><select id="pl-forma"><option>Transferencia</option><option>Cheque</option><option>Efectivo</option></select></div>
+      <div class="field full"><label>Referencia o número de cheque *</label><input id="pl-ref"></div>
+      <div class="field full"><label>Nota</label><input id="pl-nota"></div>
+    </div><div class="hint">Al confirmar, la liquidación queda cerrada. No se puede editar después.</div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="doPagarLiq('${id}')">Confirmar el pago</button></div>`);
+}
+function doPagarLiq(id){
+  try{ marcarPagada(id,{fecha:v('pl-fec'),forma:v('pl-forma'),referencia:v('pl-ref'),nota:v('pl-nota')});
+       closeModal(); toast('Comisión pagada ✓'); }
+  catch(e){ toast(e.message); }
+  renderComisiones();
+}
+function doAnularLiq(id){
+  openModal(`<div class="modal-h"><h3>Anular liquidación</h3><p>Los contratos vuelven a quedar pendientes</p></div>
+    <div class="modal-b"><div class="field"><label>Motivo</label><input id="an-mot"></div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="doAnularOk('${id}')">Anular</button></div>`);
+}
+function doAnularOk(id){
+  try{ anularLiquidacion(id,v('an-mot')); closeModal(); toast('Anulada'); }
+  catch(e){ toast(e.message); }
+  renderComisiones();
+}
+
+/* --- Estado por vendedor --- */
+function comPorVendedor(){
+  let h=`<div class="card"><div class="card-b" style="padding:0"><table class="data"><thead><tr>
+    <th>Vendedor</th><th class="num">Por liquidar</th><th class="num">En proceso</th>
+    <th class="num">Pagado</th><th class="num">Liquidaciones</th></tr></thead><tbody>`;
+  vendedores().forEach(p=>{
+    const e=estadoVendedor(p.nombre);
+    h+=`<tr><td><b>${esc(p.nombre)}</b> <span class="pill">${p.codigo}</span>
+        ${e.contratosPend?`<div class="hint">${e.contratosPend} contrato(s) sin liquidar</div>`:''}</td>
+      <td class="num">${e.porLiquidar?Q(e.porLiquidar):'—'}</td>
+      <td class="num">${e.enProceso?Q(e.enProceso):'—'}</td>
+      <td class="num">${e.pagado?Q(e.pagado):'—'}</td>
+      <td class="num">${e.liquidaciones.length||'—'}</td></tr>`;});
+  h+=`</tbody></table></div></div>`;
+  return h;
+}
+
+/* ============================================================ REPORTERÍA */
+function renderReporteria(){
+  const vend=DB.lotes.filter(l=>l.estado==='vendido').length;
+  const disp=DB.lotes.filter(l=>l.estado==='disponible').length;
+  const mz={}; DB.lotes.forEach(l=>{mz[l.manzana]=mz[l.manzana]||{t:0,v:0};mz[l.manzana].t++;if(l.estado==='vendido')mz[l.manzana].v++;});
+  const maxV=Math.max(1,...Object.values(mz).map(m=>m.v));
+  let h=`<div class="grid2"><div class="card"><div class="card-h"><h2>Lotes vendidos por manzana</h2></div><div class="card-b">`;
+  Object.keys(mz).sort().forEach(m=>{h+=`<div class="bar-row"><div class="bar-lbl">Mz ${m}</div>
+    <div class="bar-track"><div class="bar-fill" style="width:${mz[m].v/maxV*100}%"></div></div>
+    <div class="bar-val">${mz[m].v} vendidos</div></div>`;});
+  h+=`</div></div><div>`;
+  const A=DB.contratos.filter(c=>c.estado==='aprobado');
+  const K=A.reduce((a,c)=>{const ec=estadoCuenta(c);a.cart+=ec.totalGiros;a.rec+=ec.recaudado;a.sal+=ec.saldo;return a;},{cart:0,rec:0,sal:0});
+  h+=`<div class="card"><div class="card-h"><h2>Estado de cartera</h2></div><div class="card-b">
+    <div class="bar-row"><div class="bar-lbl">Recaudado</div><div class="bar-track">
+      <div class="bar-fill" style="width:${K.cart?K.rec/K.cart*100:0}%"></div></div>
+      <div class="bar-val">${Qk(K.rec)}</div></div>
+    <div class="bar-row"><div class="bar-lbl">Por cobrar</div><div class="bar-track">
+      <div class="bar-fill" style="width:100%;background:var(--gold)"></div></div>
+      <div class="bar-val">${Qk(K.sal)}</div></div>
+    <div class="hint">${K.cart?Math.round(K.rec/K.cart*100):0}% recaudado de una cartera de ${Qk(K.cart)}.</div></div></div>`;
+  // plazos
+  const pl={}; A.forEach(c=>{const p=(c.plan&&c.plan.plazo)||0;pl[p]=(pl[p]||0)+1;});
+  const maxP=Math.max(1,...Object.values(pl));
+  h+=`<div class="card"><div class="card-h"><h2>Contratos por plazo</h2></div><div class="card-b">`;
+  Object.keys(pl).map(Number).sort((a,b)=>a-b).forEach(p=>{
+    h+=`<div class="bar-row"><div class="bar-lbl">${p===1?'Contado':p+' meses'}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pl[p]/maxP*100}%"></div></div>
+      <div class="bar-val">${pl[p]} contrato(s)</div></div>`;});
+  h+=`</div></div>`;
+  h+=`<div class="card"><div class="card-h"><h2>Inventario</h2></div><div class="card-b">
+    <div class="bar-row"><div class="bar-lbl">Total</div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="bar-val">${DB.lotes.length}</div></div>
+    <div class="bar-row"><div class="bar-lbl">Vendidos</div><div class="bar-track"><div class="bar-fill" style="width:${vend/DB.lotes.length*100}%;background:var(--vend)"></div></div><div class="bar-val">${vend}</div></div>
+    <div class="bar-row"><div class="bar-lbl">Disponibles</div><div class="bar-track"><div class="bar-fill" style="width:${disp/DB.lotes.length*100}%"></div></div><div class="bar-val">${disp}</div></div>
+    </div></div></div></div>`;
+  C().innerHTML=h;
+}
+
+/* ============================================================ AUTOMATIZACIONES */
+const AUTOS=[
+  {ic:'⇄',t:'Integración KOMMO ↔ Hub',cad:'Tiempo real · webhooks',st:'pend',
+   pasos:['Sincroniza leads de KOMMO al Hub sin duplicar (kommo_id).','Actualiza etapas del embudo en ambos sentidos.'],
+   esc:'Requiere API key de KOMMO (API v4 + OAuth2 disponible).'},
+  {ic:'⇄',t:'Integración CRM sistemasenlaza ↔ Hub',cad:'Cada hora · incremental',st:'pend',
+   pasos:['Importa inventario, contratos, giros y pagos.','Sincronía por fecha de modificación.'],
+   esc:'Requiere export/API del proveedor.'},
+  {ic:'✆',t:'Cobranza por WhatsApp (bot)',cad:'Mensual + por evento',st:'design',
+   pasos:['Emite la cuota del mes y envía el enlace de pago.','Avisa antes del vencimiento y recuerda después.','Manda el estado de cuenta cuando lo piden.','Cotiza lotes disponibles e intenta cerrar.'],
+   esc:'Escala a una persona tras 3 recordatorios sin pago o caso atípico.'},
+  {ic:'🗀',t:'Solicitudes → Buró de créditos',cad:'Semanal',st:'design',
+   pasos:['Arma el expediente al ingresar la venta.','Agrupa las solicitudes de la semana en un paquete.'],
+   esc:'Escala al vendedor los expedientes incompletos.'},
+  {ic:'❒',t:'Ventas confirmadas → Contabilidad',cad:'Por evento',st:'design',
+   pasos:['Pide verificar el depósito al registrar el pago.','Concilia contra la cuenta bancaria acreditada.'],
+   esc:'Escala si el depósito no cuadra.'},
+  {ic:'%',t:'Comisiones quincenales',cad:'Día 15 y fin de mes',st:'design',
+   pasos:['Calcula sobre el cobro efectivo del período.','Arma la liquidación por vendedor.'],
+   esc:'Escala diferencias o ajustes manuales.'},
+];
+function renderAutomatizaciones(){
+  const badge=s=>s==='pend'?'<span class="badge b-pend">Requiere API</span>':'<span class="badge b-ok">Diseñada</span>';
+  let h=`<div class="hint" style="margin-bottom:14px">Todo corre solo y <b>solo se eleva a un humano por excepción</b>.</div><div class="auto-grid">`;
+  AUTOS.forEach(a=>{h+=`<div class="auto-card"><div class="auto-h"><div class="auto-ic">${a.ic}</div>
+    <div><div class="auto-t">${a.t}</div><div class="auto-cad">${a.cad}</div></div>
+    <div style="margin-left:auto">${badge(a.st)}</div></div>
+    <ul class="auto-steps">${a.pasos.map(p=>`<li>${p}</li>`).join('')}</ul>
+    <div class="auto-esc">↑ ${a.esc}</div></div>`;});
+  h+=`</div><div class="card"><div class="card-h"><h2>Vista previa · Bot de cobranza WhatsApp</h2></div>
+    <div class="card-b"><div class="wa">
+      <div class="wa-b bot">Hola Keyla, le saluda La Esperanza. Su cuota de julio por <b>Q 1,208.00</b> vence el <b>20/07</b>. Puede pagar aquí: <u>pago.recurrente.com/…</u></div>
+      <div class="wa-b me">Ya deposité, aquí la boleta</div>
+      <div class="wa-b bot">¡Gracias! Su pago quedó registrado y pasa a verificación. Saldo: <b>Q 84,585.00</b>. Próxima cuota: <b>20/08</b>.</div>
+      <div class="wa-b me">¿Tienen lotes de esquina disponibles?</div>
+      <div class="wa-b bot">Sí, tenemos el <b>K-04 (203 m²)</b>. ¿Le agendo una llamada con un asesor?</div>
+    </div></div></div>`;
+  C().innerHTML=h;
+}
+
+/* ============================================================ COMPRA EN LÍNEA */
+let onlineState={paso:1,lote:null,cliente:{},girosSaldo:60,reserva:2500};
+function wizardBody(){
+  const s=onlineState;
+  let h=`<div class="steps">${['Elegir lote','Tus datos','Financiamiento','Firma'].map((t,i)=>{
+    const n=i+1,cls=s.paso===n?'active':(s.paso>n?'done':'');
+    return `<div class="step ${cls}">${n}. ${t}</div>`;}).join('')}</div>`;
+  if(s.paso===1){
+    const disp=DB.lotes.filter(l=>l.estado==='disponible'&&l.precio>0);
+    h+=`<div class="field full"><label>Elige tu lote disponible</label>
+      <select id="ol-lote">${disp.map(l=>`<option value="${l.codigo}">${l.codigo} · ${l.area} m² · ${Qk(l.precio)}</option>`).join('')}</select></div>
+      <div class="hint">${disp.length} lotes disponibles en La Esperanza.</div>
+      <div class="btn-row"><button class="btn btn-primary" onclick="onlineNext(1)">Continuar →</button></div>`;
+  } else if(s.paso===2){
+    h+=`<div class="form-grid">
+      <div class="field"><label>Nombres</label><input id="ol-nom" value="${esc(s.cliente.nom||'')}"></div>
+      <div class="field"><label>Apellidos</label><input id="ol-ape" value="${esc(s.cliente.ape||'')}"></div>
+      <div class="field"><label>DPI (CUI)</label><input id="ol-dpi" value="${esc(s.cliente.dpi||'')}"></div>
+      <div class="field"><label>Teléfono</label><input id="ol-tel" value="${esc(s.cliente.tel||'')}"></div>
+      <div class="field full"><label>Correo</label><input id="ol-mail" value="${esc(s.cliente.mail||'')}"></div>
+      </div><div class="btn-row"><button class="btn btn-ghost" onclick="onlineBack()">← Atrás</button>
+      <button class="btn btn-primary" onclick="onlineNext(2)">Continuar →</button></div>`;
+  } else if(s.paso===3){
+    const l=getLote(s.lote);
+    h+=`<div class="fgrid"><div><div class="f-lbl">Lote</div><div class="f-val">${l.codigo} · ${Qk(l.precio)}</div></div></div>
+      <div class="form-grid" style="margin-top:14px">
+      <div class="field"><label>Reserva (Q)</label><input id="ol-res" type="number" value="${s.reserva}"></div>
+      <div class="field"><label>Plazo del saldo (meses)</label><input id="ol-plz" type="number" value="${s.girosSaldo}"></div>
+      </div><div class="hint">Estructura del contrato: Reserva + Cuota Inicial (10%) + Saldo Deudor.</div>
+      <div class="btn-row"><button class="btn btn-ghost" onclick="onlineBack()">← Atrás</button>
+      <button class="btn btn-primary" onclick="onlineNext(3)">Continuar →</button></div>`;
+  } else if(s.paso===4){
+    const l=getLote(s.lote), ini=Math.round(l.precio*0.10), sal=l.precio-s.reserva-ini;
+    h+=`<div class="sect-t">Resumen de tu compra</div>
+      <div class="money-row"><span>Lote ${l.codigo} (${l.area} m²)</span><span>${Q(l.precio)}</span></div>
+      <div class="money-row"><span>Reserva</span><span>${Q(s.reserva)}</span></div>
+      <div class="money-row"><span>Cuota inicial (10%) · 6 giros</span><span>${Q(ini)}</span></div>
+      <div class="money-row"><span>Saldo deudor · ${s.girosSaldo} giros</span><span>${Q(sal)}</span></div>
+      <div class="money-row total"><span>Cuota mensual del saldo</span><span>${Q(sal/s.girosSaldo)}</span></div>
+      <div class="hint">Al firmar aceptas el contrato (firma electrónica válida en Guatemala, Decreto 47-2008).</div>
+      <div class="btn-row"><button class="btn btn-ghost" onclick="onlineBack()">← Atrás</button>
+      <button class="btn btn-gold" onclick="onlineFirmar()">✓ Firmar y enviar solicitud</button></div>`;
+  } else {
+    h+=`<div class="empty"><div style="font-size:40px">✓</div>
+      <h2 style="color:var(--green);margin:8px 0">¡Solicitud enviada!</h2>
+      <p>Tu contrato <b>${esc(s.creado||'')}</b> fue firmado y enviado al comité de crédito.</p>
+      <div class="btn-row" style="justify-content:center"><button class="btn btn-primary" onclick="onlineReset()">Nueva compra</button></div></div>`;
+  }
+  return h;
+}
+function renderOnline(){C().innerHTML=`<div class="card"><div class="card-b">${wizardBody()}</div></div>`;}
+function renderClientePortal(){
+  document.getElementById('portalCliente').innerHTML=`
+    <div class="portal-top"><div class="pt-brand">Sol Inmobiliaria<small>La Esperanza Residencial</small></div>
+      <button class="btn btn-ghost btn-sm" onclick="logout()">← Salir</button></div>
+    <div class="portal-hero"><h1>Compra tu lote en línea</h1>
+      <p>Elige tu lote, completa tus datos y envía tu solicitud de financiamiento — 100% en línea.</p></div>
+    <div class="portal-wrap"><div class="card"><div class="card-b">${wizardBody()}</div></div></div>
+    <div class="portal-foot">SOL Desarrollos · San Miguel Pochuta, Guatemala</div>`;
+}
+function refreshWizard(){SCREEN==='cliente'?renderClientePortal():renderOnline();}
+const v = id => document.getElementById(id)?.value||'';
+function onlineNext(p){
+  const s=onlineState;
+  if(p===1)s.lote=v('ol-lote');
+  if(p===2){s.cliente={nom:v('ol-nom'),ape:v('ol-ape'),dpi:v('ol-dpi'),tel:v('ol-tel'),mail:v('ol-mail')};
+    if(!s.cliente.nom){toast('Ingresa tu nombre');return;}}
+  if(p===3){s.reserva=+v('ol-res')||0;s.girosSaldo=+v('ol-plz')||60;}
+  s.paso=p+1; refreshWizard();
+}
+function onlineBack(){onlineState.paso--;refreshWizard();}
+function onlineFirmar(){
+  const s=onlineState;
+  const ct=nuevoContrato({lote:s.lote,nombre:`${s.cliente.nom} ${s.cliente.ape}`.trim(),dpi:s.cliente.dpi,
+    telefono:s.cliente.tel,email:s.cliente.mail,vendedor:'Compra en línea',reserva:s.reserva,
+    girosSaldo:s.girosSaldo,origen:'En línea'});
+  s.creado=ct.no; s.paso=5; refreshWizard(); toast('Contrato '+ct.no+' creado');
+}
+function onlineReset(){onlineState={paso:1,lote:null,cliente:{},girosSaldo:60,reserva:2500};refreshWizard();}
+
+/* ============================================================ DRAWER */
+function abrirLote(codigo){
+  const l=getLote(codigo), ct=contratoDeLote(codigo);
+  if(ct){abrirContrato(ct.id);return;}
+  const m=ESTADO_MAP[l.estado]||ESTADO_MAP.disponible;
+  let h=drawerHead(`Lote ${l.codigo}`,`Manzana ${l.manzana} · ${l.area} m² · ${l.precio?Qk(l.precio):'Precio por definir'}`,
+    l.estado==='vendido'?'b-vend':(l.estado==='reservado'?'b-apar':'b-disp'), m.label);
+  h+=`<div class="drawer-b"><div class="sect-t">Ficha del lote</div>
+    <div class="fgrid">
+      <div><div class="f-lbl">Código</div><div class="f-val">${l.codigo}</div></div>
+      <div><div class="f-lbl">Área</div><div class="f-val">${l.area} m²</div></div>
+      <div><div class="f-lbl">Precio lista</div><div class="f-val">${l.precio?Q(l.precio):'—'}</div></div>
+      <div><div class="f-lbl">Precio / m²</div><div class="f-val">${l.precio?Q(l.precio/l.area):'—'}</div></div>
+      <div><div class="f-lbl">Tipo</div><div class="f-val">${l.tipo||'—'}</div></div>
+      <div><div class="f-lbl">En el plano</div><div class="f-val">${l.x!=null?'Ubicado':'Sin coordenadas'}</div></div>
+    </div>`;
+  if(l.estado==='disponible'&&ROLE!=='cobrador')
+    h+=`<div class="btn-row"><button class="btn btn-primary" onclick="modalNuevoContrato('${l.codigo}')">Vender este lote</button></div>`;
+  h+=`</div>`; openDrawer(h);
+}
+function abrirCliente(id){
+  const c=getCliente(id); if(!c)return;
+  const cts=DB.contratos.filter(x=>x.clienteId===id);
+  let h=drawerHead(`${esc(c.nombre)} ${esc(c.apellido)}`,`Cliente · ${cts.length} contrato(s)`,'b-ok','Socio');
+  h+=`<div class="drawer-b"><div class="sect-t">Información del cliente</div>
+    <div class="fgrid">
+      <div class="f-full"><div class="f-lbl">Nombre completo</div><div class="f-val">${esc(c.nombre)} ${esc(c.apellido)}</div></div>
+      <div><div class="f-lbl">DPI / CUI</div><div class="f-val">${esc(c.dpi)||'—'}</div></div>
+      <div><div class="f-lbl">Teléfono</div><div class="f-val">${esc(c.telefono)||'—'}</div></div>
+      <div class="f-full"><div class="f-lbl">Correo</div><div class="f-val">${esc(c.email)||'—'}</div></div>
+      <div class="f-full"><div class="f-lbl">Dirección</div><div class="f-val">${esc(c.direccion)||'—'}</div></div>
+    </div>
+    <div class="btn-row"><button class="btn btn-ghost btn-sm" onclick="modalEditarCliente('${c.id}')">Editar información</button></div>
+    <div class="sect-t">Contratos</div>`;
+  if(!cts.length)h+=`<div class="empty">Sin contratos</div>`;
+  cts.forEach(ct=>{const ec=estadoCuenta(ct);
+    h+=`<div class="pay-item" style="cursor:pointer" onclick="abrirContrato('${ct.id}')">
+      <div class="pay-ico">◫</div><div class="pay-main"><div class="pay-title">${ct.no} · Lote ${ct.lote}</div>
+      <div class="pay-sub">${fmtD(ct.fecha)} · saldo ${Qk(ec.saldo)}</div></div>
+      <div class="pay-amt">${Qk(ct.precio)}</div></div>`;});
+  h+=`</div>`; openDrawer(h);
+}
+function abrirContrato(id,tab){
+  const ct=getContrato(id); if(!ct)return;
+  drawerCt=id; drawerTab=tab||'ficha';
+  pintarContrato();
+}
+function pintarContrato(){
+  const ct=getContrato(drawerCt); if(!ct)return;
+  const ec=estadoCuenta(ct), cli=getCliente(ct.clienteId);
+  let h=drawerHead(ct.no,`Lote ${ct.lote} · ${esc(nombreCliente(ct.clienteId))}`,
+    ct.estado==='aprobado'?'b-ok':(ct.estado==='anulado'?'b-mora':'b-pend'),
+    {aprobado:'Aprobado',en_aprobacion:'En aprobación',anulado:'Anulado'}[ct.estado]||ct.estado);
+  h+=`<div class="tabs">`+[['ficha','Ficha'],['cuenta','Estado de cuenta'],['gestiones','Gestiones'],['docs','Documentos']]
+    .map(([k,l])=>`<button class="tab ${drawerTab===k?'active':''}" onclick="drawerTab='${k}';pintarContrato()">${l}</button>`).join('')+`</div>`;
+  h+=`<div class="drawer-b">`;
+
+  if(drawerTab==='ficha'){
+    h+=`<div class="sect-t">Datos del contrato</div><div class="fgrid">
+      <div><div class="f-lbl">No. contrato</div><div class="f-val">${ct.no}</div></div>
+      <div><div class="f-lbl">Fecha</div><div class="f-val">${fmtD(ct.fecha)}</div></div>
+      <div><div class="f-lbl">Lote</div><div class="f-val">${ct.lote}</div></div>
+      <div><div class="f-lbl">Precio de venta</div><div class="f-val">${Q(ct.precio)}</div></div>
+      <div><div class="f-lbl">Vendedor</div><div class="f-val">${esc(ct.vendedor)}</div></div>
+      <div><div class="f-lbl">Origen</div><div class="f-val">${ct.origen}</div></div>
+      <div><div class="f-lbl">Firma</div><div class="f-val">${ct.firma}</div></div>
+      <div><div class="f-lbl">Fuente</div><div class="f-val">${ct.fuente||'Suite'}</div></div>
+    </div>
+    <div class="sect-t">Cliente</div><div class="fgrid">
+      <div class="f-full"><div class="f-lbl">Nombre</div><div class="f-val">${esc(nombreCliente(ct.clienteId))}</div></div>
+      <div><div class="f-lbl">DPI / CUI</div><div class="f-val">${esc(cli&&cli.dpi)||'—'}</div></div>
+      <div><div class="f-lbl">Teléfono</div><div class="f-val">${esc(cli&&cli.telefono)||'—'}</div></div>
+      <div class="f-full"><div class="f-lbl">Correo</div><div class="f-val">${esc(cli&&cli.email)||'—'}</div></div>
+    </div>
+    <div class="btn-row"><button class="btn btn-gold btn-sm" onclick="generarContrato('${ct.id}')">📄 Generar contrato</button>
+      <button class="btn btn-ghost btn-sm" onclick="abrirCliente('${ct.clienteId}')">Ver ficha del cliente</button></div>
+    <div class="sect-t">Integrantes del contrato</div>`;
+    const ints=ct.integrantes||[];
+    if(!ints.length)h+=`<div class="hint">Sin cotitulares registrados.</div>`;
+    ints.forEach(i=>{h+=`<div class="money-row"><span>${esc(i.nombre)}</span><span class="pill">${esc(i.cargo)}</span></div>`;});
+    h+=`<div class="btn-row"><button class="btn btn-ghost btn-sm" onclick="modalIntegrante('${ct.id}')">+ Agregar integrante</button></div>`;
+    if(ct.estado==='en_aprobacion')
+      h+=`<div class="btn-row"><button class="btn btn-primary" onclick="doAprobar('${ct.id}');closeDrawer()">Aprobar crédito</button>
+        <button class="btn btn-ghost" onclick="doRechazar('${ct.id}');closeDrawer()">Rechazar</button></div>`;
+  }
+
+  if(drawerTab==='cuenta'){
+    h+=estadoCuentaHTML(ct,ec);
+    if(ct.estado==='aprobado')
+      h+=`<div class="btn-row"><button class="btn btn-primary" onclick="modalPago('${ct.id}')">Registrar pago</button>
+        <button class="btn btn-ghost" onclick="verEstadoCuenta('${ct.id}')">Ver completo / imprimir</button>
+        <button class="btn btn-ghost" onclick="enviarEC('${ct.id}')">Enviar por WhatsApp</button></div>`;
+  }
+
+  if(drawerTab==='gestiones'){
+    h+=`<div class="btn-row" style="margin-top:0"><button class="btn btn-primary btn-sm" onclick="modalGestion('${ct.id}')">+ Registrar gestión</button></div>`;
+    const gs=gestionesDe(ct.id);
+    if(!gs.length)h+=`<div class="empty">Sin gestiones registradas</div>`;
+    gs.forEach(g=>{h+=`<div class="pay-item"><div class="pay-ico">✎</div>
+      <div class="pay-main"><div class="pay-title">${esc(g.tipo)} · <span class="pill">${esc(g.resultado)}</span></div>
+      <div class="pay-sub">${esc(g.fecha)} · ${esc(g.usuario)}</div>
+      ${g.comentario?`<div style="font-size:12.5px;margin-top:3px">${esc(g.comentario)}</div>`:''}</div></div>`;});
+  }
+
+  if(drawerTab==='docs'){
+    h+=`<div class="btn-row" style="margin-top:0"><button class="btn btn-primary btn-sm" onclick="modalDocumento('${ct.id}')">+ Agregar documento</button></div>`;
+    const ds=documentosDe(ct.id);
+    if(!ds.length)h+=`<div class="empty">Expediente vacío</div>`;
+    ds.forEach(d=>{h+=`<div class="pay-item"><div class="pay-ico">🗎</div>
+      <div class="pay-main"><div class="pay-title">${esc(d.nombre)}</div>
+      <div class="pay-sub">${esc(d.tipo)} · ${fmtD(d.fecha)}</div></div></div>`;});
+    h+=`<div class="hint">Plantillas del CRM: ${CATALOGOS.plantillas.join(' · ')}</div>`;
+  }
+  h+=`</div>`; openDrawer(h);
+}
+/* ---------- ESTADO DE CUENTA (sin desglose capital/interés) ---------- */
+/* Filas: Monto debido (saldo antes) → Cuota → Monto final (saldo después) */
+function filasEstadoCuenta(ct){
+  const plan=ct.plan||planFinanciamiento(ct.precio,(ct.obligaciones[0]||{}).monto||ENGANCHE_MIN,
+             (ct.obligaciones[1]||{}).nGiros||60);
+  const filas=[]; let saldo=0;
+  ct.obligaciones.forEach(o=>{ saldo+=o.monto; });
+  const totalPlan=saldo;
+  let restante=totalPlan;
+  ct.obligaciones.forEach(o=>{
+    o.giros.forEach(g=>{
+      const antes=restante; restante=r2(restante-g.monto);
+      filas.push({obl:o.desc,n:g.n,de:o.nGiros,venc:g.venc,cuota:g.monto,
+                  debido:antes,final:Math.max(0,restante),estado:g.estado});
+    });
+  });
+  return {filas,totalPlan,plan};
+}
+function estadoCuentaHTML(ct,ec,completo){
+  const {filas,totalPlan,plan}=filasEstadoCuenta(ct);
+  const pagado=filas.filter(f=>f.estado==='pagado').reduce((s,f)=>s+f.cuota,0);
+  const pend=Math.max(0,totalPlan-pagado);
+  const prox=filas.find(f=>f.estado!=='pagado');
+  const venc=filas.filter(f=>f.estado==='vencido');
+  const pct=totalPlan?Math.round(pagado/totalPlan*100):0;
+  const mora=calcularMora(ct);
+  let h=`<div class="ec">
+    <div class="ec-hero">
+      <div class="ec-hero-l">
+        <div class="ec-lbl">Saldo pendiente</div>
+        <div class="ec-big">${Q(pend)}</div>
+        <div class="ec-bar"><span style="width:${pct}%"></span></div>
+        <div class="ec-mini">${pct}% pagado · ${filas.filter(f=>f.estado==='pagado').length} de ${filas.length} cuotas</div>
+      </div>
+      <div class="ec-hero-r">
+        ${prox?`<div class="ec-next"><span>Próxima cuota</span><b>${Q(prox.cuota)}</b><i>vence ${fmtD(prox.venc)}</i></div>`
+              :`<div class="ec-next ok"><span>Plan</span><b>Liquidado</b><i>sin saldo</i></div>`}
+        ${venc.length?`<div class="ec-mora"><span>${venc.length} cuota(s) vencida(s)</span><b>${Q(venc.reduce((s,f)=>s+f.cuota,0))}</b>
+          ${mora.total>0?`<i style="display:block;font-size:11.5px;color:#f3cfc8;font-style:normal;margin-top:4px">+ ${Q(mora.total)} de mora (${(TASA_MORA*100).toFixed(0)}% mensual)</i>`:''}</div>`:''}
+      </div>
+    </div>
+    <div class="ec-grid">
+      <div><span>Precio de venta</span><b>${Q(ct.precio)}</b></div>
+      <div><span>Cuota inicial</span><b>${Q(plan.enganche)}</b></div>
+      <div><span>Plazo</span><b>${plan.plazo} meses</b></div>
+      <div><span>Cuota mensual</span><b>${Q(plan.cuota)}</b></div>
+      <div><span>Total del plan</span><b>${Q(totalPlan)}</b></div>
+      <div><span>Pagado a la fecha</span><b>${Q(pagado)}</b></div>
+      ${mora.total>0?`<div><span>Mora acumulada</span><b style="color:var(--vend)">${Q(mora.total)}</b></div>
+      <div><span>Total a pagar hoy</span><b>${Q(venc.reduce((s,f)=>s+f.cuota,0)+mora.total)}</b></div>`:''}
+    </div>
+    <div class="hint" style="margin:-6px 0 14px">La cuota inicial se constituye en <b>arras</b> y derecho de reserva (cláusula quinta del contrato).</div>`;
+  const muestra = completo? filas : filas.slice(0, Math.min(filas.length, Math.max(8,(filas.findIndex(f=>f.estado!=='pagado')+6))));
+  h+=`<table class="ec-tbl"><thead><tr>
+      <th>Cuota</th><th>Vence</th><th class="num">Monto debido</th>
+      <th class="num">Cuota</th><th class="num">Monto final</th><th></th></tr></thead><tbody>`;
+  muestra.forEach(f=>{
+    const cls=f.estado==='pagado'?'pg':(f.estado==='vencido'?'vn':(f.estado==='parcial'?'pc':''));
+    const ic={pagado:'✓',vencido:'!',parcial:'≈'}[f.estado]||'';
+    h+=`<tr class="${cls}">
+      <td><b>${f.n}</b><span class="ec-de">/${f.de}</span><div class="ec-obl">${f.obl}</div></td>
+      <td>${fmtD(f.venc)}</td>
+      <td class="num">${Q(f.debido)}</td>
+      <td class="num"><b>${Q(f.cuota)}</b></td>
+      <td class="num">${Q(f.final)}</td>
+      <td class="ec-st">${ic}</td></tr>`;});
+  h+=`</tbody></table>`;
+  if(!completo&&muestra.length<filas.length)
+    h+=`<div class="hint" style="text-align:center">Mostrando ${muestra.length} de ${filas.length} cuotas · <a href="#" onclick="verEstadoCuenta('${ct.id}');return false;">ver el plan completo</a></div>`;
+  h+=`</div>`;
+  return h;
+}
+function verEstadoCuenta(id){
+  const ct=getContrato(id); if(!ct)return;
+  const ec=estadoCuenta(ct), cli=getCliente(ct.clienteId);
+  const w=window.open('','_blank'); if(!w){toast('Permite las ventanas emergentes');return;}
+  w.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+    <title>Estado de cuenta ${ct.no}</title><link rel="stylesheet" href="styles.css">
+    <style>body{background:#fff;padding:28px;max-width:860px;margin:0 auto}
+      .ec-print-h{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #14342B;padding-bottom:14px;margin-bottom:18px}
+      .ec-print-h h1{font-size:20px;color:#14342B}.ec-print-h p{font-size:13px;color:#6B7A72;margin-top:3px}
+      .ec-print-h .brand{text-align:right;font-weight:800;color:#14342B}
+      .ec-print-h .brand small{display:block;font-size:10px;letter-spacing:2px;color:#E0A72E}
+      @media print{.noprint{display:none}}</style></head><body>
+    <div class="ec-print-h"><div><h1>Estado de cuenta</h1>
+      <p><b>${ct.no}</b> · Lote ${ct.lote}<br>${esc(nombreCliente(ct.clienteId))}${cli&&cli.dpi?' · DPI '+esc(cli.dpi):''}</p></div>
+      <div class="brand">SOL Desarrollos<small>LA ESPERANZA</small>
+      <p style="font-weight:400;font-size:11px;color:#6B7A72;margin-top:6px">Emitido ${fmtD(HOY_ISO)}</p></div></div>
+    ${estadoCuentaHTML(ct,ec,true)}
+    <div class="noprint" style="text-align:center;margin-top:24px">
+      <button class="btn btn-primary" onclick="window.print()">Imprimir / Guardar PDF</button></div>
+    </body></html>`);
+  w.document.close();
+}
+function enviarEC(id){
+  const ct=getContrato(id); const {filas,totalPlan,plan}=filasEstadoCuenta(ct);
+  const pagado=filas.filter(f=>f.estado==='pagado').reduce((s,f)=>s+f.cuota,0);
+  const prox=filas.find(f=>f.estado!=='pagado');
+  const cli=getCliente(ct.clienteId);
+  const txt=`*Estado de cuenta · ${ct.no}*\n${nombreCliente(ct.clienteId)} · Lote ${ct.lote}\n\n`+
+    `Total del plan: ${Q(totalPlan)}\nPagado: ${Q(pagado)}\n*Saldo: ${Q(totalPlan-pagado)}*\n`+
+    (prox?`\nPróxima cuota: ${Q(prox.cuota)}\nVence: ${fmtD(prox.venc)}\n`:'\nPlan liquidado\n')+
+    `\nSOL Desarrollos · La Esperanza`;
+  const tel=(cli&&cli.telefono||'').replace(/\D/g,'');
+  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(txt)}`,'_blank');
+  registrarGestion(id,'Recordatorio de Pago','Contactado','Estado de cuenta enviado por WhatsApp');
+  toast('Estado de cuenta listo para enviar');
+}
+
+function drawerHead(id,meta,cls,txt){
+  return `<div class="drawer-head"><button class="close" onclick="closeDrawer()">×</button>
+    <div class="lid">${id}</div><div class="lmeta">${meta}</div>
+    <span class="badge ${cls}" style="margin-top:10px">${txt}</span></div>`;
+}
+function openDrawer(h){const d=document.getElementById('drawer');d.innerHTML=h;d.hidden=false;document.getElementById('scrim').hidden=false;}
+function closeDrawer(){document.getElementById('drawer').hidden=true;document.getElementById('scrim').hidden=true;drawerCt=null;}
+
+/* ============================================================ MODALES */
+function modalNuevoContrato(loteSel,pre){
+  pre=pre||{};
+  const disp=DB.lotes.filter(l=>l.estado==='disponible'&&l.precio>0);
+  const nom=(pre.nombre||'').split(' ');
+  const campo=(id,label,extra,ancho)=>`<div class="field ${ancho||''}">
+    <label>${label} *</label><input id="n-${id}" ${extra||''}><div class="err" id="e-${id}"></div></div>`;
+  openModal(`<div class="modal-h"><h3>Nueva venta</h3>
+      <p>Sin el expediente completo no se puede cerrar — sin teléfono no hay a quién cobrarle</p></div>
+    <div class="modal-b">
+      <div class="sect-t">El lote</div>
+      <div class="form-grid">
+        <div class="field"><label>Lote *</label><select id="n-lote" onchange="prevPlan()">${disp.map(l=>`<option value="${l.codigo}" ${l.codigo===loteSel?'selected':''}>${l.codigo} · ${l.area} m² · ${Qk(l.precio)}</option>`).join('')}</select></div>
+        <div class="field"><label>Vendedor</label><select id="n-vend">${vendedores().map(x=>`<option>${esc(x.nombre)}</option>`).join('')}</select></div>
+        <div class="field"><label>Enganche (Q)</label><input id="n-res" type="number" value="${pre.enganche||ENGANCHE_MIN}" oninput="prevPlan()"></div>
+        <div class="field"><label>Plazo (meses)</label><select id="n-plz" onchange="prevPlan()">
+          ${PLAZOS.map(p=>`<option value="${p}" ${p===(pre.plazo||60)?'selected':''}>${p} meses</option>`).join('')}</select></div>
+      </div>
+      <div id="n-prev" class="prev-plan"></div>
+
+      <div class="sect-t" style="margin-top:18px">El comprador</div>
+      <div class="form-grid">
+        ${campo('nom','Nombres',`value="${esc(nom.slice(0,2).join(' '))}"`)}
+        ${campo('ape','Apellidos',`value="${esc(nom.slice(2).join(' '))}"`)}
+        ${campo('dpi','DPI (CUI)','placeholder="13 dígitos" inputmode="numeric"')}
+        ${campo('tel','Teléfono celular','placeholder="5555 5555" inputmode="numeric"')}
+        ${campo('mail','Correo electrónico','type="email" placeholder="nombre@correo.com"','full')}
+        ${campo('dir','Dirección de residencia','placeholder="Aldea, municipio, departamento"','full')}
+      </div>
+
+      <div class="sect-t" style="margin-top:18px">Ocupación e ingresos</div>
+      <div class="form-grid">
+        ${campo('ocup','Ocupación u oficio','placeholder="Agricultor, comerciante, maestra..."')}
+        <div class="field"><label>Ingreso promedio al mes (Q) *</label>
+          <input id="n-ingreso" type="number" oninput="prevCarga()"><div class="err" id="e-ingreso"></div></div>
+        <div class="field full"><label>¿Cómo comprueba su ingreso? *</label>
+          <select id="n-fuente" onchange="pistaConstancia()">
+            <option value="">— elegir —</option>
+            ${CONSTANCIAS.map(c=>`<option value="${c.id}">${c.label}</option>`).join('')}
+          </select><div class="err" id="e-fuente"></div>
+          <div class="hint" id="n-pista" style="margin-top:6px"></div></div>
+      </div>
+      <div id="n-carga"></div>
+
+      <div class="sect-t" style="margin-top:18px">Un pariente que responda por él</div>
+      <div class="hint" style="margin-bottom:10px">Tiene que ser un contacto distinto: si el cliente cambia de número, es a quien se llama.</div>
+      <div class="form-grid">
+        ${campo('pnom','Nombre del pariente')}
+        ${campo('ptel','Teléfono celular del pariente','placeholder="5555 5555" inputmode="numeric"')}
+        ${campo('pmail','Correo del pariente','type="email"','full')}
+        ${campo('pdir','Dirección del pariente','','full')}
+      </div>
+      <div id="n-errores"></div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="crearContrato()">Generar contrato</button></div>`);
+  prevPlan();
+}
+
+/* Qué documento sirve de constancia, según lo que la persona haga. */
+const CONSTANCIAS = [
+  { id:'boleta',     label:'Trabajo formal · boleta de pago o constancia laboral', peso:3,
+    pista:'Pídele la constancia con sello y firma del patrono, o las últimas dos boletas.' },
+  { id:'igss',       label:'Trabajo formal · certificación del IGSS',              peso:3,
+    pista:'La historia laboral del IGSS se saca en línea y es difícil de falsificar.' },
+  { id:'banco',      label:'Estados de cuenta bancarios (3 a 6 meses)',            peso:3,
+    pista:'Es la mejor prueba para quien no tiene patrono. Ya tiene cuenta si deposita en Banrural.' },
+  { id:'sat',        label:'Inscrito en SAT · RTU o pequeño contribuyente',        peso:2,
+    pista:'Sirve el RTU actualizado o las últimas declaraciones de pequeño contribuyente.' },
+  { id:'patente',    label:'Negocio propio · patente de comercio',                 peso:2,
+    pista:'Acompáñala de fotos del negocio y, si se puede, de un cuaderno de ventas.' },
+  { id:'cooperativa',label:'Agricultor · constancia de cooperativa o beneficio',   peso:2,
+    pista:'En Pochuta sirve la liquidación de cosecha del beneficio de café.' },
+  { id:'municipal',  label:'Constancia de la municipalidad o alcalde auxiliar',    peso:1,
+    pista:'Vale como referencia de arraigo, no tanto de ingreso. Combínala con otra.' },
+  { id:'jurada',     label:'Solo declaración jurada del cliente',                  peso:0,
+    pista:'⚠ Es la más débil. El comité debería pedir algo más o bajar el monto financiado.' },
+];
+const pesoConstancia = id => (CONSTANCIAS.find(c=>c.id===id)||{}).peso ?? 0;
+
+function pistaConstancia(){
+  const c=CONSTANCIAS.find(x=>x.id===v('n-fuente'));
+  const el=document.getElementById('n-pista'); if(!el)return;
+  el.innerHTML=c?esc(c.pista):'';
+  prevCarga();
+}
+/* Relación cuota / ingreso — no bloquea, avisa. */
+function prevCarga(){
+  const el=document.getElementById('n-carga'); if(!el)return;
+  const l=getLote(v('n-lote')); if(!l){el.innerHTML='';return;}
+  const p=planFinanciamiento(l.precio,+v('n-res')||0,+v('n-plz')||60);
+  const r=cargaSobreIngreso(p.cuota,+v('n-ingreso')||0);
+  if(!r){el.innerHTML='';return;}
+  const color=r.nivel==='riesgoso'?'var(--mora)':(r.nivel==='ajustado'?'#b8860b':'var(--green)');
+  el.innerHTML=`<div class="hint" style="margin-top:8px">La cuota de <b>${Q(p.cuota)}</b> es el
+    <b style="color:${color}">${Math.round(r.pct*100)}%</b> del ingreso declarado (${r.nivel}).
+    ${r.aviso?'<br>'+esc(r.aviso):''}</div>`;
+}
+
+function prevPlan(){
+  const l=getLote(v('n-lote')); if(!l)return;
+  const p=planFinanciamiento(l.precio,+v('n-res')||0,+v('n-plz')||60);
+  const el=document.getElementById('n-prev'); if(!el)return;
+  el.innerHTML=`<div class="pp-row"><span>Saldo a financiar</span><b>${Q(p.saldo)}</b></div>
+    <div class="pp-row"><span>Cuota mensual</span><b class="pp-big">${Q(p.cuota)}</b></div>
+    <div class="pp-row"><span>Total del plan</span><b>${Q(p.total)}</b></div>`;
+}
+function crearContrato(){
+  const d={}; CAMPOS_VENTA.forEach(c=>{ d[c.id]=v('n-'+c.id); });
+  document.querySelectorAll('.err').forEach(e=>e.textContent='');
+
+  const r=validarVenta(d);
+  if(!r.ok){
+    r.errores.forEach(e=>{const el=document.getElementById('e-'+e.campo); if(el) el.textContent=e.msg;});
+    const caja=document.getElementById('n-errores');
+    if(caja) caja.innerHTML=`<div class="aviso-err">Faltan ${r.errores.length} dato(s) para poder cerrar la venta.
+      <br><span class="hint">Sin teléfono ni pariente no hay a quién cobrarle después. Hoy hay 90 contratos en mora sin un solo número registrado.</span></div>`;
+    const primero=document.getElementById('n-'+r.errores[0].campo);
+    if(primero&&primero.scrollIntoView) primero.scrollIntoView({block:'center',behavior:'smooth'});
+    toast('Faltan '+r.errores.length+' dato(s) obligatorio(s)');
+    return;
+  }
+
+  const ct=nuevoContrato({lote:v('n-lote'),nombre:`${d.nom} ${d.ape}`.trim(),dpi:validaDPI(d.dpi).valor,
+    telefono:validaTel(d.tel).valor,email:validaMail(d.mail).valor,
+    direccion:d.dir, ocupacion:d.ocup, ingresoMensual:+String(d.ingreso).replace(/[^\d.]/g,''),
+    constancia:d.fuente, pesoConstancia:pesoConstancia(d.fuente),
+    pariente:{nombre:d.pnom, telefono:validaTel(d.ptel).valor, email:validaMail(d.pmail).valor, direccion:d.pdir},
+    vendedor:v('n-vend'),enganche:+v('n-res')||ENGANCHE_MIN,
+    plazo:+v('n-plz')||60,origen:'Campo'});
+
+  const carga=cargaSobreIngreso(planFinanciamiento(getLote(v('n-lote')).precio,+v('n-res')||0,+v('n-plz')||60).cuota,
+                                +String(d.ingreso).replace(/[^\d.]/g,''));
+  if(carga) ct.cargaIngreso=carga.pct;
+  saveDB();
+
+  closeModal();
+  toast('Contrato '+ct.no+' generado → Aprobación');
+  if(carga&&carga.nivel==='riesgoso')
+    setTimeout(()=>toast('Ojo: la cuota es el '+Math.round(carga.pct*100)+'% del ingreso declarado'),2800);
+  setView(ROLE==='vendedor'?'vender':'aprobacion');
+}
+function modalPago(id){
+  const ct=getContrato(id), ec=estadoCuenta(ct);
+  openModal(`<div class="modal-h"><h3>Registrar pago</h3><p>${ct.no} · ${esc(nombreCliente(ct.clienteId))}</p></div>
+    <div class="modal-b"><div class="form-grid">
+      <div class="field"><label>Monto (Q) *</label><input id="p-monto" type="number" value="${ec.prox?ec.prox.monto:''}"></div>
+      <div class="field"><label>Forma de pago</label><select id="p-forma">${CATALOGOS.formasPago.map(f=>`<option>${f}</option>`).join('')}</select></div>
+      <div class="field"><label>Cuenta acreditada</label><select id="p-cta">${CATALOGOS.cuentas.map(f=>`<option>${f}</option>`).join('')}</select></div>
+      <div class="field"><label>No. boleta / referencia</label><input id="p-ref"></div>
+    </div><div class="hint">Queda como <b>registrado</b> y pasa a Confirmación de pagos.</div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarPago('${id}')">Guardar boleta</button></div>`);
+}
+function guardarPago(id){
+  const monto=+v('p-monto'); if(!monto||monto<=0){toast('Ingresa un monto válido');return;}
+  registrarPago(id,{monto,forma:v('p-forma'),cuenta:v('p-cta'),referencia:v('p-ref')});
+  registrarGestion(id,'Cobranza','Cobranza Satisfactória','Boleta registrada por '+Q(monto));
+  closeModal(); toast('Pago registrado · pendiente de confirmar'); pintarContrato();
+}
+function modalGestion(id){
+  openModal(`<div class="modal-h"><h3>Registrar gestión</h3><p>Bitácora de seguimiento</p></div>
+    <div class="modal-b"><div class="form-grid">
+      <div class="field"><label>Tipo</label><select id="g-tipo">${CATALOGOS.tiposGestion.map(x=>`<option>${x}</option>`).join('')}</select></div>
+      <div class="field"><label>Resultado</label><select id="g-res">${CATALOGOS.resultadosGestion.map(x=>`<option>${x}</option>`).join('')}</select></div>
+      <div class="field full"><label>Comentario</label><input id="g-com" placeholder="Detalle de la gestión"></div>
+    </div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarGestion('${id}')">Guardar</button></div>`);
+}
+function guardarGestion(id){
+  registrarGestion(id,v('g-tipo'),v('g-res'),v('g-com'));
+  closeModal(); toast('Gestión registrada ✓'); drawerTab='gestiones'; pintarContrato();
+}
+function modalDocumento(id){
+  openModal(`<div class="modal-h"><h3>Agregar documento</h3><p>Expediente del contrato</p></div>
+    <div class="modal-b"><div class="form-grid">
+      <div class="field"><label>Tipo</label><select id="d-tipo">
+        <option>DPI</option><option>Comprobante de pago</option><option>Contrato firmado</option>
+        ${CATALOGOS.plantillas.map(x=>`<option>${x}</option>`).join('')}</select></div>
+      <div class="field"><label>Nombre del archivo</label><input id="d-nom" placeholder="dpi_frente.pdf"></div>
+    </div><div class="hint">En producción esto sube el archivo al expediente digital.</div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarDoc('${id}')">Agregar</button></div>`);
+}
+function guardarDoc(id){
+  const n=v('d-nom')||v('d-tipo');
+  agregarDocumento(id,v('d-tipo'),n);
+  closeModal(); toast('Documento agregado ✓'); drawerTab='docs'; pintarContrato();
+}
+function modalIntegrante(id){
+  const cargos=['Titular','Cotitular','Fiador','Beneficiario','Representante'];
+  openModal(`<div class="modal-h"><h3>Agregar integrante</h3><p>Cotitular del contrato</p></div>
+    <div class="modal-b"><div class="form-grid">
+      <div class="field"><label>Nombre completo</label><input id="i-nom"></div>
+      <div class="field"><label>Cargo ejercido</label><select id="i-cargo">${cargos.map(x=>`<option>${x}</option>`).join('')}</select></div>
+    </div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarIntegrante('${id}')">Agregar</button></div>`);
+}
+function guardarIntegrante(id){
+  const n=v('i-nom'); if(!n){toast('Ingresa el nombre');return;}
+  agregarIntegrante(id,n,v('i-cargo'));
+  closeModal(); toast('Integrante agregado ✓'); drawerTab='ficha'; pintarContrato();
+}
+function modalEditarCliente(id){
+  const c=getCliente(id);
+  openModal(`<div class="modal-h"><h3>Editar cliente</h3><p>${esc(c.nombre)} ${esc(c.apellido)}</p></div>
+    <div class="modal-b"><div class="form-grid">
+      <div class="field"><label>Nombres</label><input id="c-nom" value="${esc(c.nombre)}"></div>
+      <div class="field"><label>Apellidos</label><input id="c-ape" value="${esc(c.apellido)}"></div>
+      <div class="field"><label>DPI (CUI)</label><input id="c-dpi" value="${esc(c.dpi)}"></div>
+      <div class="field"><label>Teléfono</label><input id="c-tel" value="${esc(c.telefono)}"></div>
+      <div class="field full"><label>Correo</label><input id="c-mail" value="${esc(c.email)}"></div>
+      <div class="field full"><label>Dirección</label><input id="c-dir" value="${esc(c.direccion)}"></div>
+    </div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarCliente('${id}')">Guardar</button></div>`);
+}
+function guardarCliente(id){
+  const c=getCliente(id);
+  c.nombre=v('c-nom');c.apellido=v('c-ape');c.dpi=v('c-dpi');
+  c.telefono=v('c-tel');c.email=v('c-mail');c.direccion=v('c-dir');
+  saveDB(); closeModal(); toast('Cliente actualizado ✓'); abrirCliente(id);
+  if(vista==='clientes')renderClientes();
+}
+function openModal(h){document.getElementById('modal').innerHTML=h;document.getElementById('modalScrim').hidden=false;}
+function closeModal(){document.getElementById('modalScrim').hidden=true;}
+
+/* ============================================================ BUSCADOR GLOBAL */
+function buscarGlobal(t){
+  t=(t||'').trim().toLowerCase();
+  const box=document.getElementById('searchResults'); if(!box)return;
+  if(t.length<2){box.hidden=true;return;}
+  const lotes=DB.lotes.filter(l=>l.codigo.toLowerCase().includes(t)).slice(0,5);
+  const cts=DB.contratos.filter(c=>`${c.no} ${nombreCliente(c.clienteId)}`.toLowerCase().includes(t)).slice(0,5);
+  const cls=DB.clientes.filter(c=>`${c.nombre} ${c.apellido} ${c.dpi}`.toLowerCase().includes(t)).slice(0,5);
+  let h='';
+  if(lotes.length)h+=`<div class="sr-sec">Lotes</div>`+lotes.map(l=>
+    `<div class="sr-item" onclick="cerrarBusqueda();abrirLote('${l.codigo}')"><b>${l.codigo}</b> · ${l.area} m² · ${ESTADO_MAP[l.estado].label}</div>`).join('');
+  if(cts.length)h+=`<div class="sr-sec">Contratos</div>`+cts.map(c=>
+    `<div class="sr-item" onclick="cerrarBusqueda();abrirContrato('${c.id}')"><b>${c.no}</b> · ${esc(nombreCliente(c.clienteId))}</div>`).join('');
+  if(cls.length)h+=`<div class="sr-sec">Clientes</div>`+cls.map(c=>
+    `<div class="sr-item" onclick="cerrarBusqueda();abrirCliente('${c.id}')"><b>${esc(c.nombre)} ${esc(c.apellido)}</b>${c.dpi?' · '+esc(c.dpi):''}</div>`).join('');
+  box.innerHTML=h||`<div class="sr-item muted">Sin resultados</div>`;
+  box.hidden=false;
+}
+function cerrarBusqueda(){const b=document.getElementById('searchResults');if(b)b.hidden=true;
+  const i=document.getElementById('globalSearch');if(i)i.value='';}
+
+/* ---------- Toast ---------- */
+let tt;
+function toast(m){clearTimeout(tt);document.querySelector('.toast')?.remove();
+  const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);
+  tt=setTimeout(()=>t.remove(),2600);}
+
+/* ---------- Init ---------- */
+document.querySelectorAll('.nav-item').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.view)));
+document.getElementById('scrim').addEventListener('click',closeDrawer);
+document.getElementById('modalScrim').addEventListener('click',e=>{if(e.target.id==='modalScrim')closeModal();});
+window.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDrawer();closeModal();cerrarBusqueda();}});
+document.addEventListener('click',e=>{if(!e.target.closest('.search-wrap'))cerrarBusqueda();});
+/* Con la base conectada no se siembra nada local: los datos llegan al
+   entrar. Sin conexión, el portal arranca con los data-*.js de julio.
+
+   Y si la sesión de Supabase sigue viva de la visita anterior, se entra
+   directo sin volver a pedir la contraseña. */
+if(hayRemoto()){
+  renderAuth();
+  reanudarSesion().catch(e=>console.warn('[sesión]', e.message));
+}else{
+  initDB();
+  renderAuth();
+}

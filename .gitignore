@@ -1,0 +1,25 @@
+# ============================================================
+#  Qué NO se sube
+#
+#  El repositorio es privado, pero "privado" no es lo mismo que
+#  "seguro": lo ve todo el que tenga acceso al repo, y queda en el
+#  historial para siempre aunque después se borre el archivo.
+# ============================================================
+
+.DS_Store
+*.log
+node_modules/
+.vercel/
+
+# Datos de julio con nombres, teléfonos y montos de clientes reales.
+# El portal ya lee de Supabase; estos quedaron solo para el modo
+# demostración y para las pantallas de cobranza que faltan migrar.
+# Cuando esas pantallas lean de la base, se borran del todo.
+data-cartera.js
+data-mora.js
+data-calendario.js
+data-recibos.js
+data-contactos.js
+
+# Las pruebas no van a producción
+_pruebas/

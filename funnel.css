@@ -1,0 +1,114 @@
+/* ============================================================
+   EMBUDO PÚBLICO DE VENTAS — móvil primero (tráfico de redes)
+   ============================================================ */
+body.fnl{background:#fff;color:#20302A;font-size:15px}
+.fnl h1,.fnl h2,.fnl h3{line-height:1.2}
+
+.f-top{position:sticky;top:0;z-index:40;background:#14342B;color:#fff;padding:12px 18px;display:flex;justify-content:space-between;align-items:center}
+.f-brand{font-weight:800;font-size:15px;line-height:1.1}
+.f-brand small{display:block;font-size:9.5px;letter-spacing:1.6px;color:#E0A72E;text-transform:uppercase;font-weight:600}
+.f-wa{background:#25D366;color:#0b3b22;font-weight:700;font-size:13px;padding:8px 15px;border-radius:20px;text-decoration:none}
+
+/* HERO */
+.f-hero{background:linear-gradient(150deg,#14342B 0%,#2C5F4A 100%);color:#fff;padding:44px 20px 40px;text-align:center;position:relative;overflow:hidden}
+.f-hero::after{content:'';position:absolute;width:280px;height:280px;border-radius:50%;background:#E0A72E;opacity:.13;right:-90px;top:-70px}
+.f-hero-in{max-width:620px;margin:0 auto;position:relative;z-index:1}
+.f-badge{display:inline-block;background:rgba(224,167,46,.2);color:#E0A72E;font-size:11.5px;font-weight:700;padding:5px 13px;border-radius:20px;letter-spacing:.5px;margin-bottom:16px}
+.f-hero h1{font-size:32px;font-weight:800;margin-bottom:12px}
+.f-hero h1 span{color:#E0A72E}
+.f-hero p{color:#B9CFC2;font-size:16px;margin-bottom:22px}
+.f-facts{display:flex;gap:10px;justify-content:center;margin-bottom:24px;flex-wrap:wrap}
+.f-facts>div{background:rgba(255,255,255,.09);border-radius:12px;padding:12px 16px;min-width:96px}
+.f-facts b{display:block;font-size:21px;color:#fff;font-weight:800}
+.f-facts span{font-size:10.5px;color:#8FB09B;text-transform:uppercase;letter-spacing:.4px}
+.f-trust{margin-top:14px;font-size:12.5px;color:#8FB09B}
+
+.f-cta{display:block;width:100%;max-width:380px;margin:0 auto;background:#E0A72E;color:#14342B;border:0;border-radius:12px;padding:15px 24px;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 6px 18px rgba(224,167,46,.35)}
+.f-cta:hover{background:#c9942408;background:#cf9722}
+.f-btn-ghost{background:#F1F5F2;border:1px solid #E4EAE6;border-radius:10px;padding:11px 22px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:#2C5F4A}
+
+/* SECCIONES */
+.f-sec{padding:38px 20px;max-width:960px;margin:0 auto}
+.f-sec h2{font-size:24px;color:#14342B;text-align:center;margin-bottom:6px}
+.f-sub{text-align:center;color:#6B7A72;font-size:14px;margin-bottom:20px}
+.f-alt{background:#F1F5F2;max-width:none}
+.f-alt>*{max-width:960px;margin-left:auto;margin-right:auto}
+
+/* FILTROS + LOTES */
+.f-filtros{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:18px}
+.f-chip{background:#fff;border:1.5px solid #E4EAE6;border-radius:20px;padding:8px 16px;font-size:13px;cursor:pointer;font-family:inherit;color:#20302A}
+.f-chip.on{background:#14342B;color:#fff;border-color:#14342B}
+.f-lotes{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.f-lote{border:1.5px solid #E4EAE6;border-radius:14px;padding:15px;cursor:pointer;background:#fff;transition:transform .1s,border-color .1s}
+.f-lote:hover{transform:translateY(-3px);border-color:#2C5F4A}
+.f-lote.sel{border-color:#E0A72E;background:#fdf8ec;box-shadow:0 0 0 3px rgba(224,167,46,.18)}
+.f-lote-c{font-size:17px;font-weight:800;color:#14342B}
+.f-lote-m{font-size:12px;color:#6B7A72;margin:2px 0 8px}
+.f-lote-p{font-size:15px;font-weight:800;color:#2C5F4A}
+.f-lote-q{font-size:11.5px;color:#6B7A72;margin-top:3px}
+.f-mas{text-align:center;margin-top:18px}
+
+/* MAPA EN EL EMBUDO */
+.f-vista{display:flex;gap:8px;justify-content:center;margin-bottom:16px}
+.f-mapa-box{margin-bottom:8px}
+.f-mapa-leg{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:#6B7A72;margin-bottom:10px;justify-content:center}
+.f-mapa-leg span{display:inline-flex;align-items:center;gap:6px}
+.f-mapa-leg i{width:13px;height:13px;border-radius:3px;display:inline-block}
+.f-mapa-tip{color:#2C5F4A;font-weight:600}
+.f-mapa-wrap{position:relative;width:100%;height:64vh;min-height:400px;background:#fff;border:1px solid #E4EAE6;border-radius:16px;overflow:hidden}
+#fSvg{width:100%;height:100%;display:block;cursor:grab;touch-action:none}
+.f-lotm{transition:fill-opacity .12s}
+.f-lotm[style*="pointer"]:hover{fill-opacity:.92 !important;stroke-width:1.4 !important}
+.f-lotm.sel{fill:#E0A72E !important;fill-opacity:.95 !important;stroke:#a87c15 !important;stroke-width:1.6 !important}
+.f-zoom{position:absolute;right:12px;bottom:12px;display:flex;flex-direction:column;gap:6px}
+.f-zoom button{width:36px;height:36px;border:1px solid #E4EAE6;background:#fff;border-radius:9px;cursor:pointer;font-size:17px;color:#14342B;box-shadow:0 2px 8px rgba(20,52,43,.12)}
+.f-tip{position:absolute;background:rgba(20,52,43,.95);color:#fff;padding:8px 11px;border-radius:8px;font-size:12.5px;pointer-events:none;z-index:10;line-height:1.45;white-space:nowrap}
+.f-toast{position:fixed;bottom:82px;left:50%;transform:translateX(-50%);background:#14342B;color:#fff;padding:12px 20px;border-radius:10px;font-size:13.5px;z-index:70;box-shadow:0 8px 24px rgba(0,0,0,.28);max-width:90vw;text-align:center}
+
+/* SIMULADOR */
+.f-sim{display:grid;grid-template-columns:1fr 1fr;gap:18px;background:#fff;border-radius:16px;padding:22px;box-shadow:0 2px 14px rgba(20,52,43,.07)}
+@media(max-width:640px){.f-sim{grid-template-columns:1fr}}
+.f-sim-c label{display:block;font-size:13px;color:#6B7A72;margin:14px 0 6px;font-weight:600}
+.f-sim-c label b{color:#14342B;float:right}
+.f-sim-c input[type=range]{width:100%;accent-color:#2C5F4A}
+.f-cuota{background:#14342B;color:#fff;border-radius:12px;padding:18px;text-align:center;margin-bottom:12px}
+.f-cuota span{display:block;font-size:12px;color:#8FB09B;text-transform:uppercase;letter-spacing:.6px}
+.f-cuota b{font-size:30px;font-weight:800;color:#E0A72E}
+.f-det{font-size:13px;color:#6B7A72;margin-bottom:14px;line-height:1.7}
+.f-det div{display:flex;justify-content:space-between;border-bottom:1px solid #EEF3F0;padding:4px 0}
+.f-mini{font-size:11.5px;color:#6B7A72;text-align:center;margin-top:8px}
+
+/* MODAL CAPTURA */
+.f-modal{position:fixed;inset:0;background:rgba(20,32,26,.55);z-index:60;display:flex;align-items:center;justify-content:center;padding:18px}
+.f-modal-b{background:#fff;border-radius:18px;padding:26px 24px;max-width:400px;width:100%;position:relative}
+.f-modal-b h3{font-size:21px;color:#14342B;margin-bottom:4px}
+.f-x{position:absolute;top:12px;right:16px;background:none;border:0;font-size:26px;color:#6B7A72;cursor:pointer;line-height:1}
+.f-form label,.f-form2 label{display:block;font-size:12px;color:#6B7A72;font-weight:600;margin:12px 0 5px}
+.f-form input,.f-form2 input{width:100%;padding:12px 13px;border:1.5px solid #E4EAE6;border-radius:10px;font-size:15px;font-family:inherit}
+.f-form input:focus,.f-form2 input:focus{outline:none;border-color:#2C5F4A}
+.f-form{margin-bottom:18px}
+
+/* SOLICITUD */
+.f-card{background:#fff;border:1px solid #E4EAE6;border-radius:16px;padding:22px;box-shadow:0 2px 14px rgba(20,52,43,.06)}
+.f-resumen{background:#F1F5F2;border-radius:12px;padding:14px 16px;margin-bottom:18px;font-size:14px}
+.f-resumen div{display:flex;justify-content:space-between;padding:4px 0}
+.f-resumen .tot{border-top:2px solid #14342B;margin-top:6px;padding-top:8px;font-weight:800;color:#14342B}
+.f-form2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:640px){.f-form2{grid-template-columns:1fr}}
+.f-check{display:block;font-size:13.5px;color:#20302A;margin:18px 0;cursor:pointer;line-height:1.5}
+.f-check input{margin-right:8px}
+.f-check small{display:block;color:#6B7A72;font-size:11.5px;margin-left:24px}
+
+/* GRACIAS */
+.f-ok{text-align:center;padding:60px 20px}
+.f-ok-ic{width:66px;height:66px;border-radius:50%;background:#2C5F4A;color:#fff;font-size:32px;display:flex;align-items:center;justify-content:center;margin:0 auto 18px}
+.f-ok h2 span{color:#2C5F4A}
+.f-wa-cta{background:#25D366;color:#0b3b22;text-decoration:none;text-align:center;margin-top:20px}
+
+.f-foot{background:#14342B;color:#8FB09B;text-align:center;padding:26px 20px;font-size:12.5px}
+
+/* BARRA FIJA */
+.f-sticky{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #E4EAE6;padding:11px 18px;display:flex;justify-content:space-between;align-items:center;z-index:50;box-shadow:0 -4px 18px rgba(20,52,43,.1)}
+.f-sticky b{display:block;font-size:14px;color:#14342B}
+.f-sticky span{font-size:12.5px;color:#6B7A72}
+.f-sticky button{background:#E0A72E;color:#14342B;border:0;border-radius:10px;padding:11px 20px;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit}

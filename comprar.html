@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tu lote en La Esperanza · Sol Desarrollos</title>
+<meta name="description" content="Lotes en San Miguel Pochuta con financiamiento directo. Desde Q2,500 de enganche. Sin buró, sin banco." />
+<link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="funnel.css" />
+</head>
+<body class="fnl">
+
+<!-- barra -->
+<header class="f-top">
+  <div class="f-brand">SOL Desarrollos<small>La Esperanza Residencial</small></div>
+  <a class="f-wa" href="#" onclick="waClick('header');return false;">WhatsApp</a>
+</header>
+
+<!-- 1 · ATRACCIÓN -->
+<section class="f-hero">
+  <div class="f-hero-in">
+    <div class="f-badge" id="fSrc">Financiamiento directo</div>
+    <h1>Tu terreno propio en <span>La Esperanza</span></h1>
+    <p>Lotes en San Miguel Pochuta con financiamiento directo del desarrollador.
+       <b>Sin banco, sin buró de crédito.</b></p>
+    <div class="f-facts">
+      <div><b id="fDisp">—</b><span>lotes disponibles</span></div>
+      <div><b>Q2,500</b><span>para reservar</span></div>
+      <div><b>60</b><span>meses de plazo</span></div>
+    </div>
+    <button class="f-cta" onclick="irA('lotes')">Ver lotes disponibles ↓</button>
+    <div class="f-trust">112 familias ya compraron su lote aquí</div>
+  </div>
+</section>
+
+<!-- 2 · INTERÉS -->
+<section class="f-sec" id="lotes">
+  <h2>Elige tu lote</h2>
+  <p class="f-sub">Precios reales y disponibilidad al día de hoy.</p>
+
+  <div class="f-vista">
+    <button class="f-chip on" id="vbMapa" onclick="setVista('mapa')">🗺 Ver en el plano</button>
+    <button class="f-chip" id="vbLista" onclick="setVista('lista')">☰ Ver lista</button>
+  </div>
+
+  <div id="fMapaBox" class="f-mapa-box">
+    <div class="f-mapa-leg">
+      <span><i style="background:#8FB09B"></i>Disponible</span>
+      <span><i style="background:#C7CFC9"></i>Vendido</span>
+      <span class="f-mapa-tip">Toca un lote verde para elegirlo</span>
+    </div>
+    <div class="f-mapa-wrap">
+      <svg id="fSvg" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="f-zoom">
+        <button onclick="fZoom(0.75)">+</button>
+        <button onclick="fZoom(1.33)">−</button>
+        <button onclick="fZoomReset()">⤢</button>
+      </div>
+      <div class="f-tip" id="fTip" hidden></div>
+    </div>
+  </div>
+
+  <div class="f-filtros" id="fFiltros" hidden></div>
+  <div class="f-lotes" id="fLotes" hidden></div>
+  <div class="f-mas" id="fMas" hidden><button class="f-btn-ghost" onclick="verMas()">Ver más lotes</button></div>
+</section>
+
+<!-- 3 · CONSIDERACIÓN -->
+<section class="f-sec f-alt" id="simulador" hidden>
+  <h2>Tu plan de pago</h2>
+  <p class="f-sub" id="simLote"></p>
+  <div class="f-sim">
+    <div class="f-sim-c">
+      <label>Enganche <b id="vEng"></b></label>
+      <input type="range" id="rEng" min="2500" max="40000" step="500" value="2500" oninput="calcSim()">
+      <label>Plazo <b id="vPlz"></b></label>
+      <input type="range" id="rPlz" min="12" max="84" step="12" value="60" oninput="calcSim()">
+    </div>
+    <div class="f-sim-r">
+      <div class="f-cuota"><span>Tu cuota mensual</span><b id="vCuota">—</b></div>
+      <div class="f-det" id="vDet"></div>
+      <button class="f-cta" onclick="abrirCaptura()">Apartar este lote</button>
+      <div class="f-mini">Sin compromiso · te contactamos para confirmar</div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 · CAPTURA DE LEAD -->
+<div class="f-modal" id="mCaptura" hidden>
+  <div class="f-modal-b">
+    <button class="f-x" onclick="cerrarModal()">×</button>
+    <h3>Aparta tu lote</h3>
+    <p class="f-sub">Déjanos tus datos y un asesor te contacta hoy mismo.</p>
+    <div class="f-form">
+      <label>Nombre completo *</label><input id="cNom" placeholder="Ej. Ana Morales">
+      <label>Teléfono / WhatsApp *</label><input id="cTel" inputmode="tel" placeholder="+502 0000-0000">
+      <label>Correo (opcional)</label><input id="cMail" inputmode="email" placeholder="tucorreo@ejemplo.com">
+    </div>
+    <button class="f-cta" onclick="guardarLead()">Continuar →</button>
+    <div class="f-mini">Tus datos están seguros. No los compartimos.</div>
+  </div>
+</div>
+
+<!-- 5 · SOLICITUD -->
+<section class="f-sec" id="solicitud" hidden>
+  <h2>Solicitud de financiamiento</h2>
+  <p class="f-sub">Último paso — completa tus datos y firma en línea.</p>
+  <div class="f-card">
+    <div class="f-resumen" id="sResumen"></div>
+    <div class="f-form2">
+      <div><label>DPI (CUI) *</label><input id="sDpi" inputmode="numeric" placeholder="0000 00000 0000"></div>
+      <div><label>Dirección</label><input id="sDir" placeholder="Tu dirección"></div>
+      <div><label>Ocupación</label><input id="sOcu" placeholder="A qué te dedicas"></div>
+      <div><label>Ingreso mensual aprox.</label><input id="sIng" inputmode="numeric" placeholder="Q"></div>
+    </div>
+    <label class="f-check"><input type="checkbox" id="sAcepta"> Acepto el contrato y firmo electrónicamente
+      <small>Firma electrónica válida en Guatemala (Decreto 47-2008)</small></label>
+    <button class="f-cta" onclick="enviarSolicitud()">Firmar y enviar solicitud</button>
+  </div>
+</section>
+
+<!-- 6 · CIERRE -->
+<section class="f-sec f-ok" id="gracias" hidden>
+  <div class="f-ok-ic">✓</div>
+  <h2>¡Listo, <span id="okNom"></span>!</h2>
+  <p class="f-sub">Tu solicitud <b id="okNo"></b> quedó registrada y pasó al comité de crédito.
+     Un asesor te contacta en menos de 24 horas.</p>
+  <a class="f-cta f-wa-cta" href="#" onclick="waClick('gracias');return false;">Escribirnos por WhatsApp</a>
+</section>
+
+<footer class="f-foot">
+  SOL Desarrollos · San Miguel Pochuta, Guatemala<br>
+  <span class="f-mini">Este es un prototipo de demostración.</span>
+</footer>
+
+<div class="f-sticky" id="fSticky" hidden>
+  <div><b id="stkLote"></b><span id="stkPrecio"></span></div>
+  <button onclick="irA('simulador')">Continuar</button>
+</div>
+
+<script src="assets/lotes-geo.js"></script>
+<script src="assets/lotes-shape.js"></script>
+<script src="assets/marca.js"></script>
+<script src="data.js"></script>
+<script src="data-cartera.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config-supabase.js"></script>
+<script src="supabase.js"></script>
+<script src="datos-remotos.js"></script>
+<script src="store.js"></script>
+<script src="funnel.js"></script>
+</body>
+</html>
