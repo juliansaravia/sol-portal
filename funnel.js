@@ -257,15 +257,18 @@ function guardarLead(){
 }
 
 /* ---------- Solicitud y cierre ---------- */
-function enviarSolicitud(){
+async function enviarSolicitud(){
   if(!document.getElementById('sAcepta').checked){alert('Debes aceptar y firmar el contrato para continuar');return;}
   const dpi=val('sDpi').trim();
   if(dpi.replace(/\D/g,'').length<13){alert('Escribe tu DPI (13 dígitos)');return;}
-  const ct=nuevoContrato({
+  const ct=await nuevoContrato({
     lote:F.lote.codigo, nombre:F.lead.nombre, dpi, telefono:F.lead.telefono, email:F.lead.email,
     vendedor:'Compra en línea', enganche:F.eng, plazo:F.plz, origen:'En línea'
   });
-  registrarGestion(ct.id,'Bitácora Socios','Contactado',
+  /* Si la solicitud no se pudo crear, no se le puede decir al cliente
+     que ya está: se queda en la pantalla con el aviso a la vista. */
+  if(!ct) return;
+  await registrarGestion(ct.id,'Bitácora Socios','Contactado',
     `Solicitud desde ${ORIGEN.fuente}${ORIGEN.campana?' · campaña '+ORIGEN.campana:''}`);
   const l=DB.leadsFunnel[DB.leadsFunnel.length-1]; if(l){l.estado='convertido';l.contrato=ct.no;}
   saveDB();

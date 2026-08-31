@@ -129,8 +129,30 @@ function leerEstadoCuenta(texto) {
 }
 
 /** Guarda los movimientos, sin duplicar si vuelven a subir el mismo archivo. */
-function importarMovimientos(lista, cuenta) {
+async function importarMovimientos(lista, cuenta) {
   DB.movimientos = DB.movimientos || [];
+
+  /* Con base, el estado de cuenta se guarda en `movimiento_banco` y la
+     huella de cada línea impide duplicar al reimportar. Antes esto vivía
+     en el navegador de quien subía el archivo: el de al lado abría la
+     misma pantalla y la veía vacía. */
+  if (typeof hayBase === 'function' && hayBase()) {
+    const r = await sbImportarMovimientos(
+      lista.map(m => ({ fecha: m.fecha, monto: m.monto, descripcion: m.descripcion,
+                        referencia: m.ref, saldo: m.saldo })),
+      cuenta || 'Banrural', 'estado de cuenta');
+    if (!r.ok) { avisar(r.error); return { nuevos: 0, repetidos: 0, error: r.error }; }
+    // Se recargan desde la base para quedarse con los ids reales.
+    const filas = await SB.from('movimiento_banco')
+      .select('id,fecha,monto,descripcion,referencia,tipo')
+      .eq('tipo', 'abono').order('fecha', { ascending: false }).limit(2000);
+    if (!filas.error)
+      DB.movimientos = filas.data.map(m => ({ id: m.id, fecha: m.fecha, monto: Number(m.monto),
+                                              descripcion: m.descripcion, ref: m.referencia,
+                                              cuenta: cuenta || 'Banrural' }));
+    return { nuevos: r.dato.insertados, repetidos: r.dato.recibidos - r.dato.insertados };
+  }
+
   let nuevos = 0, repetidos = 0;
   for (const m of lista) {
     const yaEsta = DB.movimientos.some(x =>
@@ -255,7 +277,7 @@ function repartir(monto, contrato) {
 
 /* ---------- Aplicar y confirmar ---------- */
 
-function aplicarConciliacion({ movimientoId, asignaciones, usuario, nota, via }) {
+async function aplicarConciliacion({ movimientoId, asignaciones, usuario, nota, via }) {
   DB.conciliaciones = DB.conciliaciones || [];
   const mov = DB.movimientos.find(m => m.id === movimientoId);
   if (!mov) throw new Error('No existe ese movimiento');
@@ -281,13 +303,24 @@ function aplicarConciliacion({ movimientoId, asignaciones, usuario, nota, via })
       conciliado: new Date().toISOString()
     };
   });
+  if (typeof hayBase === 'function' && hayBase()) {
+    for (const h of hechos) {
+      const ct = DB.contratos.find(c => c.no === h.contrato);
+      const r = await sbConciliar(movimientoId, {
+        contrato_id: ct ? ct.id : null, monto: h.monto,
+        certeza: h.via === 'referencia' ? 1 : (h.via === 'monto' ? 0.7 : null)
+      });
+      if (!r.ok) { avisar(r.error); return []; }
+      h.id = r.dato.id;
+    }
+  }
   DB.conciliaciones.push(...hechos);
   saveDB();
   return hechos;
 }
 
 /** El visto bueno del financiero. Aquí el dinero entra de verdad a la cartera. */
-function confirmarConciliacion(id, ok = true) {
+async function confirmarConciliacion(id, ok = true) {
   const k = (DB.conciliaciones || []).find(x => x.id === id);
   if (!k) throw new Error('No existe esa conciliación');
   const yo = window.__user ? window.__user.name : '';
@@ -297,21 +330,31 @@ function confirmarConciliacion(id, ok = true) {
   k.confirmadoPor = yo;
   k.confirmado = new Date().toISOString();
 
+  if (typeof hayBase === 'function' && hayBase()) {
+    const r = await sbActualizarConciliacion(id, ok ? 'confirmada' : 'descartada',
+                                             ok ? null : 'Rechazada en la revisión');
+    if (!r.ok) { avisar(r.error); throw new Error(r.error); }
+  }
+
   // Al confirmar, el pago entra a la cartera del contrato
   if (ok) {
     const ct = DB.contratos.find(c => c.no === k.contrato);
-    if (ct) { registrarPago(ct.id, { monto: k.monto, forma: 'Depósito bancario',
+    if (ct) { await registrarPago(ct.id, { monto: k.monto, forma: 'Depósito bancario',
                                      cuenta: 'Banrural', referencia: k.ref || '' }); }
   }
   saveDB();
   return k;
 }
 
-function desaplicarConciliacion(id) {
+async function desaplicarConciliacion(id) {
   const i = (DB.conciliaciones || []).findIndex(x => x.id === id);
   if (i < 0) return false;
   if (DB.conciliaciones[i].estado === 'confirmado')
     throw new Error('Ya fue confirmado — eso se corrige con una anulación, no borrando');
+  if (typeof hayBase === 'function' && hayBase()) {
+    const r = await sbDescartarConciliacion(id, 'Deshecha por quien la propuso');
+    if (!r.ok) { avisar(r.error); return false; }
+  }
   DB.conciliaciones.splice(i, 1);
   saveDB();
   return true;
@@ -354,13 +397,15 @@ function correrConciliacion({ desde, hasta } = {}) {
 }
 
 /** Aplica de una sola vez lo que no tiene duda razonable. */
-function aplicarTodoSugerido() {
+async function aplicarTodoSugerido() {
   const r = correrConciliacion();
   let n = 0; const fallos = [];
   for (const s of r.automaticos) {
     const d = repartir(s.libre, s.cuota.c);
     if (!d.partes.length || d.sobrante > TOLERANCIA_C) continue;
-    try { aplicarConciliacion({ movimientoId: s.mov.id, asignaciones: d.partes, via: s.via }); n++; }
+    /* En serie a propósito: cada aplicación consume saldo del mismo
+       depósito, y en paralelo se repartirían de más entre ellas. */
+    try { await aplicarConciliacion({ movimientoId: s.mov.id, asignaciones: d.partes, via: s.via }); n++; }
     catch (e) { fallos.push(e.message); }
   }
   return { aplicados: n, fallos };

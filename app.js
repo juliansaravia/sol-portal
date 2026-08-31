@@ -797,12 +797,12 @@ function vistaImportar(){
       ${(DB.movimientos||[]).length?`<span class="hint" style="margin-left:12px">${DB.movimientos.length} movimiento(s) cargados</span>`:''}
     </div></div>`;
 }
-function doImportarEstado(){
+async function doImportarEstado(){
   const t=document.getElementById('cnTexto').value;
   const r=leerEstadoCuenta(t);
   if(r.error){toast(r.error);return;}
   if(!r.movimientos.length){toast('No encontré ningún abono en lo que pegaste');return;}
-  const imp=importarMovimientos(r.movimientos, document.getElementById('cnCuenta').value);
+  const imp=await importarMovimientos(r.movimientos, document.getElementById('cnCuenta').value);
   toast(`${imp.nuevos} movimiento(s) cargados${imp.repetidos?' · '+imp.repetidos+' ya estaban':''}`);
   cnTab='resolver'; renderConciliacion();
 }
@@ -834,16 +834,16 @@ const viaTexto = v => ({referencia:'<span class="badge b-ok">Referencia coincide
   monto_fecha:'<span class="badge">Monto y fecha únicos</span>',
   parcial:'<span class="badge b-pend">Monto parcial</span>'}[v]||'<span class="badge">'+esc(v||'')+'</span>');
 
-function doAplicarTodo(){
-  const r=aplicarTodoSugerido();
+async function doAplicarTodo(){
+  const r=await aplicarTodoSugerido();
   toast(`${r.aplicados} depósito(s) aplicados${r.fallos.length?' · '+r.fallos.length+' con problema':''}`);
   renderConciliacion();
 }
-function doAplicarUno(movId,contrato){
+async function doAplicarUno(movId,contrato){
   const mov=DB.movimientos.find(m=>m.id===movId);
   const d=repartir(saldoLibre(mov),contrato);
   if(!d.partes.length){toast('Ese contrato ya no tiene cuotas pendientes');return;}
-  try{ aplicarConciliacion({movimientoId:movId,asignaciones:d.partes,via:'manual'});
+  try{ await aplicarConciliacion({movimientoId:movId,asignaciones:d.partes,via:'manual'});
        toast('Aplicado · queda esperando a David'); }
   catch(e){ toast(e.message); }
   renderConciliacion();
@@ -898,10 +898,10 @@ function doAsignar(movId,contrato,vence){
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="doAsignarOk('${movId}','${contrato}')">Aplicar</button></div>`);
 }
-function doAsignarOk(movId,contrato){
+async function doAsignarOk(movId,contrato){
   const mov=DB.movimientos.find(m=>m.id===movId);
   const d=repartir(saldoLibre(mov),contrato);
-  try{ aplicarConciliacion({movimientoId:movId,asignaciones:d.partes,via:'manual',
+  try{ await aplicarConciliacion({movimientoId:movId,asignaciones:d.partes,via:'manual',
         nota:document.getElementById('cnNota').value.trim()});
        closeModal(); toast('Aplicado · queda esperando confirmación'); }
   catch(e){ toast(e.message); }
@@ -959,8 +959,8 @@ function vistaPorConfirmar(R){
   h+=`</tbody></table></div></div>`;
   return h;
 }
-function doConfirmarCn(id,ok){
-  try{ confirmarConciliacion(id,ok); toast(ok?'Confirmado · entró a la cartera':'Rechazado'); }
+async function doConfirmarCn(id,ok){
+  try{ await confirmarConciliacion(id,ok); toast(ok?'Confirmado · entró a la cartera':'Rechazado'); }
   catch(e){ toast(e.message); }
   renderConciliacion();
 }
@@ -1088,15 +1088,16 @@ function modalCobro(contrato,fecha){
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarCobro('${contrato}','${fecha}')">Registrar cobro</button></div>`);
 }
-function guardarCobro(contrato,fecha){
+async function guardarCobro(contrato,fecha){
   const monto=+document.getElementById('rcMonto').value;
   if(!(monto>0)){toast('El monto debe ser mayor que cero');return;}
   const ref=document.getElementById('rcRef').value.trim();
   if(!ref){toast('Anota el número de boleta o referencia');return;}
-  marcarCobrada(contrato,fecha,{monto,
+  const r=await conBoton(()=>marcarCobrada(contrato,fecha,{monto,
     forma:document.getElementById('rcForma').value,
     cuenta:document.getElementById('rcCuenta').value,
-    referencia:ref, nota:document.getElementById('rcNota').value.trim()});
+    referencia:ref, nota:document.getElementById('rcNota').value.trim()}));
+  if(!r) return;                      // el motivo ya se mostró
   closeModal(); toast('Cobro registrado · pendiente de confirmar ✓'); renderRecaudacion();
 }
 
@@ -1121,15 +1122,16 @@ function ncToggle(){
   const m=document.getElementById('ncMotivo'); if(!m)return;
   document.getElementById('ncPromesaBox').hidden = m.value!=='promesa';
 }
-function guardarNoCobro(contrato,fecha){
+async function guardarNoCobro(contrato,fecha){
   const motivo=document.getElementById('ncMotivo').value;
-  marcarNoCobrada(contrato,fecha,{motivo,
+  const r=await conBoton(()=>marcarNoCobrada(contrato,fecha,{motivo,
     nota:document.getElementById('ncNota').value.trim(),
-    promesa: motivo==='promesa'?document.getElementById('ncPromesa').value:null});
+    promesa: motivo==='promesa'?document.getElementById('ncPromesa').value:null}));
+  if(!r) return;
   closeModal(); toast('Registrado'); renderRecaudacion();
 }
-function deshacerRecaudo(contrato,fecha){
-  desmarcarCuota(contrato,fecha); toast('Marca deshecha'); renderRecaudacion();
+async function deshacerRecaudo(contrato,fecha){
+  await desmarcarCuota(contrato,fecha); toast('Marca deshecha'); renderRecaudacion();
 }
 
 /* --- Reporte de cierre: lo que vuelve a Slack --- */
@@ -1243,12 +1245,13 @@ function modalPersona(id){
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarEquipo('${id||''}')">Guardar</button></div>`);
 }
-function guardarEquipo(id){
+async function guardarEquipo(id){
   const nom=v('e-nom').trim(); if(!nom){toast('El nombre es obligatorio');return;}
   const antes=id?(DB.equipo.find(x=>x.id===id)||{}).nombre:null;
-  guardarPersona({id:id||undefined,nombre:nom,codigo:v('e-cod').trim().toUpperCase(),
-    rol:v('e-rol'),activo:v('e-act')==='1',telefono:v('e-tel'),email:v('e-mail'),nota:v('e-nota').trim()});
-  if(antes&&antes!==nom) reasignarContratos(antes,nom);   // mantiene el historial ligado
+  const r=await conBoton(()=>guardarPersona({id:id||undefined,nombre:nom,codigo:v('e-cod').trim().toUpperCase(),
+    rol:v('e-rol'),activo:v('e-act')==='1',telefono:v('e-tel'),email:v('e-mail'),nota:v('e-nota').trim()}));
+  if(!r) return;
+  if(antes&&antes!==nom) await reasignarContratos(antes,nom);   // mantiene el historial ligado
   closeModal(); toast('Equipo actualizado ✓'); renderEquipo();
 }
 function modalReasignar(de){
@@ -1270,9 +1273,10 @@ function modalReasignar(de){
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="hacerReasignacion('${esc(de)}')">Reasignar</button></div>`);
 }
-function hacerReasignacion(de){
+async function hacerReasignacion(de){
   const dest=v('r-dest'); if(!dest){toast('Elige un vendedor');return;}
-  const n=reasignarContratos(de,dest);
+  const n=await conBoton(()=>reasignarContratos(de,dest));
+  if(!n) return;
   closeModal(); toast(n+' contrato(s) reasignados a '+dest); renderEquipo();
 }
 
@@ -1328,8 +1332,8 @@ function renderAprobacion(){
     <div class="hint">Aprobar genera el plan de giros (Reserva + Cuota Inicial + Saldo Deudor) y marca el lote como vendido.</div>`;
   C().innerHTML=h;
 }
-function doAprobar(id){aprobarContrato(id);toast('Contrato aprobado ✓');renderAprobacion();}
-function doRechazar(id){rechazarContrato(id);toast('Contrato rechazado · lote liberado');renderAprobacion();}
+async function doAprobar(id){ if(await aprobarContrato(id)){toast('Contrato aprobado ✓');renderAprobacion();} }
+async function doRechazar(id){ if(await rechazarContrato(id)){toast('Contrato rechazado · lote liberado');renderAprobacion();} }
 
 /* Dónde el portal y el modelo no coinciden. Se muestra, no se esconde. */
 function verCuadreMora(){
@@ -1427,7 +1431,7 @@ function renderConfirmacion(){
     <div class="hint">Flujo real del CRM: la boleta se registra y luego contabilidad verifica el depósito antes de aplicarlo a la cartera.</div>`;
   C().innerHTML=h;
 }
-function doConfirmar(id,ok){confirmarPago(id,ok);toast(ok?'Pago confirmado ✓':'Pago rechazado');renderConfirmacion();}
+async function doConfirmar(id,ok){ if(await confirmarPago(id,ok)){toast(ok?'Pago confirmado ✓':'Pago rechazado');renderConfirmacion();} }
 
 /* ============================================================ COMISIONES
    Tres pestañas: lo que se debe, lo que está en proceso, y el
@@ -1513,8 +1517,8 @@ function guardarLiberacion(contratoNo){
        closeModal(); toast('Comisión liberada'); renderComisiones(); }
   catch(e){ toast(e.message); }
 }
-function doCrearLiq(nombre){
-  try{ const l=crearLiquidacion(nombre); toast('Liquidación '+l.numero+' creada'); comTab='proceso'; }
+async function doCrearLiq(nombre){
+  try{ const l=await crearLiquidacion(nombre); toast('Liquidación '+l.numero+' creada'); comTab='proceso'; }
   catch(e){ toast(e.message); }
   renderComisiones();
 }
@@ -1802,11 +1806,12 @@ function onlineNext(p){
   s.paso=p+1; refreshWizard();
 }
 function onlineBack(){onlineState.paso--;refreshWizard();}
-function onlineFirmar(){
+async function onlineFirmar(){
   const s=onlineState;
-  const ct=nuevoContrato({lote:s.lote,nombre:`${s.cliente.nom} ${s.cliente.ape}`.trim(),dpi:s.cliente.dpi,
+  const ct=await nuevoContrato({lote:s.lote,nombre:`${s.cliente.nom} ${s.cliente.ape}`.trim(),dpi:s.cliente.dpi,
     telefono:s.cliente.tel,email:s.cliente.mail,vendedor:'Compra en línea',reserva:s.reserva,
     girosSaldo:s.girosSaldo,origen:'En línea'});
+  if(!ct) return;                     // no se creó · el motivo ya se mostró
   s.creado=ct.no; s.paso=5; refreshWizard(); toast('Contrato '+ct.no+' creado');
 }
 function onlineReset(){onlineState={paso:1,lote:null,cliente:{},girosSaldo:60,reserva:2500};refreshWizard();}
@@ -2031,7 +2036,9 @@ function enviarEC(id){
     `\nSOL Desarrollos · La Esperanza`;
   const tel=(cli&&cli.telefono||'').replace(/\D/g,'');
   window.open(`https://wa.me/${tel}?text=${encodeURIComponent(txt)}`,'_blank');
-  registrarGestion(id,'Recordatorio de Pago','Contactado','Estado de cuenta enviado por WhatsApp');
+  /* Anotación de bitácora: no se espera a propósito. Si falla, se queda
+     en consola y no estorba el envío, que es lo que el usuario pidió. */
+  void registrarGestion(id,'Recordatorio de Pago','Contactado','Estado de cuenta enviado por WhatsApp');
   toast('Estado de cuenta listo para enviar');
 }
 
@@ -2150,7 +2157,7 @@ function prevPlan(){
     <div class="pp-row"><span>Cuota mensual</span><b class="pp-big">${Q(p.cuota)}</b></div>
     <div class="pp-row"><span>Total del plan</span><b>${Q(p.total)}</b></div>`;
 }
-function crearContrato(){
+async function crearContrato(){
   const d={}; CAMPOS_VENTA.forEach(c=>{ d[c.id]=v('n-'+c.id); });
   document.querySelectorAll('.err').forEach(e=>e.textContent='');
 
@@ -2166,13 +2173,14 @@ function crearContrato(){
     return;
   }
 
-  const ct=nuevoContrato({lote:v('n-lote'),nombre:`${d.nom} ${d.ape}`.trim(),dpi:validaDPI(d.dpi).valor,
+  const ct=await conBoton(()=>nuevoContrato({lote:v('n-lote'),nombre:`${d.nom} ${d.ape}`.trim(),dpi:validaDPI(d.dpi).valor,
     telefono:validaTel(d.tel).valor,email:validaMail(d.mail).valor,
     direccion:d.dir, ocupacion:d.ocup, ingresoMensual:+String(d.ingreso).replace(/[^\d.]/g,''),
     constancia:d.fuente, pesoConstancia:pesoConstancia(d.fuente),
     pariente:{nombre:d.pnom, telefono:validaTel(d.ptel).valor, email:validaMail(d.pmail).valor, direccion:d.pdir},
     vendedor:v('n-vend'),enganche:+v('n-res')||ENGANCHE_MIN,
-    plazo:+v('n-plz')||60,origen:'Campo'});
+    plazo:+v('n-plz')||60,origen:'Campo'}));
+  if(!ct) return;                     // no se creó · el motivo ya se mostró
 
   const carga=cargaSobreIngreso(planFinanciamiento(getLote(v('n-lote')).precio,+v('n-res')||0,+v('n-plz')||60).cuota,
                                 +String(d.ingreso).replace(/[^\d.]/g,''));
@@ -2197,10 +2205,11 @@ function modalPago(id){
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarPago('${id}')">Guardar boleta</button></div>`);
 }
-function guardarPago(id){
+async function guardarPago(id){
   const monto=+v('p-monto'); if(!monto||monto<=0){toast('Ingresa un monto válido');return;}
-  registrarPago(id,{monto,forma:v('p-forma'),cuenta:v('p-cta'),referencia:v('p-ref')});
-  registrarGestion(id,'Cobranza','Cobranza Satisfactória','Boleta registrada por '+Q(monto));
+  const p=await conBoton(()=>registrarPago(id,{monto,forma:v('p-forma'),cuenta:v('p-cta'),referencia:v('p-ref')}));
+  if(!p) return;
+  await registrarGestion(id,'Cobranza','Cobranza Satisfactória','Boleta registrada por '+Q(monto));
   closeModal(); toast('Pago registrado · pendiente de confirmar'); pintarContrato();
 }
 function modalGestion(id){
@@ -2213,8 +2222,8 @@ function modalGestion(id){
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarGestion('${id}')">Guardar</button></div>`);
 }
-function guardarGestion(id){
-  registrarGestion(id,v('g-tipo'),v('g-res'),v('g-com'));
+async function guardarGestion(id){
+  await conBoton(()=>registrarGestion(id,v('g-tipo'),v('g-res'),v('g-com')));
   closeModal(); toast('Gestión registrada ✓'); drawerTab='gestiones'; pintarContrato();
 }
 function modalDocumento(id){
@@ -2228,9 +2237,10 @@ function modalDocumento(id){
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarDoc('${id}')">Agregar</button></div>`);
 }
-function guardarDoc(id){
+async function guardarDoc(id){
   const n=v('d-nom')||v('d-tipo');
-  agregarDocumento(id,v('d-tipo'),n);
+  const r=await conBoton(()=>agregarDocumento(id,v('d-tipo'),n));
+  if(!r) return;
   closeModal(); toast('Documento agregado ✓'); drawerTab='docs'; pintarContrato();
 }
 function modalIntegrante(id){
@@ -2243,9 +2253,10 @@ function modalIntegrante(id){
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarIntegrante('${id}')">Agregar</button></div>`);
 }
-function guardarIntegrante(id){
+async function guardarIntegrante(id){
   const n=v('i-nom'); if(!n){toast('Ingresa el nombre');return;}
-  agregarIntegrante(id,n,v('i-cargo'));
+  const r=await conBoton(()=>agregarIntegrante(id,n,v('i-cargo')));
+  if(!r) return;
   closeModal(); toast('Integrante agregado ✓'); drawerTab='ficha'; pintarContrato();
 }
 function modalEditarCliente(id){
@@ -2295,9 +2306,34 @@ function cerrarBusqueda(){const b=document.getElementById('searchResults');if(b)
 
 /* ---------- Toast ---------- */
 let tt;
-function toast(m){clearTimeout(tt);document.querySelector('.toast')?.remove();
-  const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);
-  tt=setTimeout(()=>t.remove(),2600);}
+/* ------------------------------------------------------------
+   Guardar tarda, y mientras tarda el botón no puede seguir vivo.
+
+   Antes todo era instantáneo porque escribía en localStorage. Ahora
+   hay un viaje a Guatemala y de vuelta, y en ese medio segundo un
+   doble clic registra el pago dos veces. Esto apaga el botón, avisa
+   que está guardando y lo devuelve pase lo que pase.
+   ------------------------------------------------------------ */
+let _guardando=false;
+async function conBoton(fn){
+  if(_guardando) return null;                 // ya hay una escritura en vuelo
+  _guardando=true;
+  const btn=document.querySelector('.modal-f .btn-primary');
+  const antes=btn?btn.textContent:null;
+  if(btn){btn.disabled=true;btn.textContent='Guardando…';}
+  try{ return await fn(); }
+  finally{
+    _guardando=false;
+    if(btn&&document.body.contains(btn)){btn.disabled=false;btn.textContent=antes;}
+  }
+}
+
+/* Un aviso de error no puede verse igual que uno de éxito ni durar lo
+   mismo: si «no se guardó el pago» desaparece en 2.6 segundos con el
+   mismo color que «pago registrado», nadie se entera de nada. */
+function toast(m,ms,esError){clearTimeout(tt);document.querySelector('.toast')?.remove();
+  const t=document.createElement('div');t.className='toast'+(esError?' toast-error':'');t.textContent=m;document.body.appendChild(t);
+  tt=setTimeout(()=>t.remove(),ms||2600);}
 
 /* ---------- Init ---------- */
 document.querySelectorAll('.nav-item').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.view)));

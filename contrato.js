@@ -56,7 +56,7 @@ function fechaEnLetras(iso){
 }
 
 /* ---------- Generación del contrato ---------- */
-function generarContrato(id){
+async function generarContrato(id){
   const ct=getContrato(id); if(!ct){toast('Contrato no encontrado');return;}
   const cli=getCliente(ct.clienteId)||{};
   const l=getLote(ct.lote)||{};
@@ -138,7 +138,7 @@ function generarContrato(id){
   const w=window.open('','_blank');
   if(!w){toast('Permite las ventanas emergentes para ver el contrato');return;}
   w.document.write(html); w.document.close();
-  registrarGestion(id,'Bitácora Socios','Contactado','Contrato generado desde el suite');
-  agregarDocumento(id,'Contrato firmado',`contrato_${ct.no}.pdf`);
+  await registrarGestion(id,'Bitácora Socios','Contactado','Contrato generado desde el suite');
+  await agregarDocumento(id,'Contrato firmado',`contrato_${ct.no}.pdf`);
   toast('Contrato '+ct.no+' generado');
 }

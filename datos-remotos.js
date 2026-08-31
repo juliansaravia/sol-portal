@@ -37,7 +37,7 @@ async function cargarDesdeSupabase() {
     // Se piden en paralelo: son consultas independientes y la más
     // lenta manda. En serie esto tardaba el triple.
     const [lotes, contratos, clientes, pagos, giros, equipo, documentos, obligaciones] = await Promise.all([
-      todas('v_inventario', 'proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado'),
+      todas('v_inventario', 'proyecto_id,proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado'),
       todas('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,banco,boleta,lote_id,cliente_id,persona_id'),
       todas('cliente', 'id,nombre,dpi,nit,telefono,email,direccion,ocupacion'),
       todas('pago', 'id,contrato_id,monto,fecha_pago,forma_pago,referencia,estado'),
@@ -53,6 +53,9 @@ async function cargarDesdeSupabase() {
 
     DB.lotes = lotes.map(l => ({
       id: l.lote_id,
+      // Sin el proyecto no se puede crear un contrato: el número de
+      // contrato y la serie son por proyecto, no globales.
+      proyecto_id: l.proyecto_id,
       codigo: l.lote,
       clave: claveLote(l.fase, l.lote),
       fase: l.fase,

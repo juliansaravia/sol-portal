@@ -131,7 +131,7 @@ function comisionesPendientes() {
 
 /* ---------- Crear la liquidación ---------- */
 
-function crearLiquidacion(nombreVendedor, periodo) {
+async function crearLiquidacion(nombreVendedor, periodo) {
   const pend = comisionesPendientes().find(x => x.persona.nombre === nombreVendedor);
   if (!pend) throw new Error('No hay comisiones para ' + nombreVendedor);
   if (!pend.contratos.length) {
@@ -157,6 +157,23 @@ function crearLiquidacion(nombreVendedor, periodo) {
     historial: [{ que: 'Liquidación creada', quien: usuarioActual(), cuando: ahora(),
                   detalle: `${pend.contratos.length} contrato(s) · ${_Qc(pend.total)}` }]
   };
+  /* Con base, la liquidación es una fila de `liquidacion` y las comisiones
+     quedan amarradas a ella: una comisión no puede estar en dos. Ese
+     candado lo pone el índice único de 05_liquidacion.sql, no el portal. */
+  if (typeof hayBase === 'function' && hayBase()) {
+    const q = periodoDe(HOY_ISO);
+    const r = await sbCrearLiquidacion({
+      persona_id: pend.persona.id,
+      periodo: periodo || q,
+      desde: pend.desde || HOY_ISO, hasta: pend.hasta || HOY_ISO,
+      total: pend.total,
+      comisiones: (pend.contratos || []).map(c => c.comisionId).filter(Boolean)
+    });
+    if (!r.ok) { avisar(r.error); return null; }
+    l.id = r.dato.id;
+    l.numero = r.dato.numero;
+  }
+
   DB.liquidaciones.push(l);
   saveDB();
   return l;

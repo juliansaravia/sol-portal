@@ -1,7 +1,20 @@
 /* ============================================================
    SUITE SOL INMOBILIARIA · Capa de datos y persistencia
-   Guarda en localStorage. Al conectar el API del CRM/KOMMO,
-   basta sustituir load()/save() por llamadas a la API.
+
+   Dos modos, y el archivo entero está escrito para que la
+   diferencia se note lo menos posible:
+
+     · CON BASE (lo normal) · cada mutación escribe en Supabase
+       por medio de `escribir.js`, espera la respuesta y recién
+       entonces toca el objeto DB. Lo que ve uno lo ven todos.
+
+     · SIN BASE (demostración) · se guarda en localStorage, como
+       antes. Sirve para enseñar el portal sin conexión.
+
+   Las mutaciones son `async` por eso: no se puede prometer que
+   algo quedó guardado antes de que el servidor lo diga. Devuelven
+   el objeto creado, o `null` si falló — y en ese caso el error ya
+   se le mostró al usuario.
    ============================================================ */
 const STORE_KEY = 'solinmobiliaria_suite_v4';
 
@@ -87,6 +100,15 @@ const rolComisiona = id => !!(ROLES_EQUIPO.find(r=>r.id===id)||{}).comisiona;
 
 /* ---------- Utilidades ---------- */
 const uid = () => Math.random().toString(36).slice(2, 9);
+
+/* Cuando algo no se pudo guardar hay que decirlo, y decirlo fuerte.
+   El silencio es lo peor que puede pasar acá: el usuario cierra el
+   modal creyendo que registró un pago que no existe. */
+function avisar(mensaje) {
+  console.error('[no se guardó]', mensaje);
+  if (typeof toast === 'function') toast(mensaje, 7000, true);
+  else alert(mensaje);
+}
 const HOY_ISO = '2026-08-03';   // fecha de corte del sistema
 const addMonths = (iso, m) => { const d = new Date(iso + 'T00:00:00'); d.setMonth(d.getMonth() + m); return d.toISOString().slice(0, 10); };
 
@@ -152,7 +174,7 @@ function seedDB() {
                  ? CONTRATOS_REALES : null;
   if (fuente) {
     DB.contratos = fuente.map(c => {
-      const cli = crearCliente(c.cliente);
+      const cli = crearClienteLocal(c.cliente);
       const ct = {
         id: uid(), no: c.no, lote: c.lote, clienteId: cli.id,
         fecha: c.fecha, precio: c.precio, estado: 'aprobado',
@@ -172,7 +194,7 @@ function seedDB() {
     DB.meta.correlativo = Math.max(131, max);
   } else {
     DB.contratos = CONTRATOS_RAW.map((c, i) => {
-      const cli = crearCliente(c.cliente);
+      const cli = crearClienteLocal(c.cliente);
       const ct = { id: uid(), no: c.no, lote: c.lote, clienteId: cli.id,
         fecha: c.fecha, precio: c.precio, estado: 'aprobado',
         vendedor: VENDEDORES[i % VENDEDORES.length], firma: 'firmado',
@@ -221,24 +243,49 @@ const buscarPersona  = nombre => {
 const nombreCanonico = v => { const p = buscarPersona(v); return p ? p.nombre : v; };
 /* Contratos y comisión acumulada de una persona */
 const contratosDe = nombre => DB.contratos.filter(c => c.vendedor===nombre && c.estado!=='anulado');
-function guardarPersona(datos){
+async function guardarPersona(datos){
+  if (typeof hayBase === 'function' && hayBase()) {
+    const r = await sbGuardarPersona(datos);
+    if (!r.ok) { avisar(r.error); return null; }
+    return DB.equipo.find(x => x.id === r.dato.id) || null;
+  }
   if(datos.id){ const p=DB.equipo.find(x=>x.id===datos.id); if(p) Object.assign(p,datos); }
   else { DB.equipo.push({ id:uid(), activo:true, telefono:'', email:'', ...datos }); }
   saveDB();
+  return datos.id ? DB.equipo.find(x=>x.id===datos.id) : DB.equipo[DB.equipo.length-1];
 }
-function borrarPersona(id){
-  const p=DB.equipo.find(x=>x.id===id); if(!p) return;
-  p.activo=false; saveDB();
+async function borrarPersona(id){
+  if (typeof hayBase === 'function' && hayBase()) {
+    const r = await sbDesactivarPersona(id);
+    if (!r.ok) { avisar(r.error); return false; }
+    return true;
+  }
+  const p=DB.equipo.find(x=>x.id===id); if(!p) return false;
+  p.activo=false; saveDB(); return true;
 }
-/* Reasigna todos los contratos de un vendedor a otro */
-function reasignarContratos(de, a){
+/* Reasigna todos los contratos de un vendedor a otro.
+   Con base, el vínculo es `contrato.persona_id`; el nombre del
+   vendedor es solo lo que se muestra. */
+async function reasignarContratos(de, a){
+  const cts = DB.contratos.filter(c => c.vendedor===de && c.estado!=='anulado');
+  if (typeof hayBase === 'function' && hayBase()) {
+    const destino = DB.equipo.find(p => p.nombre === a);
+    if (!destino) { avisar('No se encontró a «'+a+'» en el equipo.'); return 0; }
+    const r = await sbReasignarContratos(cts.map(c=>c.id), destino.id);
+    if (!r.ok) { avisar(r.error); return 0; }
+    cts.forEach(c => { c.vendedor = a; });
+    return r.dato;
+  }
   let n=0;
   DB.contratos.forEach(c=>{ if(c.vendedor===de){ c.vendedor=a; n++; } });
   saveDB(); return n;
 }
 
 /* ---------- Clientes ---------- */
-function crearCliente(nombreCompleto, extra = {}) {
+/* El constructor puro, sin red. Lo usa la siembra del modo demostración,
+   que es síncrona y tiene que seguir siéndolo: pedirle `await` a un bucle
+   de 148 contratos de ejemplo no aporta nada y rompe el arranque. */
+function crearClienteLocal(nombreCompleto, extra = {}) {
   const partes = nombreCompleto.trim().split(' ');
   const cli = {
     id: uid(),
@@ -253,6 +300,18 @@ function crearCliente(nombreCompleto, extra = {}) {
   };
   DB.clientes.push(cli);
   return cli;
+}
+
+/** El cliente que sí va a la base. Devuelve null si no se pudo guardar. */
+async function crearCliente(nombreCompleto, extra = {}) {
+  if (!(typeof hayBase === 'function' && hayBase()))
+    return crearClienteLocal(nombreCompleto, extra);
+  const r = await sbCrearCliente({
+    nombre: nombreCompleto.trim(), dpi: extra.dpi, telefono: extra.telefono,
+    email: extra.email, direccion: extra.direccion, ocupacion: extra.ocupacion
+  });
+  if (!r.ok) { avisar(r.error); return null; }
+  return DB.clientes[DB.clientes.length - 1];
 }
 const getCliente = id => DB.clientes.find(c => c.id === id);
 const nombreCliente = id => { const c = getCliente(id); return c ? `${c.nombre} ${c.apellido}`.trim() : '—'; };
@@ -442,13 +501,43 @@ function contactoDe(numeroContrato) {
 }
 
 /* ---------- Mutaciones ---------- */
-function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, reserva, enganche, plazo, girosSaldo, origen,
+async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, reserva, enganche, plazo, girosSaldo, origen,
                          direccion, ocupacion, ingresoMensual, constancia, pesoConstancia, pariente }) {
   const l = getLote(lote);
+  if (!l) { avisar('No se encontró el lote ' + lote); return null; }
+
   // El expediente completo se guarda en el cliente: es lo que después
   // permite cobrar, y lo que arma la carpeta para el buró de créditos.
-  const cli = crearCliente(nombre, { dpi, telefono, email, direccion, ocupacion,
+  const cli = await crearCliente(nombre, { dpi, telefono, email, direccion, ocupacion,
                                      ingresoMensual, constancia, pesoConstancia, pariente });
+  if (!cli) return null;
+
+  /* Con base, el contrato lo crea Postgres: el número sale de la serie
+     del proyecto y el plan de giros de generar_giros(). Dos cosas que
+     el navegador no debe decidir, porque de ellas cuelga la cartera. */
+  if (typeof hayBase === 'function' && hayBase()) {
+    const vend = DB.equipo.find(p => p.nombre === vendedor);
+    const r = await sbCrearContrato({
+      lote: l, cliente_id: cli.id, persona_id: vend ? vend.id : null,
+      enganche: enganche !== undefined ? enganche : (reserva !== undefined ? reserva : ENGANCHE_MIN),
+      plazo: plazo || girosSaldo || 60, origen: origen || 'Campo'
+    });
+    if (!r.ok) { avisar(r.error); return null; }
+
+    const ct = {
+      id: r.dato.id, no: r.dato.numero, lote: l.codigo, fase: l.fase, clave: l.clave,
+      clienteId: cli.id, cliente: cli.nombre, tel: cli.tel || '', dpi: cli.dpi || '',
+      vendedor: vendedor || '', fecha: r.dato.fecha,
+      precio: Number(r.dato.precio_venta), enganche: Number(r.dato.enganche),
+      plazo: r.dato.plazo_meses, tasa: Number(r.dato.tasa_mensual),
+      estado: r.dato.estado, obligaciones: []
+    };
+    DB.contratos.push(ct);
+    l.estado = 'reservado';
+    await registrarGestion(ct.id, 'Bitácora Socios', 'Contactado', 'Contrato creado desde ' + (origen || 'Campo'));
+    return ct;
+  }
+
   DB.meta.correlativo++;
   const ct = {
     id: uid(), no: 'SD-' + DB.meta.correlativo, lote, clienteId: cli.id,
@@ -463,22 +552,32 @@ function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, reserva, 
   });
   DB.contratos.push(ct);
   if (l) l.estado = 'reservado';
-  registrarGestion(ct.id, 'Bitácora Socios', 'Contactado', 'Contrato creado desde ' + ct.origen);
+  await registrarGestion(ct.id, 'Bitácora Socios', 'Contactado', 'Contrato creado desde ' + ct.origen);
   saveDB();
   return ct;
 }
-function registrarPago(contratoId, { monto, forma, cuenta, referencia }) {
+async function registrarPago(contratoId, { monto, forma, cuenta, referencia }) {
+  if (typeof hayBase === 'function' && hayBase()) {
+    const r = await sbRegistrarPago(contratoId, { monto, forma, cuenta, referencia });
+    if (!r.ok) { avisar(r.error); return null; }
+    return DB.pagos[DB.pagos.length - 1];
+  }
   const p = { id: uid(), contratoId, monto: +monto, forma, cuenta, referencia,
               fecha: HOY_ISO, estado: 'registrado', registrado: new Date().toISOString() };
   DB.pagos.push(p); saveDB(); return p;
 }
-function confirmarPago(pagoId, ok = true) {
-  const p = DB.pagos.find(x => x.id === pagoId); if (!p) return;
+async function confirmarPago(pagoId, ok = true) {
+  if (typeof hayBase === 'function' && hayBase()) {
+    const r = await sbConfirmarPago(pagoId, ok);
+    if (!r.ok) { avisar(r.error); return false; }
+    return true;
+  }
+  const p = DB.pagos.find(x => x.id === pagoId); if (!p) return false;
   p.estado = ok ? 'confirmado' : 'rechazado';
   p.fechaAprobacion = HOY_ISO;
   const ct = getContrato(p.contratoId);
   if (ct) recalcular(ct);
-  saveDB();
+  saveDB(); return true;
 }
 /* ============================================================
    RECAUDACIÓN SEMANAL
@@ -510,10 +609,25 @@ const motivoLabel = id => (MOTIVOS_NO_COBRO.find(m=>m.id===id)||{}).label || id;
  * Marca una cuota como COBRADA. Registra el pago en estado 'registrado':
  * quien cobra no confirma — eso lo hace el financiero (separación de funciones).
  */
-function marcarCobrada(contrato, fecha, { monto, forma, cuenta, referencia, nota }) {
+async function marcarCobrada(contrato, fecha, { monto, forma, cuenta, referencia, nota }) {
   const ct = DB.contratos.find(c => c.no === contrato);
+
+  if (typeof hayBase === 'function' && hayBase()) {
+    if (!ct) { avisar('No se encontró el contrato ' + contrato); return null; }
+    const r = await sbMarcarCobrada(ct.id, fecha, { monto, forma, cuenta, referencia, nota });
+    if (!r.ok) { avisar(r.error); return null; }
+    const reg = { id: r.dato.recaudo.id, clave: claveCuota(contrato, fecha), contrato, fecha,
+                  estado: 'cobrada', monto: +monto, forma, cuenta, referencia, nota: nota || '',
+                  pagoId: r.dato.pago.id, motivo: null,
+                  usuario: SESION.persona.nombre, marcado: r.dato.recaudo.marcado_en };
+    const i = DB.recaudacion.findIndex(x => x.clave === reg.clave);
+    if (i >= 0) DB.recaudacion[i] = reg; else DB.recaudacion.push(reg);
+    await registrarGestion(ct.id, 'Cobro', 'Cobrada', `Cuota del ${fecha} · ${referencia||'sin boleta'}`);
+    return reg;
+  }
+
   let pagoId = null;
-  if (ct) pagoId = registrarPago(ct.id, { monto, forma, cuenta, referencia }).id;
+  if (ct) pagoId = (await registrarPago(ct.id, { monto, forma, cuenta, referencia })).id;
 
   const prev = buscarRecaudo(contrato, fecha);
   const reg = prev || { id: uid(), clave: claveCuota(contrato, fecha), contrato, fecha };
@@ -524,14 +638,29 @@ function marcarCobrada(contrato, fecha, { monto, forma, cuenta, referencia, nota
     marcado: new Date().toISOString()
   });
   if (!prev) DB.recaudacion.push(reg);
-  if (ct) registrarGestion(ct.id, 'Cobro', 'Cobrada', `Cuota del ${fecha} · ${referencia||'sin boleta'}`);
+  if (ct) await registrarGestion(ct.id, 'Cobro', 'Cobrada', `Cuota del ${fecha} · ${referencia||'sin boleta'}`);
   saveDB();
   return reg;
 }
 
 /** Marca una cuota como NO COBRADA con su motivo. */
-function marcarNoCobrada(contrato, fecha, { motivo, nota, promesa }) {
+async function marcarNoCobrada(contrato, fecha, { motivo, nota, promesa }) {
   const ct = DB.contratos.find(c => c.no === contrato);
+
+  if (typeof hayBase === 'function' && hayBase()) {
+    if (!ct) { avisar('No se encontró el contrato ' + contrato); return null; }
+    const r = await sbMarcarNoCobrada(ct.id, fecha, { motivo, nota, promesa });
+    if (!r.ok) { avisar(r.error); return null; }
+    const reg = { id: r.dato.id, clave: claveCuota(contrato, fecha), contrato, fecha,
+                  estado: 'no_cobrada', motivo, nota: nota || '', promesa: promesa || null,
+                  monto: 0, pagoId: null,
+                  usuario: SESION.persona.nombre, marcado: r.dato.marcado_en };
+    const i = DB.recaudacion.findIndex(x => x.clave === reg.clave);
+    if (i >= 0) DB.recaudacion[i] = reg; else DB.recaudacion.push(reg);
+    await registrarGestion(ct.id, 'Cobro', 'No cobrada', motivoLabel(motivo) + (nota ? ' · ' + nota : ''));
+    return reg;
+  }
+
   const prev = buscarRecaudo(contrato, fecha);
   const reg = prev || { id: uid(), clave: claveCuota(contrato, fecha), contrato, fecha };
   Object.assign(reg, {
@@ -541,15 +670,25 @@ function marcarNoCobrada(contrato, fecha, { motivo, nota, promesa }) {
     marcado: new Date().toISOString()
   });
   if (!prev) DB.recaudacion.push(reg);
-  if (ct) registrarGestion(ct.id, 'Cobro', 'No cobrada', motivoLabel(motivo) + (nota ? ' · ' + nota : ''));
+  if (ct) await registrarGestion(ct.id, 'Cobro', 'No cobrada', motivoLabel(motivo) + (nota ? ' · ' + nota : ''));
   saveDB();
   return reg;
 }
 
 /** Deshace la marca (si se equivocaron). Anula el pago si aún no se confirmó. */
-function desmarcarCuota(contrato, fecha) {
+async function desmarcarCuota(contrato, fecha) {
   const i = DB.recaudacion.findIndex(r => r.clave === claveCuota(contrato, fecha));
   if (i < 0) return;
+
+  if (typeof hayBase === 'function' && hayBase()) {
+    const ct = DB.contratos.find(c => c.no === contrato);
+    if (!ct) { avisar('No se encontró el contrato ' + contrato); return; }
+    const r = await sbDesmarcarCuota(ct.id, fecha);
+    if (!r.ok) { avisar(r.error); return; }
+    DB.recaudacion.splice(i, 1);
+    return;
+  }
+
   const reg = DB.recaudacion[i];
   if (reg.pagoId) {
     const j = DB.pagos.findIndex(p => p.id === reg.pagoId);
@@ -584,34 +723,69 @@ function resumenRecaudacion(desde, hasta) {
   };
 }
 
-function registrarGestion(contratoId, tipo, resultado, comentario) {
+async function registrarGestion(contratoId, tipo, resultado, comentario) {
+  if (typeof hayBase === 'function' && hayBase()) {
+    const r = await sbGestion(contratoId, tipo, resultado, comentario);
+    /* Una gestión que no se pudo anotar no debe tumbar la operación que
+       la produjo: el pago ya entró. Se avisa en consola y se sigue. */
+    if (!r.ok) console.warn('[gestión] no se pudo anotar:', r.error);
+    return r.ok ? r.dato : null;
+  }
   DB.gestiones.push({ id: uid(), contratoId, tipo, resultado, comentario,
                       fecha: new Date().toISOString().slice(0, 16).replace('T', ' '), usuario: (window.__user ? window.__user.name : 'Sistema') });
   saveDB();
 }
-function agregarDocumento(contratoId, tipo, nombre) {
+async function agregarDocumento(contratoId, tipo, nombre, url) {
+  if (typeof hayBase === 'function' && hayBase()) {
+    const r = await sbDocumento(contratoId, tipo, nombre, url);
+    if (!r.ok) { avisar(r.error); return null; }
+    return r.dato;
+  }
   DB.documentos.push({ id: uid(), contratoId, tipo, nombre, fecha: HOY_ISO });
   saveDB();
 }
-function agregarIntegrante(contratoId, nombre, cargo) {
-  const ct = getContrato(contratoId); if (!ct) return;
+async function agregarIntegrante(contratoId, nombre, cargo) {
+  const ct = getContrato(contratoId); if (!ct) return null;
+  if (typeof hayBase === 'function' && hayBase()) {
+    const r = await sbIntegrante(contratoId, nombre, cargo);
+    if (!r.ok) { avisar(r.error); return null; }
+    ct.integrantes = ct.integrantes || [];
+    ct.integrantes.push({ id: r.dato.id, nombre, cargo });
+    return r.dato;
+  }
   ct.integrantes = ct.integrantes || [];
   ct.integrantes.push({ id: uid(), nombre, cargo });
   saveDB();
 }
-function aprobarContrato(id) {
-  const ct = getContrato(id); if (!ct) return;
+async function aprobarContrato(id) {
+  const ct = getContrato(id); if (!ct) return false;
+  if (typeof hayBase === 'function' && hayBase()) {
+    // 'activo' es el estado que la base entiende; es también el que
+    // dispara la partida contable de la venta.
+    const r = await sbEstadoContrato(id, 'activo', 'vendido');
+    if (!r.ok) { avisar(r.error); return false; }
+    const l = getLote(ct.lote); if (l) l.estado = 'vendido';
+    await registrarGestion(id, 'Bitácora Socios', 'Solucionado', 'Crédito aprobado por el comité');
+    return true;
+  }
   ct.estado = 'aprobado'; ct.fechaAprobacion = HOY_ISO;
   const l = getLote(ct.lote); if (l) l.estado = 'vendido';
-  registrarGestion(id, 'Bitácora Socios', 'Solucionado', 'Crédito aprobado por el comité');
-  saveDB();
+  await registrarGestion(id, 'Bitácora Socios', 'Solucionado', 'Crédito aprobado por el comité');
+  saveDB(); return true;
 }
-function rechazarContrato(id) {
-  const ct = getContrato(id); if (!ct) return;
+async function rechazarContrato(id) {
+  const ct = getContrato(id); if (!ct) return false;
+  if (typeof hayBase === 'function' && hayBase()) {
+    const r = await sbEstadoContrato(id, 'anulado', 'disponible');
+    if (!r.ok) { avisar(r.error); return false; }
+    const l = getLote(ct.lote); if (l) l.estado = 'disponible';
+    await registrarGestion(id, 'Bitácora Socios', 'Solucionado', 'Solicitud rechazada — lote liberado');
+    return true;
+  }
   ct.estado = 'anulado';
   const l = getLote(ct.lote); if (l) l.estado = 'disponible';
-  registrarGestion(id, 'Bitácora Socios', 'Solucionado', 'Solicitud rechazada — lote liberado');
-  saveDB();
+  await registrarGestion(id, 'Bitácora Socios', 'Solucionado', 'Solicitud rechazada — lote liberado');
+  saveDB(); return true;
 }
 
 /* ---------- Init ---------- */

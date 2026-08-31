@@ -461,3 +461,8 @@ tr.cot-sel td{background:#fbf3df !important;font-weight:700}
   .hoja-benef,.hoja-comparar,.hoja-dos{page-break-inside:avoid}
 }
 .marca-falta{font-family:Georgia,serif;font-size:5mm;color:var(--terracota);opacity:.75}
+
+/* El aviso de que algo NO se guardó. Rojo, y se queda más tiempo:
+   es el único caso en que interrumpir al usuario está justificado. */
+.toast-error{background:var(--mora);color:#fff;border-color:var(--mora);
+  max-width:min(520px,92vw);white-space:normal;line-height:1.45;text-align:left}
