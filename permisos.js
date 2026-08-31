@@ -205,8 +205,6 @@ const VISTA_REQUIERE = {
   contratos: 'venta.ver_todas',
   clientes: null,
   expedientes: 'doc.ver_todos',
-  leads: 'venta.ver_todas',
-  online: 'venta.ver_todas',
   aprobacion: 'venta.aprobar',
   cobranza: 'cobranza.ver',
   agenda: 'cobranza.gestionar',

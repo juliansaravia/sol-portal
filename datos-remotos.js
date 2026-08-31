@@ -36,13 +36,14 @@ async function cargarDesdeSupabase() {
   try {
     // Se piden en paralelo: son consultas independientes y la más
     // lenta manda. En serie esto tardaba el triple.
-    const [lotes, contratos, clientes, pagos, giros, equipo] = await Promise.all([
+    const [lotes, contratos, clientes, pagos, giros, equipo, documentos] = await Promise.all([
       todas('v_inventario', 'proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado'),
       todas('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,banco,boleta,lote_id,cliente_id,persona_id'),
-      todas('cliente', 'id,nombre,dpi,nit,telefono,direccion,ocupacion'),
+      todas('cliente', 'id,nombre,dpi,nit,telefono,email,direccion,ocupacion'),
       todas('pago', 'id,contrato_id,monto,fecha_pago,forma_pago,referencia,estado'),
       todas('giro', 'id,obligacion_id,numero,vencimiento,monto,estado,abonado'),
-      todas('persona', 'id,nombre,codigo,rol,email,telefono,activo')
+      todas('persona', 'id,nombre,codigo,rol,email,telefono,activo'),
+      todas('documento', 'id,contrato_id,cliente_id,tipo,nombre,created_at')
     ]);
 
     const porLote = new Map(lotes.map(l => [l.lote_id, l]));
@@ -62,8 +63,15 @@ async function cargarDesdeSupabase() {
 
     DB.clientes = clientes.map(c => ({
       id: c.id, nombre: c.nombre, apellido: '',
-      dpi: c.dpi, nit: c.nit, tel: c.telefono,
+      dpi: c.dpi, nit: c.nit, tel: c.telefono, correo: c.email,
       direccion: c.direccion, ocupacion: c.ocupacion
+    }));
+
+    /* Los expedientes se arman con esto: sin los documentos de la base,
+       la pantalla marcaba TODOS los contratos como incompletos. */
+    DB.documentos = documentos.map(d => ({
+      id: d.id, contratoId: d.contrato_id, clienteId: d.cliente_id,
+      tipo: d.tipo, nombre: d.nombre, fecha: _fecha(d.created_at)
     }));
 
     DB.equipo = equipo.map(p => ({
@@ -137,6 +145,7 @@ async function cargarDesdeSupabase() {
     const resumen = {
       lotes: DB.lotes.length, contratos: DB.contratos.length,
       clientes: DB.clientes.length, pagos: DB.pagos.length,
+      documentos: DB.documentos.length,
       giros: giros.length, equipo: DB.equipo.length,
       ms: Date.now() - t0
     };
@@ -155,14 +164,30 @@ async function cargarDesdeSupabase() {
  * que sin paginar se perdía el 80% de la cartera sin avisar.
  */
 async function todas(tabla, columnas, tam = 1000) {
-  const acumulado = [];
-  for (let desde = 0; ; desde += tam) {
-    const { data, error } = await SB.from(tabla).select(columnas).range(desde, desde + tam - 1);
-    if (error) throw new Error(`${tabla}: ${error.message}`);
-    acumulado.push(...data);
-    if (data.length < tam) return acumulado;
-    if (acumulado.length > 100000) throw new Error(`${tabla}: demasiadas filas`);
+  /* La primera página viene con el total (count: 'exact'), así que en
+     un solo viaje sabemos cuántas páginas faltan y las pedimos TODAS
+     a la vez.
+
+     Antes esto era un for que esperaba cada página antes de pedir la
+     siguiente: con 5,550 giros eran 6 viajes en fila india, y desde
+     Guatemala cada viaje cuesta medio segundo largo. El usuario se
+     quedaba mirando una pantalla vacía mientras el navegador hacía
+     cola consigo mismo. Ahora son 2 rondas en vez de 6. */
+  const { data, error, count } = await SB
+    .from(tabla).select(columnas, { count: 'exact' }).range(0, tam - 1);
+  if (error) throw new Error(`${tabla}: ${error.message}`);
+  if (count == null || count <= tam) return data;
+  if (count > 100000) throw new Error(`${tabla}: demasiadas filas (${count})`);
+
+  const pendientes = [];
+  for (let desde = tam; desde < count; desde += tam)
+    pendientes.push(SB.from(tabla).select(columnas).range(desde, desde + tam - 1));
+
+  for (const r of await Promise.all(pendientes)) {
+    if (r.error) throw new Error(`${tabla}: ${r.error.message}`);
+    data.push(...r.data);
   }
+  return data;
 }
 
 window.cargarDesdeSupabase = cargarDesdeSupabase;

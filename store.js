@@ -419,6 +419,28 @@ const contratoDeLote = codigo => DB.contratos.find(c => c.lote === codigo && c.e
 const gestionesDe = id => DB.gestiones.filter(g => g.contratoId === id).sort((a, b) => b.fecha.localeCompare(a.fecha));
 const documentosDe = id => DB.documentos.filter(d => d.contratoId === id);
 
+/* El contacto del titular de un contrato.
+
+   Vivía en data-contactos.js — la foto del CRM de julio, que no se
+   publica porque trae teléfonos de clientes reales. Al no estar,
+   `contactoDe` no existía y la pantalla de Expedientes se caía entera
+   con "contactoDe is not defined": el tab estaba en el menú pero no
+   dibujaba nada.
+
+   Ahora sale de la base, que es donde vive el dato de verdad. */
+function contactoDe(numeroContrato) {
+  const ct = DB.contratos.find(c => c.no === numeroContrato);
+  if (!ct) return null;
+  const cl = DB.clientes.find(c => c.id === ct.clienteId) || {};
+  return {
+    tel:       cl.tel || ct.tel || '',
+    correo:    cl.correo || '',
+    ocupacion: cl.ocupacion || '',
+    dpi:       cl.dpi || ct.dpi || '',
+    direccion: cl.direccion || ''
+  };
+}
+
 /* ---------- Mutaciones ---------- */
 function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, reserva, enganche, plazo, girosSaldo, origen,
                          direccion, ocupacion, ingresoMensual, constancia, pesoConstancia, pariente }) {

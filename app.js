@@ -41,8 +41,6 @@ const TITLES={
   inventario:['Mapa del conjunto','Plano real · haz clic en un lote para ver su ficha'],
   contratos:['Contratos','Expedientes de venta'],
   clientes:['Clientes','Información de los socios'],
-  leads:['Leads del embudo','Prospectos capturados desde redes sociales'],
-  online:['Compra en línea','Autoservicio del cliente'],
   aprobacion:['Aprobación de créditos','Bandeja del comité'],
   cobranza:['Cobranza','Cartera, giros y mora'],
   confirmacion:['Confirmación de pagos','Boletas pendientes de verificar'],
@@ -234,7 +232,7 @@ function setView(v){
   document.getElementById('viewTitle').textContent=TITLES[v][0];
   document.getElementById('viewSub').textContent=TITLES[v][1];
   ({inicio:renderInicio,cotizador:renderCotizador,vender:renderVender,inventario:renderInventario,contratos:renderContratos,
-    clientes:renderClientes,leads:renderLeads,online:renderOnline,aprobacion:renderAprobacion,cobranza:renderCobranza,
+    clientes:renderClientes,aprobacion:renderAprobacion,cobranza:renderCobranza,
     confirmacion:renderConfirmacion,comisiones:renderComisiones,reporteria:renderReporteria,
     agenda:renderAgenda,recaudacion:renderRecaudacion,conciliacion:renderConciliacion,seguridad:renderSeguridad,expedientes:renderExpedientes,equipo:renderEquipo,automatizaciones:renderAutomatizaciones}[v])();
 }

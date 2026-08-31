@@ -111,7 +111,7 @@ function barrasPlazos(precio, enganche, plazos, elegido) {
     // plazo es menos interés para él y menos exposición para nosotros.
     const ahorro = base ? base.total - x.total : 0;
     return `<div class="hoja-barra${x.p === elegido ? ' sel' : ''}">
-      <span class="hoja-barra-m">${x.p} meses</span>
+      <span class="hoja-barra-m">${textoAnios(x.p)}</span>
       <span class="hoja-barra-p"><span class="hoja-barra-f" style="width:${Math.round(x.cuota / max * 100)}%"></span></span>
       <span class="hoja-barra-q">${_q(x.cuota)}</span>
       <span class="hoja-barra-a">${ahorro > 1 ? 'ahorra ' + _q(ahorro) : ''}</span>
@@ -126,13 +126,22 @@ function barrasPlazos(precio, enganche, plazos, elegido) {
      total 11 · beneficios 26 · comparación 38 · pie 16
      ────────────────────────────────────────────── 178 de 254
    ============================================================ */
+/* El plazo en años, que es como la gente piensa el tiempo.
+   "5 años" se entiende de una; "60 meses" hay que dividirlo mentalmente. */
+function textoAnios(meses) {
+  const a = meses / 12;
+  if (Number.isInteger(a)) return a === 1 ? '1 año' : `${a} años`;
+  const enteros = Math.floor(a), sobran = meses % 12;
+  if (!enteros) return `${meses} meses`;
+  return `${enteros} año${enteros > 1 ? 's' : ''} y ${sobran} mes${sobran > 1 ? 'es' : ''}`;
+}
+
 function hojaCliente(o) {
   const { lote, precio, enganche, plazo } = o;
   const plan = planFinanciamiento(precio, enganche, plazo);
   const l = typeof getLote === 'function' ? getLote(lote) : null;
   const plazos = (typeof PROYECTO !== 'undefined' && PROYECTO.plazos)
     ? PROYECTO.plazos.filter(p => p >= 12) : [12, 24, 36, 48, 60, 72, 84];
-  const anios = plazo / 12;
 
   return `<div class="hoja">
 
@@ -172,8 +181,8 @@ function hojaCliente(o) {
     <div class="hoja-meses-txt">
       <div class="hoja-paso">3</div>
       <div>
-        <div class="hoja-label">Durante ${plazo} meses</div>
-        <div class="hoja-sub">${anios % 1 ? anios.toFixed(1) : anios} año(s) · cada cuadro es un mes</div>
+        <div class="hoja-label">Durante ${textoAnios(plazo)}</div>
+        <div class="hoja-sub">${plazo} cuotas · cada cuadro es un mes</div>
       </div>
     </div>
     <div class="hoja-rejilla">${rejillaMeses(plazo)}</div>
@@ -185,8 +194,8 @@ function hojaCliente(o) {
       <span class="hoja-total-contado">${_q(precio)}</span>
     </div>
     <div class="hoja-total-col">
-      <span class="hoja-total-lbl">Pagando a ${plazo} meses</span>
-      <span class="hoja-total-plazo">${_q(plan.total)}</span>
+      <span class="hoja-total-lbl">Monto hasta el final · ${textoAnios(plazo)}</span>
+      <span class="hoja-total-contado">${_q(plan.total)}</span>
     </div>
     <div class="hoja-total-por">
       La diferencia es lo que cuesta que nosotros le prestemos: sin banco,
@@ -203,7 +212,7 @@ function hojaCliente(o) {
   </div>
 
   <div class="hoja-comparar">
-    <div class="hoja-label">Entre menos meses, menos paga en total</div>
+    <div class="hoja-label">Entre menos años, menos paga en total</div>
     ${barrasPlazos(precio, enganche, plazos, plazo)}
   </div>
 
@@ -252,7 +261,7 @@ function hojaInterna(o) {
       ${fila('Precio de venta', _q2(precio))}
       ${fila('Enganche', _q2(enganche) + ` <span class="mut">(${(enganche / precio * 100).toFixed(1)}%)</span>`)}
       ${fila('Saldo a financiar', _q2(plan.saldo))}
-      ${fila('Plazo', `${plazo} meses`)}
+      ${fila('Plazo', `${textoAnios(plazo)} · ${plazo} cuotas`)}
       ${fila('Tasa mensual', `${(tasa * 100).toFixed(2)}% <span class="mut">plana sobre el saldo original</span>`)}
       ${fila('Abono a capital', _q2(plan.capital) + ' <span class="mut">mensual</span>')}
       ${fila('Interés', _q2(plan.interes) + ' <span class="mut">mensual</span>')}
@@ -273,7 +282,7 @@ function hojaInterna(o) {
       <th class="num">Cuota</th><th class="num">Total intereses</th><th class="num">Total del plan</th></tr></thead>
     <tbody>${plazos.map(p => {
       const x = planFinanciamiento(precio, enganche, p);
-      return `<tr class="${p === plazo ? 'sel' : ''}"><td>${p} meses</td>
+      return `<tr class="${p === plazo ? 'sel' : ''}"><td>${textoAnios(p)}</td>
         <td class="num">${_q2(x.capital)}</td><td class="num">${_q2(x.interes)}</td>
         <td class="num"><b>${_q2(x.cuota)}</b></td><td class="num">${_q2(x.totalInteres)}</td>
         <td class="num">${_q2(x.total)}</td></tr>`;}).join('')}
