@@ -5,7 +5,7 @@
    ============================================================ */
 const Qk = n => 'Q ' + Math.round(n).toLocaleString('es-GT');
 const Qf = n => 'Q ' + (Math.round(n*100)/100).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2});
-const WA_NUM = '50200000000';   // ← número real de WhatsApp Business
+const WA_NUM = '50235101598';   // WhatsApp Business de La Esperanza
 
 let F = { lote:null, eng:2500, plz:60, lead:null, filtro:'todos', tope:12, etapa:'atraccion' };
 
@@ -29,9 +29,39 @@ function track(evento, extra){
   console.log('[funnel]', evento, e);
 }
 
+
+/* ---------- La lista de precios que se anuncia ----------
+
+   initDB() siembra DB.lotes desde data.js (la foto de julio) o,
+   peor, desde el localStorage del visitante — que puede tener
+   precios de hace semanas. Ninguna de las dos es la lista buena.
+
+   inventario-publico.js se genera desde la base con
+   `node hub/tools/precios.js --escribir`. Manda ese archivo,
+   siempre, sobre cualquier cosa que ya estuviera en memoria.
+
+   Si por lo que sea no cargó, se sigue con lo que había: es
+   preferible una página con precios viejos a una página vacía —
+   pero queda dicho en la consola.                              */
+function usarInventarioPublico(){
+  const inv = window.INVENTARIO_PUBLICO;
+  if(!inv || !inv.lotes || !inv.lotes.length){
+    console.warn('[funnel] inventario-publico.js no cargó · se anuncian precios de respaldo');
+    return;
+  }
+  const geo = {}; (window.LOT_GEO||[]).forEach(g=>{ geo[g.id]=g; });
+  DB.lotes = inv.lotes.map(l=>({
+    ...l,
+    x: geo[l.codigo] ? geo[l.codigo].x : null,
+    y: geo[l.codigo] ? geo[l.codigo].y : null
+  }));
+  console.info(`[funnel] ${DB.lotes.length} lotes disponibles · lista del ${inv.generado}`);
+}
+
 /* ---------- Inicio ---------- */
 function initFunnel(){
   initDB();
+  usarInventarioPublico();
   const disp=DB.lotes.filter(l=>l.estado==='disponible'&&l.precio>0);
   document.getElementById('fDisp').textContent=disp.length;
   if(ORIGEN.fuente!=='Directo')

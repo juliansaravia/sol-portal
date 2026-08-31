@@ -47,10 +47,42 @@ const SB = (() => {
                   'no la cadena de conexión de Postgres: esa trae la contraseña de la base.');
     return null;
   }
+  /* SIN Web Locks.
+
+     supabase-js coordina sus llamadas de auth con la API de Web Locks
+     del navegador. Cuando un candado queda huérfano —pasa después de
+     un login fallido, o al volver a una pestaña dormida— TODOS los
+     métodos de auth se quedan esperando ese candado para siempre:
+     signInWithPassword() y getUser() no devuelven nada, ni resultado
+     ni error. El botón se queda en "Entrando..." y la consola limpia.
+     Es un bug conocido de la librería (supabase-js #2013 y #2111).
+
+     Este portal se usa en una sola pestaña por persona, así que el
+     candado no coordina nada que valga la pena. Se reemplaza por uno
+     que ejecuta y ya. */
+  const sinCandado = async (_nombre, _espera, fn) => await fn();
+
   return window.supabase.createClient(cfg.url, cfg.anon, {
-    auth: { persistSession: true, autoRefreshToken: true }
+    auth: { persistSession: true, autoRefreshToken: true, lock: sinCandado }
   });
 })();
+
+/* Nada de esperar para siempre.
+
+   Aunque el candado ya no cuelgue, una petición puede quedarse sin
+   respuesta por mil razones —red caída, proyecto pausado, un bug que
+   todavía no conocemos—. Un portal que se queda en "Entrando..." sin
+   decir nada es peor que uno que falla: el usuario no sabe si esperar,
+   reintentar o llamar a alguien. */
+function conLimite(promesa, segundos, queHacia) {
+  return Promise.race([
+    promesa,
+    new Promise((_, rechazar) =>
+      setTimeout(() => rechazar(new Error(
+        `${queHacia}: el servidor no respondió en ${segundos} segundos.`)),
+        segundos * 1000))
+  ]);
+}
 
 /* Quién está usando el portal ahora mismo. */
 const SESION = { persona: null, rol: null, email: null, modoConsulta: true };
@@ -65,10 +97,15 @@ const hayRemoto = () => SB !== null;
 async function iniciarSesion(email, contrasena) {
   if (!SB) return { ok: false, error: 'El portal no está conectado a la base' };
 
-  const { error } = await SB.auth.signInWithPassword({
-    email: String(email || '').trim().toLowerCase(),
-    password: contrasena || ''
-  });
+  let error;
+  try {
+    ({ error } = await conLimite(SB.auth.signInWithPassword({
+      email: String(email || '').trim().toLowerCase(),
+      password: contrasena || ''
+    }), 20, 'Al iniciar sesión'));
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
   // Supabase no dice si falló el correo o la contraseña, y está bien:
   // decirlo permitiría averiguar qué correos existen.
   if (error) return { ok: false, error: 'Correo o contraseña incorrectos' };
@@ -85,7 +122,12 @@ async function iniciarSesion(email, contrasena) {
 async function cargarSesion() {
   if (!SB) return { ok: false, error: 'sin conexión' };
 
-  const { data: { user } } = await SB.auth.getUser();
+  let user;
+  try {
+    ({ data: { user } } = await conLimite(SB.auth.getUser(), 20, 'Al leer la sesión'));
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
   if (!user) return { ok: false, error: 'sin sesión' };
 
   // La fila de persona sale por RLS: solo devuelve la propia.
