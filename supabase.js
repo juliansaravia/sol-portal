@@ -130,11 +130,35 @@ async function cargarSesion() {
   }
   if (!user) return { ok: false, error: 'sin sesión' };
 
-  // La fila de persona sale por RLS: solo devuelve la propia.
+  /* Quién soy lo decide la BASE, no el portal.
+
+     Acá había un error grave: se pedía `persona` con `.limit(1)` y el
+     comentario decía "la RLS solo devuelve la propia". Eso es cierto
+     para un vendedor, pero NO para admin, gerencia y financiero: su
+     política les deja leer a todo el equipo. Entonces `.limit(1)`
+     devolvía una fila cualquiera — la primera que saliera— y el portal
+     te daba la identidad, el rol y el estado de OTRA persona.
+
+     Por eso a Julián le decía "tu usuario está desactivado": estaba
+     mirando la fila de un vendedor dado de baja.
+
+     Ahora se le pregunta a la base con mi_persona(), que es la misma
+     función que usan todas las políticas RLS. Un solo criterio de
+     identidad para el portal y para los permisos, imposible que se
+     contradigan. Y si mi_persona() devuelve un id, la persona ya está
+     activa: la función lo exige. */
+  const { data: idPersona, error: eId } = await SB.rpc('mi_persona');
+  if (eId) return { ok: false, error: eId.message };
+  if (!idPersona) return {
+    ok: false,
+    error: 'Tu usuario existe pero no está enlazado a una persona del equipo. ' +
+           'Que administración corra el UPDATE de persona.auth_uid.'
+  };
+
   const { data: p, error } = await SB
     .from('persona')
     .select('id, nombre, rol, email, activo')
-    .limit(1)
+    .eq('id', idPersona)
     .maybeSingle();
 
   if (error) return { ok: false, error: error.message };
