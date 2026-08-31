@@ -155,11 +155,14 @@ async function cargarSesion() {
            'Que administración corra el UPDATE de persona.auth_uid.'
   };
 
-  const { data: p, error } = await SB
-    .from('persona')
-    .select('id, nombre, rol, email, activo')
-    .eq('id', idPersona)
-    .maybeSingle();
+  /* La fila y el modo consulta se piden a la vez: son independientes.
+     En serie eran dos viajes al servidor, uno detrás del otro. */
+  const [rPersona, rAjuste] = await Promise.all([
+    SB.from('persona').select('id, nombre, rol, email, activo')
+      .eq('id', idPersona).maybeSingle(),
+    SB.from('ajuste').select('valor').eq('clave', 'modo_consulta').maybeSingle()
+  ]);
+  const { data: p, error } = rPersona;
 
   if (error) return { ok: false, error: error.message };
   if (!p) return {
@@ -175,8 +178,7 @@ async function cargarSesion() {
 
   // El modo consulta es de la base, no del navegador: mientras esté
   // encendido nadie escribe aunque le den la vuelta a la pantalla.
-  const { data: aj } = await SB.from('ajuste').select('valor').eq('clave', 'modo_consulta').maybeSingle();
-  SESION.modoConsulta = !aj || aj.valor === 'true';
+  SESION.modoConsulta = !rAjuste.data || rAjuste.data.valor === 'true';
 
   return { ok: true, persona: p };
 }
