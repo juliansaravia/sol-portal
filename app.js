@@ -70,8 +70,10 @@ function renderAuth(reanudando){
      decide la tabla persona. Sin conexión: el modo demostración de
      siempre, que corre con los datos congelados de julio. */
   if(hayRemoto()){
-    L.innerHTML=`<div class="login-box" style="max-width:400px">
-      <div class="login-brand">Sol Inmobiliaria</div><div class="login-sub">${cfg.titulo}</div>
+    L.innerHTML=`<div class="login-box" style="max-width:420px">
+      <div class="login-marca"><span class="brand-mark"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 30l16-14 16 14"/><path d="M12 26v12h24V26"/><path d="M24 6v4M9 11l2.8 2.8M39 11l-2.8 2.8M4 24h4M40 24h4"/></svg></span>
+        <span><span class="brand-name">SOL</span><span class="brand-sub">Inmobiliaria</span></span></div>
+      <div class="login-sub">${cfg.titulo}</div>
       <p class="login-hint">${cfg.sub}</p>
       <div class="field" style="text-align:left;margin-bottom:12px"><label>Correo</label>
         <input id="au-email" type="email" autocomplete="username"
