@@ -1563,11 +1563,14 @@ async function guardarCobro(contrato,fecha){
     if(reg.pagoId && typeof hayBase==='function' && hayBase()){
       const a=await sbAdjuntar('pago', reg.pagoId, archivo, 'Boleta '+ref);
       if(!a.ok) toast('El cobro quedó registrado, pero la foto no subió: '+a.error+' · Subila desde el contrato.',9000,true);
+      else (DB.adjuntos=DB.adjuntos||[]).push({id:a.dato.id,entidad:'pago',entidadId:Number(reg.pagoId),bucket:a.dato.bucket,ruta:a.dato.ruta,nombre:archivo.name,mime:archivo.type,bytes:archivo.size,descripcion:'Boleta '+ref,fecha:HOY_ISO});
     }
     return reg;
   });
   if(!r) return;                      // el motivo ya se mostró
-  closeModal(); toast('Cobro registrado con su boleta · pendiente de confirmar ✓'); renderRecaudacion();
+  closeModal(); toast('Cobro registrado con su boleta ✓ · emitiendo el recibo…'); renderRecaudacion();
+  /* Con la boleta arriba, el recibo sale solo y se ofrece para mandarlo. */
+  if(r.pagoId) emitirYCompartirRecibo(r.pagoId);
 }
 
 /* --- Registrar que no se cobró --- */
@@ -2926,14 +2929,15 @@ function pintarContrato(){
     /* Cada pago con su boleta. Lo cobrado antes del portal entró sin
        respaldo; acá se ve cuál falta y se sube desde la misma fila. */
     const pagos=(indices().pagosPorContrato.get(String(ct.id))||[]).slice().sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
-    const sinBol=pagos.filter(p=>p.estado!=='rechazado'&&!adjuntosDe('pago',p.id).length);
+    const sinBol=pagos.filter(p=>p.estado!=='rechazado'&&!adjuntosDe('pago',p.id).some(a=>!/^Recibo/i.test(a.descripcion||'')));
     h+=`<div class="sect-t" style="margin-top:16px">Pagos y boletas · ${pagos.length}${sinBol.length?` <span class="nav-badge">${sinBol.length} sin boleta</span>`:''}</div>`;
     if(!pagos.length) h+=`<div class="hint">Sin pagos registrados.</div>`;
-    pagos.forEach(p=>{ const bol=adjuntosDe('pago',p.id);
+    pagos.forEach(p=>{ const bol=adjuntosDe('pago',p.id).filter(a=>!/^Recibo/i.test(a.descripcion||''));
       h+=`<div class="pay-item"><div class="pay-ico" style="${bol.length?'':'color:var(--gold)'}">${bol.length?'🗎':'⚠'}</div>
         <div class="pay-main"><div class="pay-title">${Q(p.monto)} · ${esc(p.forma||'')} ${p.referencia?`· ref. ${esc(p.referencia)}`:''}</div>
           <div class="pay-sub">${fmtD(p.fecha)} · ${esc(p.estado||'')}${bol.length?` · boleta subida`:' · <b>sin boleta</b>'}</div></div>
-        <div>${bol.length?`<button class="btn btn-ghost btn-sm" onclick="verAdjunto('${bol[0].id}')">Ver</button>`:''}
+        <div>${(()=>{const rc=reciboDe(p.id); return rc?`<button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">Recibo ${String(rc.numero).padStart(6,'0')}</button>`:(bol.length&&p.estado!=='rechazado'?`<button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">Emitir recibo</button>`:'');})()}
+          ${bol.length?`<button class="btn btn-ghost btn-sm" onclick="verAdjunto('${bol[0].id}')">Ver</button>`:''}
           ${p.estado!=='rechazado'?`<button class="btn ${bol.length?'btn-ghost':'btn-gold'} btn-sm" onclick="modalBoleta('${p.id}')">${bol.length?'Otra boleta':'Subir boleta'}</button>`:''}</div></div>`;});
   }
 
@@ -3301,6 +3305,105 @@ const DOCS_REQ = () => (typeof DB !== 'undefined' && DB.documentosRequeridos && 
      {codigo:'dpi_pariente', nombre:'DPI del pariente o fiador', caras:2, obligatorio:true},
      {codigo:'plan_pagos', nombre:'Plan de pagos firmado',caras:1, obligatorio:true}];
 
+/* ============================================================ RECIBO DE PAGO
+   Formal, numerado y digital, como el del CRM pero automático: se emite
+   al subir la boleta y queda colgado del pago. Se comparte por WhatsApp
+   desde el celular (Web Share) o se descarga. */
+let _logoAljibe=null;
+async function logoAljibe(){
+  if(_logoAljibe) return _logoAljibe;
+  try{ const b=await (await fetch('assets/aljibe-logo.png')).blob();
+       _logoAljibe=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(b);}); }catch(e){ _logoAljibe=null; }
+  return _logoAljibe;
+}
+function reciboHTML(d,numero){
+  const p=d.pago, f=fmtD(p.fecha);
+  return `<div class="recibo"><img src="assets/aljibe-logo.png" alt="ALJIBE" style="height:90px">
+    <h1>RECIBO DE PAGO No ${String(numero).padStart(8,'0')}</h1>
+    <p>FECHA: <b>${fmtD(HOY_ISO)}</b><br>CONTRATO: <b>${esc(d.contrato.no||'')}</b><br>LOTE: <b>${esc(d.lote||'')}</b></p>
+    <h2>POR ${Q(p.monto)}</h2>
+    <p>Recibimos de: <b>${esc(String(d.nombre||'').toUpperCase())}</b></p>
+    <p>La cantidad de <b>${esc(d.enLetras)}</b></p>
+    <table><tr><th>Obligación</th><th>Cuota</th><th>Fecha Pago</th><th>Forma de Pago</th><th>Monto</th><th>Ref/Lote</th></tr>
+      <tr><td colspan="6"><b>Moneda: QUETZALES</b></td></tr>
+      <tr><td>${esc(d.obligacion)}</td><td>${esc(d.cuota)}</td><td>${f}</td><td>${esc(p.forma||'')}</td><td>${Q(p.monto).replace('Q ','')}</td><td>${esc(p.referencia||d.lote||'')}</td></tr>
+      <tr><td colspan="4"><b>TOTAL PAGADO</b></td><td><b>${Q(p.monto).replace('Q ','')}</b></td><td></td></tr>
+      <tr><td colspan="6"><b>PAGO REALIZADO CON BOLETA ${esc(p.referencia||'—')} EL DÍA ${f} CON VALOR DE ${Q(p.monto)}<br>PAGO REGISTRADO POR: ${esc(String(d.registradoPor||'').toUpperCase())}.</b></td></tr></table>
+    <div class="firmas"><div><div class="linea"></div>Firma y Sello de la Empresa</div><div><div class="linea"></div>Firma del Cliente</div></div>
+    <p class="pie">${esc(d.emisor)} · Cuenta monetaria Banrural ${d.cuenta?d.cuenta.numero:''} · Generado por Suite Sol Inmobiliaria</p></div>`;
+}
+async function reciboPDF(d,numero){
+  const J=window.jspdf&&window.jspdf.jsPDF; if(!J) return null;
+  const doc=new J({unit:'pt',format:'letter'}); const W=612, M=56; let y=50;
+  const logo=await logoAljibe(); if(logo){ try{ doc.addImage(logo,'PNG',M,y,80,80); }catch(e){} }
+  y+=110;
+  doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.text(`RECIBO DE PAGO No ${String(numero).padStart(8,'0')}`,W/2,y,{align:'center'}); doc.setLineWidth(1); doc.line(W/2-150,y+4,W/2+150,y+4);
+  y+=36; doc.setFontSize(11); doc.setFont('helvetica','normal');
+  const lab=(k,v)=>{ doc.setFont('helvetica','normal'); doc.text(k,M,y); doc.setFont('helvetica','bold'); doc.text(v,M+doc.getTextWidth(k)+4,y); y+=17; };
+  lab('FECHA: ',fmtD(HOY_ISO)); lab('CONTRATO: ',String(d.contrato.no||'')); lab('LOTE: ',String(d.lote||''));
+  y+=14; doc.setFontSize(16); doc.setFont('helvetica','bold'); doc.text(`POR ${Q(d.pago.monto)}`,W/2,y,{align:'center'}); y+=30; doc.setFontSize(11);
+  lab('Recibimos de: ',String(d.nombre||'').toUpperCase());
+  doc.setFont('helvetica','normal'); doc.text('La cantidad de',M,y); doc.setFont('helvetica','bold');
+  const letras=doc.splitTextToSize(d.enLetras,W-2*M-90); doc.text(letras,M+90,y); y+=17*letras.length+10;
+  const cols=[M,M+110,M+165,M+245,M+360,M+430,W-M]; const th=['Obligación','Cuota','Fecha Pago','Forma de Pago','Monto','Ref/Lote'];
+  const fila=(vals,bold,h)=>{ h=h||20; doc.setDrawColor(120); doc.rect(M,y,W-2*M,h); cols.slice(1,-1).forEach(x=>doc.line(x,y,x,y+h)); doc.setFont('helvetica',bold?'bold':'normal'); vals.forEach((t,i)=>{ const txt=doc.splitTextToSize(String(t),cols[i+1]-cols[i]-6); doc.text(txt,cols[i]+3,y+13); }); y+=h; };
+  doc.setFontSize(9.5); fila(th,true); fila(['Moneda: QUETZALES','','','','',''],true);
+  const f=fmtD(d.pago.fecha); fila([d.obligacion,d.cuota,f,d.pago.forma||'',Q(d.pago.monto).replace('Q ',''),d.pago.referencia||d.lote||''],false,26);
+  fila(['TOTAL PAGADO','','','',Q(d.pago.monto).replace('Q ',''),''],true);
+  const ley=`PAGO REALIZADO CON BOLETA ${d.pago.referencia||'—'} EL DÍA ${f} CON VALOR DE ${Q(d.pago.monto)}   PAGO REGISTRADO POR: ${String(d.registradoPor||'').toUpperCase()}.`;
+  doc.setFont('helvetica','bold'); const leyL=doc.splitTextToSize(ley,W-2*M-6); doc.rect(M,y,W-2*M,14*leyL.length+8); doc.text(leyL,M+3,y+12); y+=14*leyL.length+8;
+  y+=60; doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  doc.line(W/2-90,y,W/2+90,y); doc.text('Firma y Sello de la Empresa',W/2,y+14,{align:'center'});
+  y+=60; doc.line(W/2-90,y,W/2+90,y); doc.text('Firma del Cliente',W/2,y+14,{align:'center'});
+  doc.setFontSize(8); doc.setTextColor(120); doc.text(`${d.emisor} · Cuenta monetaria Banrural ${d.cuenta?d.cuenta.numero:''} · Generado por Suite Sol Inmobiliaria`,W/2,760,{align:'center'});
+  return doc.output('blob');
+}
+/* Emite (o recupera) el recibo de un pago, genera el PDF, lo guarda como
+   adjunto del pago y lo ofrece para compartir. */
+async function emitirYCompartirRecibo(pagoId, silencioso){
+  const d=datosRecibo(pagoId); if(!d) return null;
+  let numero=null, reciboId=null, pdfBlob=null, adj=null;
+  if(typeof hayBase==='function'&&hayBase()){
+    const r=await sbEmitirRecibo(pagoId); if(!r.ok){ if(!silencioso) toast(r.error,8000,true); return null; }
+    numero=r.dato.numero; reciboId=r.dato.recibo_id;
+    if(!reciboDe(pagoId)) (DB.recibos=DB.recibos||[]).push({id:reciboId,numero,pagoId:Number(pagoId),contratoId:d.contrato.id,monto:d.pago.monto,fecha:HOY_ISO,adjuntoId:null});
+    adj=adjuntosDe('pago',pagoId).find(a=>new RegExp('^Recibo '+numero+'\\b').test(a.descripcion||''))||null;
+    if(!adj){
+      pdfBlob=await reciboPDF(d,numero);
+      if(pdfBlob){
+        const archivo=new File([pdfBlob],`recibo-${String(numero).padStart(8,'0')}.pdf`,{type:'application/pdf'});
+        const s=await sbAdjuntar('pago',pagoId,archivo,`Recibo ${numero} · ${d.contrato.no||''}`);
+        if(s.ok){ adj={id:s.dato.id,entidad:'pago',entidadId:Number(pagoId),bucket:s.dato.bucket,ruta:s.dato.ruta,nombre:archivo.name,mime:'application/pdf',bytes:archivo.size,descripcion:`Recibo ${numero}`,fecha:HOY_ISO};
+                  (DB.adjuntos=DB.adjuntos||[]).push(adj); if(reciboId) sbReciboAdjunto(reciboId,adj.id); }
+        else if(!silencioso) toast('El recibo se emitió pero el PDF no se pudo guardar: '+s.error,8000,true);
+      }
+    }
+  } else {
+    numero=(DB.recibos||[]).length+1; pdfBlob=await reciboPDF(d,numero);
+  }
+  if(!silencioso) modalRecibo(pagoId,numero,pdfBlob,adj);
+  return {numero,pdfBlob,adj};
+}
+function modalRecibo(pagoId,numero,pdfBlob,adj){
+  const d=datosRecibo(pagoId); if(!d) return;
+  window.__reciboBlob=pdfBlob||null; window.__reciboNombre=`recibo-${String(numero).padStart(8,'0')}.pdf`;
+  const tel=String((d.cliente&&d.cliente.telefono)||d.contrato.tel||'').replace(/\D/g,'');
+  const texto=`Hola ${String(d.nombre||'').split(' ')[0]}, le confirmamos su pago de ${Q(d.pago.monto)} (cuota ${d.cuota}, lote ${d.lote}) con boleta ${d.pago.referencia||''}. Adjuntamos su recibo No ${String(numero).padStart(8,'0')}. ¡Gracias!`;
+  const wa=tel?`https://wa.me/${tel.length===8?'502'+tel:tel}?text=${encodeURIComponent(texto)}`:'';
+  openModal(`<div class="modal-h"><h3>Recibo No ${String(numero).padStart(8,'0')} emitido</h3><p>${esc(d.nombre||'')} · ${Q(d.pago.monto)} · ${esc(d.contrato.no||'')}</p></div>
+    <div class="modal-b"><div class="recibo-prev">${reciboHTML(d,numero)}</div></div>
+    <div class="modal-f" style="flex-wrap:wrap">
+      <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
+      ${pdfBlob?`<button class="btn btn-ghost" onclick="descargarRecibo()">Descargar PDF</button>`:(adj?`<button class="btn btn-ghost" onclick="verAdjunto('${adj.id}')">Ver PDF</button>`:'')}
+      ${(pdfBlob&&navigator.share)?`<button class="btn btn-primary" onclick="compartirRecibo()">Compartir (WhatsApp)</button>`:(wa?`<a class="btn btn-primary" href="${wa}" target="_blank" rel="noopener">WhatsApp</a>`:'')}
+      <button class="btn btn-ghost" onclick="imprimirRecibo()">Imprimir</button></div>`);
+}
+function descargarRecibo(){ const b=window.__reciboBlob; if(!b) return; const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=window.__reciboNombre; a.click(); setTimeout(()=>URL.revokeObjectURL(u),4000); }
+async function compartirRecibo(){ const b=window.__reciboBlob; if(!b||!navigator.share) return descargarRecibo();
+  const f=new File([b],window.__reciboNombre,{type:'application/pdf'});
+  try{ if(navigator.canShare&&!navigator.canShare({files:[f]})) return descargarRecibo(); await navigator.share({files:[f],title:'Recibo de pago',text:'Recibo de pago · ALJIBE'}); }catch(e){} }
+function imprimirRecibo(){ const w=window.open('','_blank'); if(!w) return; const h=document.querySelector('.recibo-prev'); w.document.write(`<html><head><title>Recibo</title><link rel="stylesheet" href="${location.origin}${location.pathname.replace(/[^/]*$/,'')}styles.css"></head><body style="padding:30px">${h?h.innerHTML:''}<script>setTimeout(()=>print(),400)<\/script></body></html>`); w.document.close(); }
+
 /* Boleta de un pago ya registrado (histórico o no). */
 function modalBoleta(pagoId){
   const p=DB.pagos.find(x=>mismoId(x.id,pagoId)); if(!p) return;
@@ -3322,7 +3425,8 @@ async function guardarBoleta(pagoId){
   const a=r.dato||{};
   (DB.adjuntos=DB.adjuntos||[]).push({ id:a.id, entidad:'pago', entidadId:p.id, bucket:a.bucket, ruta:a.ruta, nombre:a.nombre, mime:a.mime, bytes:a.bytes, descripcion:a.descripcion, fecha:HOY_ISO });
   anotar('pago.boleta', (getContrato(p.contratoId)||{}).no+' · '+Q(p.monto));
-  closeModal(); toast('Boleta subida ✓'); drawerTab='cuenta'; pintarContrato(); pintarBadgeAsuntos();
+  closeModal(); toast('Boleta subida ✓ · emitiendo el recibo…'); drawerTab='cuenta'; pintarContrato(); pintarBadgeAsuntos();
+  emitirYCompartirRecibo(p.id);
 }
 async function verAdjunto(id){
   const a=(DB.adjuntos||[]).find(x=>mismoId(x.id,id)); if(!a) return toast('No se encontró el respaldo');

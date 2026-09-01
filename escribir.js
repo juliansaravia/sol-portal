@@ -913,6 +913,26 @@ async function sbContrasena(persona_id, contrasena) {
   });
 }
 
+/* Recibo de pago: el número lo da la base (28_recibo.sql). Emitir dos
+   veces devuelve el mismo número. */
+async function sbEmitirRecibo(pago_id) {
+  return escribir('emitir el recibo', async () => {
+    const { data, error } = await SB.rpc('emitir_recibo', { p_pago_id: Number(pago_id) });
+    if (error) {
+      if (/could not find the function|does not exist/i.test(error.message))
+        throw new Error('Los recibos necesitan 28_recibo.sql en la base.');
+      throw error;
+    }
+    const fila = Array.isArray(data) ? data[0] : data;
+    if (!fila) throw new Error('La base no devolvió el número de recibo');
+    return fila;
+  });
+}
+async function sbReciboAdjunto(recibo_id, adjunto_id) {
+  return escribir('enlazar el recibo', async () =>
+    oExplota(await SB.rpc('recibo_adjunto', { p_recibo_id: Number(recibo_id), p_adjunto_id: Number(adjunto_id) })));
+}
+
 /* ============================================================
    Lo que ve el resto del portal
    ============================================================ */
@@ -925,7 +945,7 @@ Object.assign(window, {
   sbGestion, sbDocumento, sbIntegrante,
   sbSubirDocumento, sbVerDocumento, sbVerificarDocumento, sbFaltantes,
   MIMES_OK,
-  sbGuardarPersona, sbDesactivarPersona, sbContrasena,
+  sbGuardarPersona, sbDesactivarPersona, sbContrasena, sbEmitirRecibo, sbReciboAdjunto,
   sbImportarMovimientos, sbConciliar, sbActualizarConciliacion, sbDescartarConciliacion,
   huellaMovimiento,
   sbCrearLiquidacion, sbRegistrarComisionPagada, sbComisionesPorVendedor,

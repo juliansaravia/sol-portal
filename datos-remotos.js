@@ -71,11 +71,11 @@ async function cargarDesdeSupabase() {
 
        Los pagos se quedan acá: son 738 y de ellos depende cuánto lleva
        recaudado cada contrato, que es de lo primero que se mira. */
-    const [lotes, contratos, clientes, pagos, equipo, documentos, comisiones, adjuntos, requeridos] = await Promise.all([
+    const [lotes, contratos, clientes, pagos, equipo, documentos, comisiones, adjuntos, recibos, requeridos] = await Promise.all([
       todas('v_inventario', 'proyecto_id,proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado'),
       todas('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,origen,banco,boleta,lote_id,cliente_id,persona_id'),
       todas('cliente', 'id,nombre,dpi,nit,telefono,email,direccion,ocupacion'),
-      todas('pago', 'id,contrato_id,monto,fecha_pago,forma_pago,referencia,estado'),
+      todas('pago', 'id,contrato_id,giro_id,monto,fecha_pago,forma_pago,referencia,estado'),
       /* `auth_uid` viene para saber quién ya puede entrar. No se guarda
          el identificador, solo si lo tiene: la pantalla no necesita más
          y el uid de nadie tiene por qué andar dando vueltas. */
@@ -95,6 +95,7 @@ async function cargarDesdeSupabase() {
          qué pago tiene su boleta y cuál no. Si la migración no corrió,
          llega vacío y todo pago aparece «sin boleta». */
       opcional('adjunto', 'id,entidad,entidad_id,bucket,ruta,nombre,mime,bytes,descripcion,created_at'),
+      opcional('recibo', 'id,numero,pago_id,contrato_id,monto,fecha,adjunto_id'),
       /* La tabla nace con 14_documentos.sql. Sin ella el portal usa su
          lista de respaldo — no se cae por un catálogo que no está. */
       opcional('documento_requerido', 'codigo,nombre,descripcion,bucket,caras,obligatorio,orden')
@@ -145,6 +146,9 @@ async function cargarDesdeSupabase() {
       id: a.id, entidad: a.entidad, entidadId: a.entidad_id, bucket: a.bucket, ruta: a.ruta,
       nombre: a.nombre, mime: a.mime, bytes: a.bytes, descripcion: a.descripcion, fecha: _fecha(a.created_at)
     }));
+
+    DB.recibos = (recibos || []).map(r => ({ id: r.id, numero: r.numero, pagoId: r.pago_id, contratoId: r.contrato_id,
+                                            monto: _num(r.monto), fecha: _fecha(r.fecha), adjuntoId: r.adjunto_id }));
 
     DB.documentos = documentos.map(d => ({
       id: d.id, contratoId: d.contrato_id, clienteId: d.cliente_id,
@@ -206,7 +210,7 @@ async function cargarDesdeSupabase() {
 
     DB.pagos = pagos.map(p => ({
       id: p.id, contratoId: p.contrato_id, monto: _num(p.monto),
-      fecha: _fecha(p.fecha_pago), forma: p.forma_pago,
+      fecha: _fecha(p.fecha_pago), forma: p.forma_pago, giroId: p.giro_id || null,
       referencia: p.referencia, estado: p.estado
     }));
 
@@ -321,7 +325,7 @@ async function cargarCartera() {
       const ct = o && porContrato.get(o.contrato_id);
       if (!ct) continue;
       const dest = ct.obligaciones.find(x => x.id === g.obligacion_id);
-      if (dest) dest.giros.push({ n: g.numero, vence: _fecha(g.vencimiento),
+      if (dest) dest.giros.push({ id: g.id, n: g.numero, vence: _fecha(g.vencimiento),
                                   monto: _num(g.monto), estado: g.estado,
                                   abonado: _num(g.abonado) });
     }

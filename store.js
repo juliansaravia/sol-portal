@@ -66,7 +66,8 @@ const DB = {
   recaudacion: [], movimientos: [], declaradas: [], conciliaciones: [], liquidaciones: [],
   bitacora: [],
   meta: { correlativo: 131, version: 1 },
-  adjuntos: []
+  adjuntos: [],
+  recibos: []
 };
 
 /* ---------- Bitácora ----------
@@ -723,6 +724,51 @@ const getContrato = id => (id == null) ? undefined : indices().contratos.get(Str
 const contratoDeLote = codigo => indices().contratoPorLote.get(String(codigo));
 const gestionesDe = id => DB.gestiones.filter(g => g.contratoId === id).sort((a, b) => b.fecha.localeCompare(a.fecha));
 const documentosDe = id => indices().docsPorContrato.get(String(id)) || [];
+
+/* ── Recibo de pago ── */
+const reciboDe = pagoId => (DB.recibos || []).find(r => mismoId(r.pagoId, pagoId)) || null;
+
+/* Cantidad en letras, al estilo del recibo del CRM:
+   «VEINTIOCHO MIL SEISCIENTOS NOVENTA Y CINCO QUETZALES CON 00/100 CENTAVOS». */
+function numeroALetras(n) {
+  const U = ['', 'UN', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE', 'DIEZ', 'ONCE', 'DOCE', 'TRECE', 'CATORCE', 'QUINCE',
+             'DIECISÉIS', 'DIECISIETE', 'DIECIOCHO', 'DIECINUEVE', 'VEINTE', 'VEINTIÚN', 'VEINTIDÓS', 'VEINTITRÉS', 'VEINTICUATRO', 'VEINTICINCO', 'VEINTISÉIS', 'VEINTISIETE', 'VEINTIOCHO', 'VEINTINUEVE'];
+  const D = ['', '', 'VEINTE', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA'];
+  const C = ['', 'CIENTO', 'DOSCIENTOS', 'TRESCIENTOS', 'CUATROCIENTOS', 'QUINIENTOS', 'SEISCIENTOS', 'SETECIENTOS', 'OCHOCIENTOS', 'NOVECIENTOS'];
+  const cientos = x => {
+    if (x === 0) return ''; if (x === 100) return 'CIEN';
+    const c = Math.floor(x / 100), r = x % 100;
+    let t = c ? C[c] + ' ' : '';
+    if (r < 30) t += U[r]; else t += D[Math.floor(r / 10)] + (r % 10 ? ' Y ' + U[r % 10] : '');
+    return t.trim();
+  };
+  const entero = Math.floor(Math.abs(n)), cent = Math.round((Math.abs(n) - entero) * 100);
+  let t = '';
+  const mill = Math.floor(entero / 1000000), miles = Math.floor((entero % 1000000) / 1000), resto = entero % 1000;
+  if (mill) t += (mill === 1 ? 'UN MILLÓN' : cientos(mill) + ' MILLONES') + ' ';
+  if (miles) t += (miles === 1 ? 'MIL' : cientos(miles) + ' MIL') + ' ';
+  if (resto) t += cientos(resto);
+  if (!entero) t = 'CERO';
+  return `${t.trim()} QUETZALES CON ${String(cent).padStart(2, '0')}/100 CENTAVOS`;
+}
+
+/* Todo lo que va impreso en el recibo de un pago. */
+function datosRecibo(pagoId) {
+  const p = DB.pagos.find(x => mismoId(x.id, pagoId)); if (!p) return null;
+  const ct = getContrato(p.contratoId) || {};
+  const cli = ct.clienteId ? getCliente(ct.clienteId) : null;
+  let obligacion = 'PAGO', cuota = '—';
+  for (const o of (ct.obligaciones || [])) {
+    const g = (o.giros || []).find(x => p.giroId && mismoId(x.id, p.giroId));
+    if (g) { obligacion = String(o.tipo || o.desc || 'CUOTA').toUpperCase().replace('_', ' '); cuota = `${String(g.n).padStart(2, '0')}/${String(o.giros.length).padStart(2, '0')}`; break; }
+  }
+  const boleta = adjuntosDe('pago', p.id).find(a => !/^Recibo/i.test(a.descripcion || ''));
+  const r = reciboDe(p.id);
+  return { pago: p, contrato: ct, cliente: cli, nombre: cli ? cli.nombre : nombreCliente(ct.clienteId),
+           lote: ct.lote, obligacion, cuota, boleta, recibo: r,
+           registradoPor: (typeof SESION !== 'undefined' && SESION.persona) ? SESION.persona.nombre : (window.__user ? window.__user.name : ''),
+           enLetras: numeroALetras(p.monto), emisor: 'ALJIBE, S.A.', cuenta: (typeof CUENTAS_COBRO !== 'undefined' ? CUENTAS_COBRO[0] : null) };
+}
 /* Respaldos genéricos de cualquier cosa (20_adjuntos.sql). */
 const adjuntosDe = (entidad, id) => (DB.adjuntos || []).filter(a => a.entidad === entidad && mismoId(a.entidadId, id));
 /* ¿El contrato firmado está en el sistema? Una fila de documento sin
