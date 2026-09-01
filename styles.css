@@ -548,3 +548,8 @@ a.btn{text-decoration:none;display:inline-block}
   table.data{font-size:12.5px}table.data th,table.data td{padding:8px 8px}
   .prio-row{flex-wrap:wrap}.prio-row .btn{margin-left:46px}
 }
+
+/* ── Fase D · pasos del cotizador, chips unificados ── */
+.paso{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--ink);margin:14px 0 8px;font-size:13px}
+.paso-n{width:22px;height:22px;border-radius:50%;background:var(--green-soft);color:var(--green);display:inline-flex;align-items:center;justify-content:center;font-size:12px}
+.chip.active{background:var(--green-soft);color:var(--green);border-color:var(--green);font-weight:600}

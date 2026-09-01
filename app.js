@@ -902,24 +902,33 @@ function renderCotizador(){
     if(disp.length){ cot.lote=claveDe(disp[0]); cot.precio=disp[0].precio; }
     else { cot.lote=null; }
   }
+  const loteSel = cot.lote!=='__libre' ? getLote(cot.lote) : null;
+  const avisoLote = loteSel && loteSel.estado!=='disponible'
+    ? `<div class="aviso-err" style="margin-top:8px">Este lote está <b>${esc(loteSel.estado)}</b>: la cotización es orientativa, no se puede convertir en venta.</div>` : '';
+  const paso=(n,t)=>`<div class="paso"><span class="paso-n">${n}</span><span>${t}</span></div>`;
   let h=`<div class="cot">
     <div class="cot-form card">
-      <div class="card-h"><h2>Datos de la cotización</h2></div>
+      <div class="card-h"><h2>Cotización</h2><span class="hint">Cinco pasos · el resumen se actualiza solo</span></div>
       <div class="card-b">
-        <div class="field" style="margin-bottom:12px"><label>Cliente (opcional)</label>
+        ${paso(1,'Prospecto')}
+        <div class="field" style="margin-bottom:12px"><label>Nombre (opcional)</label>
           <input id="ct-cli" value="${esc(cot.cliente)}" placeholder="Nombre del prospecto" oninput="cot.cliente=this.value"></div>
+        ${paso(2,'Lote')}
         <div class="field" style="margin-bottom:12px"><label>Lote</label>
           <select id="ct-lote" onchange="cotLote(this.value)">
             ${disp.map(l=>`<option value="${esc(claveDe(l))}" ${claveDe(l)===cot.lote?'selected':''}>${l.codigo}${l.fase?` · ${l.fase}`:''} · ${l.area} m² · ${Qk(l.precio)}</option>`).join('')}
             <option value="__libre" ${cot.lote==='__libre'?'selected':''}>— Precio libre —</option>
-          </select></div>
+          </select>${avisoLote}</div>
         <div class="field" style="margin-bottom:12px"><label>Precio de venta (Q)</label>
-          <input id="ct-precio" type="number" value="${cot.precio}" oninput="cot.precio=+this.value||0;pintarCot()"></div>
+          <input id="ct-precio" type="number" value="${cot.precio}" oninput="cot.precio=+this.value||0;pintarCot()">
+          <div class="hint" id="ct-precio-fmt">${Q(cot.precio)}</div></div>
+        ${paso(3,'Enganche')}
         <div class="field" style="margin-bottom:4px"><label>Enganche (Q) · mínimo ${Qk(ENGANCHE_MIN)}</label>
           <input id="ct-eng" type="number" min="${ENGANCHE_MIN}" value="${cot.enganche}" oninput="cot.enganche=+this.value||0;pintarCot()"></div>
         <div class="cot-quick">${[2500,5000,10000,20000].map(v=>
           `<button class="chip" onclick="cot.enganche=${v};renderCotizador()">${Qk(v)}</button>`).join('')}</div>
-        <div class="field" style="margin:12px 0 4px"><label>Plazo</label>
+        ${paso(4,'Plazo')}
+        <div class="field" style="margin:4px 0 4px"><label>Plazo</label>
           <select id="ct-plazo" onchange="cot.plazo=+this.value;pintarCot()">
             ${PLAZOS.map(p=>`<option value="${p}" ${p===cot.plazo?'selected':''}>${p} meses (${(p/12).toFixed(0)} años)</option>`).join('')}
           </select></div>
@@ -953,13 +962,19 @@ function pintarCot(){
       <div class="cot-row"><span>Plazo</span><b>${p.plazo} meses</b></div>
       <div class="cot-row tot"><span>Total del plan</span><b>${Q(p.total)}</b></div>
     </div>
+    <div class="cot-body" style="border-top:1px solid var(--line)">
+      <div class="cot-row"><span>Saldo financiado</span><b>${Q(p.saldo)}</b></div>
+      <div class="cot-row"><span>Tasa aplicada</span><b>${(TASA_MENSUAL*100).toFixed(1)}% mensual</b></div>
+      <div class="cot-row"><span>Intereses del plan</span><b>${Q(p.total-p.precio)}</b></div>
+    </div>
     <div class="cot-acc">
-        <button class="btn btn-primary" onclick="doHoja('cliente')">Hoja para el cliente</button>
-        <button class="btn btn-ghost" onclick="doHoja('interna')">Hoja interna</button>
-        <button class="btn btn-ghost" onclick="doCompartirPDF()">Compartir PDF por WhatsApp</button>
-      <button class="btn btn-primary" onclick="cotVender()">Convertir en venta →</button>
+      <div class="paso" style="margin-bottom:8px"><span class="paso-n">5</span><span>Resumen y compartir</span></div>
+      <button class="btn btn-primary" onclick="doHoja('cliente')">Generar cotización</button>
+      <button class="btn btn-ghost" onclick="doCompartirPDF()">WhatsApp</button>
+      <button class="btn btn-ghost" onclick="doHoja('interna')">Hoja interna</button>
       <button class="btn btn-ghost" onclick="cotCompartir()">Copiar resumen</button>
       <button class="btn btn-ghost" onclick="window.print()">Imprimir</button>
+      ${(l&&l.estado==='disponible')?`<button class="btn btn-gold" onclick="cotVender()">Convertir en venta →</button>`:''}
     </div>
   </div>`;
   // comparativa de plazos
