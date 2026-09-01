@@ -122,6 +122,19 @@ const MATRIZ = {
     acciones: ['cobranza.ver','pago.confirmar',
                'doc.ver_todos','doc.ver_expedientes','doc.subir'],
   },
+  /* Para revisar la interfaz (Manus) sin ver a ninguna persona. Recorre
+     las pantallas de números y cartera; la base le esconde cliente,
+     documento y gestión, y puede_escribir() le devuelve false, así que
+     cualquier botón de guardar rebota. No ve expedientes, ni crea
+     ventas, ni toca permisos ni reglas. Mismo criterio que
+     21_rol_consulta.sql. */
+  consulta: {
+    etiqueta: 'Solo lectura', color: '#7A8A99',
+    nota: 'Mira, no toca. Para revisar UX/UI: ve estructura y números, ninguna persona.',
+    acciones: ['venta.ver_todas','cotizar',
+               'cobranza.ver','cobranza.gestionar','recaudo.marcar','banco.conciliar','pago.confirmar',
+               'comision.ver_todas','equipo.ver'],
+  },
 };
 
 /* ---------- Consultas ---------- */
