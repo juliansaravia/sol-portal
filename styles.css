@@ -505,3 +505,30 @@ tr.cot-sel td{background:#fbf3df !important;font-weight:700}
 .badge.b-mora{background:var(--mora-soft);color:var(--mora)}
 .badge.b-nod{background:var(--tint);color:var(--muted)}
 .aviso-err{background:var(--amber-soft);border:1px solid #EAD9A8;color:#5B4310;border-radius:var(--radius);padding:12px 14px}
+
+/* ── Fase B · resumen ejecutivo, asuntos, filtros ── */
+.alerta-global{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid #EAD9A8;border-left:4px solid var(--gold);border-radius:var(--radius);padding:14px 18px;margin-bottom:18px;box-shadow:var(--shadow)}
+.alerta-global.ok{border-color:#CFE3D6;border-left-color:var(--green)}
+.ag-ico{width:36px;height:36px;border-radius:50%;background:var(--amber-soft);color:var(--gold);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;flex:none}
+.alerta-global.ok .ag-ico{background:var(--green-soft);color:var(--green)}
+.ag-txt{flex:1}.ag-txt b{font-size:15px;color:var(--ink)}
+.kpis-5{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.kpi-value small{font-size:14px;color:var(--muted);font-weight:500}
+.prio-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.prio-row:last-child{border-bottom:0}
+.prio-ico{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;flex:none}
+.prio-txt{flex:1;min-width:0}.prio-txt b{color:var(--ink);font-size:14px}
+.sev{font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:6px;white-space:nowrap}
+.sev-alta{background:var(--mora-soft);color:var(--mora)}.sev-media{background:var(--amber-soft);color:#8A5F12}.sev-baja{background:var(--info-soft);color:var(--info)}
+.chart{width:100%;max-width:100%;height:auto;font-family:var(--font)}
+.chart .grid{stroke:var(--line);stroke-width:1}.chart .tick{fill:var(--muted);font-size:10px}
+.chart .b-disp{fill:#CFE0D5}.chart .b-vend{fill:var(--green)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:middle}.dot.b-vend{background:var(--green)}.dot.b-disp{background:#CFE0D5}
+.calidad{display:flex;align-items:center;gap:16px;margin-bottom:12px}
+.calidad-pct{font-size:32px;font-weight:700;color:var(--green);letter-spacing:-.5px}
+.calidad-links{display:flex;gap:10px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:12px}
+.calidad-links a{flex:1;min-width:120px;text-decoration:none;color:var(--ink);background:var(--tint);border-radius:8px;padding:10px 12px;font-size:13px}
+.calidad-links a b{color:var(--green)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;padding:10px 24px;border-bottom:1px solid var(--line)}
+.chip.on{background:var(--green-soft);color:var(--green);border-color:var(--green);font-weight:600}
+th.click{cursor:pointer;user-select:none}th.click:hover{color:var(--ink)}

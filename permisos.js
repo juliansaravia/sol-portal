@@ -214,6 +214,7 @@ function contrastarRLS() {
    mantener. Antes esto estaba escrito a mano en app.js. */
 const VISTA_REQUIERE = {
   inicio: null,
+  asuntos: null,
   cotizador: 'cotizar',
   vender: 'venta.crear',
   inventario: null,

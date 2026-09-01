@@ -35,7 +35,8 @@ const AUTH={
 let authState={step:1,user:null};
 
 const TITLES={
-  inicio:['Inicio','Panel general del suite'],
+  inicio:['Resumen ejecutivo','Estado operativo del proyecto'],
+  asuntos:['Centro de asuntos','Todo lo que requiere atención, con su siguiente paso'],
   cotizador:['Cotizador','Calcula el plan de pago y compártelo con el cliente'],
   vender:['Ingresar venta','Registra una venta y envíala a aprobación'],
   inventario:['Mapa del conjunto','Plano real · haz clic en un lote para ver su ficha'],
@@ -423,7 +424,7 @@ function setView(v){
   document.getElementById('viewSub').textContent=TITLES[v][1];
   const faltaCartera = typeof DB!=='undefined' && DB.meta && DB.meta.carteraLista === false
                     && VISTAS_CON_CARTERA.includes(v);
-  ({inicio:renderInicio,cotizador:renderCotizador,vender:renderVender,inventario:renderInventario,contratos:renderContratos,
+  ({inicio:renderInicio,asuntos:renderAsuntos,cotizador:renderCotizador,vender:renderVender,inventario:renderInventario,contratos:renderContratos,
     clientes:renderClientes,aprobacion:renderAprobacion,cobranza:renderCobranza,
     confirmacion:renderConfirmacion,comisiones:renderComisiones,reporteria:renderReporteria,
     agenda:renderAgenda,recaudacion:renderRecaudacion,conciliacion:renderConciliacion,seguridad:renderSeguridad,expedientes:renderExpedientes,equipo:renderEquipo,automatizaciones:renderAutomatizaciones}[v])();
@@ -443,61 +444,132 @@ function setView(v){
 }
 
 /* ============================================================ INICIO */
+/* ============================================================ RESUMEN EJECUTIVO
+   Dirección de Manus: qué requiere atención, cuánto importa, cuál es el
+   siguiente paso. Cada prioridad lleva a una lista YA filtrada. */
+let VISTA_FILTRO={};
+function irA(v,filtro){ VISTA_FILTRO[v]=filtro||null; setView(v); }
+
+/* Todo lo que requiere atención, con severidad y a dónde ir. Es la
+   única lista: la usan el resumen, el centro de asuntos y la insignia. */
+function asuntos(){
+  const activos=DB.contratos.filter(c=>c.estado==='aprobado');
+  const M=resumenMora();
+  const pend=DB.contratos.filter(c=>c.estado==='en_aprobacion').length;
+  const porConf=DB.pagos.filter(p=>p.estado==='registrado').length;
+  const sinVend=activos.filter(c=>!c.vendedor||!buscarPersona(c.vendedor)).length;
+  const sinCli=activos.filter(c=>!c.clienteId||!getCliente(c.clienteId)).length;
+  const sinAcceso=DB.equipo.filter(p=>p.activo&&p.entra===false).length;
+  const sinAlta=DB.lotes.filter(l=>l.estado===LOTE_ALTA_PENDIENTE).length;
+  const sinUbic=DB.lotes.filter(l=>l.x==null).length;
+  const A=[];
+  if(M.enMora) A.push({sev:'alta',n:M.enMora,t:'contratos en mora',d:`${Qk(M.saldoVencido)} vencidos · requieren gestión`,ir:()=>irA('contratos',{f:'mora'})});
+  if(M.nuncaPagaron.length) A.push({sev:'alta',n:M.nuncaPagaron.length,t:'ventas que nunca pagaron una cuota',d:'Entró el enganche y nada más',ir:()=>setView('cobranza')});
+  if(porConf) A.push({sev:'media',n:porConf,t:'pagos por confirmar',d:'Esperan al financiero para aplicarse a la cartera',ir:()=>setView('confirmacion')});
+  if(pend) A.push({sev:'media',n:pend,t:'solicitudes por aprobar',d:'El comité decide y se genera el plan de giros',ir:()=>setView('aprobacion')});
+  if(sinVend) A.push({sev:'media',n:sinVend,t:'contratos sin vendedor',d:'Sin responsable no hay comisión ni seguimiento',ir:()=>irA('contratos',{f:'sin_vendedor'})});
+  if(sinCli) A.push({sev:'media',n:sinCli,t:'contratos sin cliente vinculado',d:'Existe la venta, falta la ficha del titular',ir:()=>irA('contratos',{f:'sin_cliente'})});
+  if(sinAcceso) A.push({sev:'baja',n:sinAcceso,t:'usuarios sin acceso',d:'Pendientes de invitación o de correo',ir:()=>setView('equipo')});
+  if(sinAlta) A.push({sev:'baja',n:sinAlta,t:'lotes del plano sin dar de alta',d:'Están dibujados pero no en el inventario',ir:()=>setView('inventario')});
+  if(sinUbic) A.push({sev:'baja',n:sinUbic,t:'lotes sin ubicación en el plano',d:'Existen en inventario, no en el dibujo',ir:()=>setView('inventario')});
+  const orden={alta:0,media:1,baja:2};
+  return A.filter(a=>ROLES[ROLE]&&true).sort((a,b)=>orden[a.sev]-orden[b.sev]||b.n-a.n);
+}
+const SEV={alta:['Alta','sev-alta'],media:['Media','sev-media'],baja:['Baja','sev-baja']};
+function filaAsunto(a,i){
+  return `<div class="prio-row"><div class="prio-ico ${SEV[a.sev][1]}">!</div>
+    <div class="prio-txt"><b>${a.n} ${esc(a.t)}</b><div class="hint">${esc(a.d)}</div></div>
+    <span class="sev ${SEV[a.sev][1]}">${SEV[a.sev][0]}</span>
+    <button class="btn btn-ghost btn-sm" onclick="asuntos()[${i}].ir()">Ver casos ›</button></div>`;
+}
+function pintarBadgeAsuntos(){
+  const b=document.getElementById('badgeAsuntos'); if(!b) return;
+  const n=asuntos().length; b.textContent=n; b.hidden=!n;
+}
+function renderAsuntos(){
+  const A=asuntos();
+  let h=`<div class="card"><div class="card-h"><h2>${A.length?`${A.length} asunto(s) requieren atención`:'Nada pendiente'}</h2>
+    <span class="hint">Ordenados por severidad · cada uno abre su lista ya filtrada</span></div><div class="card-b">`;
+  h+=A.length?A.map(filaAsunto).join(''):`<div class="empty">Todo al día 🎉</div>`;
+  h+=`</div></div>`; C().innerHTML=h; pintarBadgeAsuntos();
+}
+
 function renderInicio(){
   const vend=DB.lotes.filter(l=>l.estado==='vendido').length;
   const disp=DB.lotes.filter(l=>l.estado==='disponible').length;
-  const res=DB.lotes.filter(l=>l.estado==='reservado').length;
-  const sinAlta=DB.lotes.filter(l=>l.estado===LOTE_ALTA_PENDIENTE);
   const activos=DB.contratos.filter(c=>c.estado==='aprobado');
-  const pend=DB.contratos.filter(c=>c.estado==='en_aprobacion').length;
-  const porConf=DB.pagos.filter(p=>p.estado==='registrado').length;
-  // KPIs calculados de la cartera real
-  const K=activos.reduce((a,c)=>{const ec=estadoCuenta(c);
-    a.venta+=c.precio; a.cartera+=ec.totalGiros; a.rec+=ec.recaudado; a.saldo+=ec.saldo;
-    return a;}, {venta:0,cartera:0,rec:0,saldo:0});
-  // La mora viene del modelo financiero, no del cálculo propio del portal
+  const K=activos.reduce((a,c)=>{const ec=estadoCuenta(c); a.cartera+=ec.totalGiros; a.rec+=ec.recaudado; a.saldo+=ec.saldo; return a;},{cartera:0,rec:0,saldo:0});
   const M=resumenMora();
-  K.mora=M.enMora; K.montoMora=M.saldoVencido;
+  const A=asuntos();
+  const hoy=new Date(HOY_ISO+'T00:00:00');
+  const mes=hoy.toLocaleDateString('es-GT',{month:'long',year:'numeric'});
+
+  let h=`<div class="alerta-global ${A.length?'':'ok'}">
+    <div class="ag-ico">${A.length?'⚠':'✓'}</div>
+    <div class="ag-txt"><b>${A.length?`${A.length} asunto(s) requieren atención`:'Todo al día'}</b>
+      <div class="hint">${A.length?'Revisá los pendientes críticos para mantener la operación al día.':'No hay pendientes críticos en este momento.'}</div></div>
+    ${A.length?`<button class="btn btn-primary" onclick="setView('asuntos')">Revisar ahora ›</button>`:''}
+  </div>`;
+
   const kpis=[
-    {l:'Lotes vendidos',v:vend,s:`de ${DB.lotes.length} · ${Math.round(vend/DB.lotes.length*100)}%`},
-    {l:'Disponibles',v:disp,s:res?`${res} reservados`:'en inventario'},
-    {l:'Portafolio vendido',v:Qk(K.venta),s:`${activos.length} contratos`,cls:'sm'},
-    {l:'Cartera total',v:Qk(K.cartera),s:'con intereses',cls:'sm accent'},
-    {l:'Recaudado',v:Qk(K.rec),s:`${K.cartera?Math.round(K.rec/K.cartera*100):0}% de la cartera`,cls:'sm'},
-    {l:'Por cobrar',v:Qk(K.saldo),s:'saldo pendiente',cls:'sm warn'},
+    {l:'Lotes vendidos',v:`${vend} <small>/ ${DB.lotes.length}</small>`,s:`${Math.round(vend/DB.lotes.length*100)}% del total`,t:'Lotes con contrato aprobado sobre el inventario completo'},
+    {l:'Disponibles',v:disp,s:'en inventario',t:'Lotes que se pueden vender hoy'},
+    {l:'Cartera total',v:Qk(K.cartera),s:'con intereses',t:'Todo lo que los clientes van a pagar: capital, enganche e intereses'},
+    {l:'Recaudado',v:Qk(K.rec),s:`${K.cartera?Math.round(K.rec/K.cartera*100):0}% de la cartera`,t:'Dinero confirmado que ya entró, enganches incluidos'},
+    {l:'Saldo vencido',v:Qk(M.saldoVencido),s:`${M.enMora} contratos en mora`,t:`Cuotas vencidas y no pagadas · fuente: ${M.fuente}`,cls:'warn'},
   ];
-  let h=`<div class="kpis">`+kpis.map(k=>`<div class="kpi ${k.cls||''}">
-    <div class="kpi-label">${k.l}</div><div class="kpi-value ${/sm/.test(k.cls||'')?'sm':''}">${k.v}</div>
-    <div class="kpi-sub">${k.s}</div></div>`).join('')+`</div>`;
+  h+=`<div class="kpis kpis-5">`+kpis.map(k=>`<div class="kpi ${k.cls||''}" title="${esc(k.t)}">
+    <div class="kpi-label">${k.l}</div><div class="kpi-value sm">${k.v}</div><div class="kpi-sub">${k.s}</div></div>`).join('')+`</div>`;
 
-  h+=`<div class="card"><div class="card-b" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
-      <b style="color:var(--dark)">Requieren tu atención:</b>
-      ${pend?`<button class="btn btn-gold btn-sm" onclick="setView('aprobacion')">${pend} solicitud(es) por aprobar</button>`:''}
-      ${porConf?`<button class="btn btn-ghost btn-sm" onclick="setView('confirmacion')">${porConf} pago(s) por confirmar</button>`:''}
-      ${K.mora?`<button class="btn btn-ghost btn-sm" onclick="setView('cobranza')">${K.mora} contrato(s) en mora · ${Qk(K.montoMora)} vencidos</button>`:''}
-      ${M.nuncaPagaron.length?`<button class="btn btn-gold btn-sm" onclick="setView('cobranza')">${M.nuncaPagaron.length} venta(s) que nunca pagaron una cuota</button>`:''}
-      ${sinAlta.length?`<button class="btn btn-ghost btn-sm" onclick="setView('inventario')">${sinAlta.length} lote(s) del plano sin dar de alta: ${sinAlta.map(l=>l.codigo).join(', ')}</button>`:''}
-      ${!pend&&!porConf&&!K.mora&&!sinAlta.length?'<span class="muted">Nada pendiente 🎉</span>':''}
-    </div></div>`;
+  // Prioridades de hoy · las tres más severas
+  h+=`<div class="grid2"><div class="card"><div class="card-h"><h2>Prioridades de hoy</h2></div><div class="card-b">`;
+  h+=A.length?A.slice(0,3).map(filaAsunto).join(''):`<div class="empty">Nada pendiente 🎉</div>`;
+  if(A.length>3) h+=`<div style="text-align:center;margin-top:8px"><button class="btn btn-ghost btn-sm" onclick="setView('asuntos')">Ver todos los asuntos ›</button></div>`;
+  h+=`</div></div>`;
 
-  h+=`<div class="grid2"><div class="card"><div class="card-h"><h2>Contratos en el suite</h2>
-    <button class="btn btn-primary btn-sm" onclick="setView('contratos')">Ver todos</button></div>
+  // Ventas por manzana · barras apiladas
+  const mz={}; DB.lotes.forEach(l=>{const k=l.manzana||'?';mz[k]=mz[k]||{t:0,v:0};mz[k].t++;if(l.estado==='vendido')mz[k].v++;});
+  const claves=Object.keys(mz).sort(); const max=Math.max(1,...claves.map(k=>mz[k].t));
+  const W=Math.max(320,claves.length*34+40), H=180, base=150, esc_=(base-20)/max;
+  let svg=`<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Ventas por manzana">`;
+  [0,.5,1].forEach(f=>{const y=base-(max*f)*esc_; svg+=`<line x1="30" x2="${W}" y1="${y}" y2="${y}" class="grid"/><text x="26" y="${y+4}" class="tick">${Math.round(max*f)}</text>`;});
+  claves.forEach((k,i)=>{const x=40+i*34, t=mz[k].t*esc_, v=mz[k].v*esc_;
+    svg+=`<rect x="${x}" y="${base-t}" width="20" height="${t}" class="b-disp"/><rect x="${x}" y="${base-v}" width="20" height="${v}" class="b-vend"/>
+          <text x="${x+10}" y="${base+14}" class="tick" text-anchor="middle">${esc(k)}</text>`;});
+  svg+=`</svg>`;
+  h+=`<div class="card"><div class="card-h"><h2>Ventas por manzana</h2>
+      <span class="hint"><i class="dot b-vend"></i> Vendidos &nbsp; <i class="dot b-disp"></i> Total</span></div>
+      <div class="card-b" style="overflow-x:auto">${svg}</div></div></div>`;
+
+  // Actividad reciente · con siguiente paso
+  h+=`<div class="grid2"><div class="card"><div class="card-h"><h2>Actividad reciente</h2>
+      <button class="btn btn-ghost btn-sm" onclick="setView('contratos')">Ver toda la actividad ›</button></div>
     <div class="card-b" style="padding:0"><table class="data"><thead><tr>
-      <th>Contrato</th><th>Lote</th><th>Cliente</th><th class="num">Valor</th><th>Estado</th></tr></thead><tbody>`;
-  DB.contratos.slice().sort((a,b)=>b.no.localeCompare(a.no)).slice(0,9).forEach(c=>{
-    h+=`<tr class="click" onclick="abrirContrato('${c.id}')"><td><b>${c.no}</b></td><td>${c.lote}</td>
-      <td>${esc(nombreCliente(c.clienteId))}</td><td class="num">${Qk(c.precio)}</td><td>${estadoBadge(c.estado)}</td></tr>`;});
-  h+=`</tbody></table></div>
-    <div class="card-b" style="border-top:1px solid var(--line)"><div class="hint">Solo se muestran los ${DB.contratos.length} contratos con datos verificados. Los 112 de la cartera se cargarán al conectar el API del CRM.</div></div></div>`;
+      <th>Contrato</th><th>Lote</th><th>Cliente</th><th>Estado</th><th>Próximo paso</th></tr></thead><tbody>`;
+  DB.contratos.slice().sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))||b.no.localeCompare(a.no)).slice(0,6).forEach(c=>{
+    const ec=estadoCuenta(c), cli=getCliente(c.clienteId);
+    const paso = ec.enMora ? ['Gestionar',`abrirContrato('${c.id}')`]
+               : (!cli ? ['Completar datos',`abrirContrato('${c.id}')`] : ['Abrir ficha',`abrirContrato('${c.id}')`]);
+    h+=`<tr><td><b>${c.no}</b></td><td>${esc(c.lote)}</td><td>${cli?esc(cli.nombre):'<span class="hint">Pendiente de datos</span>'}</td>
+      <td>${ec.enMora?'<span class="badge b-mora">Mora</span>':estadoBadge(c.estado)}</td>
+      <td><a href="#" onclick="${paso[1]};return false;">${paso[0]} ›</a></td></tr>`;});
+  h+=`</tbody></table></div></div>`;
 
-  const mz={}; DB.lotes.forEach(l=>{mz[l.manzana]=mz[l.manzana]||{t:0,v:0};mz[l.manzana].t++;if(l.estado==='vendido')mz[l.manzana].v++;});
-  h+=`<div class="card"><div class="card-h"><h2>Avance por manzana</h2></div><div class="card-b">`;
-  Object.keys(mz).sort().forEach(m=>{const p=Math.round(mz[m].v/mz[m].t*100);
-    h+=`<div class="bar-row"><div class="bar-lbl">Mz ${m}</div>
-      <div class="bar-track"><div class="bar-fill" style="width:${p}%"></div></div>
-      <div class="bar-val">${mz[m].v}/${mz[m].t} · ${p}%</div></div>`;});
-  h+=`</div></div></div>`;
-  C().innerHTML=h;
+  // Calidad de datos
+  const total=activos.length||1;
+  const conCli=activos.filter(c=>getCliente(c.clienteId)).length;
+  const conVend=activos.filter(c=>c.vendedor&&buscarPersona(c.vendedor)).length;
+  const conUbic=activos.filter(c=>{const l=getLote(c.clave||c.lote);return l&&l.x!=null;}).length;
+  const pct=Math.round((conCli+conVend+conUbic)/(3*total)*100);
+  h+=`<div class="card"><div class="card-h"><h2>Calidad de datos</h2></div><div class="card-b">
+      <div class="calidad"><div class="calidad-pct">${pct}%</div>
+        <div style="flex:1"><div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div><div class="hint">completo · ${activos.length} contratos activos</div></div></div>
+      <div class="calidad-links">
+        <a href="#" onclick="irA('contratos',{f:'sin_cliente'});return false;">Clientes <b>${conCli}/${total}</b> ›</a>
+        <a href="#" onclick="setView('inventario');return false;">Ubicaciones <b>${conUbic}/${total}</b> ›</a>
+        <a href="#" onclick="irA('contratos',{f:'sin_vendedor'});return false;">Vendedores <b>${conVend}/${total}</b> ›</a>
+      </div></div></div></div>`;
+  C().innerHTML=h; pintarBadgeAsuntos();
 }
 
 /* ============================================================ MAPA REAL DEL PLANO */
@@ -692,18 +764,40 @@ function renderVender(){
 }
 
 /* ============================================================ CONTRATOS */
+const FILTROS_CT={
+  todos:{t:'Todos',f:()=>true},
+  mora:{t:'En mora',f:(c,ec)=>c.estado==='aprobado'&&ec.enMora},
+  sin_vendedor:{t:'Sin vendedor',f:c=>c.estado==='aprobado'&&(!c.vendedor||!buscarPersona(c.vendedor))},
+  sin_cliente:{t:'Sin cliente',f:c=>c.estado==='aprobado'&&!getCliente(c.clienteId)},
+  bajo_recaudo:{t:'Bajo % recaudado',f:(c,ec)=>c.estado==='aprobado'&&ec.totalGiros>0&&ec.recaudado/ec.totalGiros<0.15},
+  anulados:{t:'Anulados',f:c=>c.estado==='anulado'},
+};
+let ctBusca='', ctOrden={k:'no',asc:false};
+function ctOrdenar(k){ ctOrden = ctOrden.k===k ? {k,asc:!ctOrden.asc} : {k,asc:true}; renderContratos(); }
 function renderContratos(){
-  let h=`<div class="card"><div class="card-h"><h2>Contratos · ${DB.contratos.length}</h2>
-    <button class="btn btn-primary btn-sm" onclick="modalNuevoContrato()">+ Nuevo contrato</button></div>
-    <div class="card-b" style="padding:0"><table class="data"><thead><tr>
-    <th>No.</th><th>Lote</th><th>Cliente</th><th>Origen</th><th>Fecha</th>
-    <th class="num">Valor</th><th class="num">Recaudado</th><th>Estado</th></tr></thead><tbody>`;
-  DB.contratos.slice().sort((a,b)=>b.no.localeCompare(a.no)).forEach(c=>{
-    const ec=estadoCuenta(c);
-    h+=`<tr class="click" onclick="abrirContrato('${c.id}')"><td><b>${c.no}</b></td><td>${c.lote}</td>
-      <td>${esc(nombreCliente(c.clienteId))}</td><td><span class="pill">${esc(c.origen||'—')}</span></td>
+  const F=(VISTA_FILTRO.contratos&&VISTA_FILTRO.contratos.f)||'todos';
+  const q=ctBusca.trim().toLowerCase();
+  let filas=DB.contratos.map(c=>({c,ec:estadoCuenta(c),cli:nombreCliente(c.clienteId)}))
+    .filter(x=>FILTROS_CT[F].f(x.c,x.ec))
+    .filter(x=>!q||[x.c.no,x.c.lote,x.cli,x.c.vendedor].some(v=>String(v||'').toLowerCase().includes(q)));
+  const val={no:x=>x.c.no,lote:x=>x.c.lote,cliente:x=>x.cli,fecha:x=>x.c.fecha||'',valor:x=>x.c.precio,recaudado:x=>x.ec.recaudado,vencido:x=>x.ec.montoVencido,estado:x=>x.c.estado}[ctOrden.k]||(x=>x.c.no);
+  filas.sort((a,b)=>{const A=val(a),B=val(b);const r=typeof A==='number'?A-B:String(A).localeCompare(String(B));return ctOrden.asc?r:-r;});
+  const th=(k,t,num)=>`<th class="${num?'num ':''}click" onclick="ctOrdenar('${k}')">${t}${ctOrden.k===k?(ctOrden.asc?' ↑':' ↓'):''}</th>`;
+  let h=`<div class="card"><div class="card-h" style="flex-wrap:wrap;gap:10px"><h2>Contratos · ${filas.length}${F!=='todos'?` <span class="hint">de ${DB.contratos.length}</span>`:''}</h2>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input class="chip" style="min-width:220px" placeholder="Buscar por número, lote, cliente o vendedor…" value="${esc(ctBusca)}" oninput="ctBusca=this.value;renderContratos();document.querySelector('.card-h input').focus()">
+      <button class="btn btn-primary btn-sm" onclick="modalNuevoContrato()">+ Nuevo contrato</button></div></div>
+    <div class="card-b chips">${Object.entries(FILTROS_CT).map(([k,v])=>`<button class="chip ${k===F?'on':''}" onclick="irA('contratos',{f:'${k}'})">${v.t}</button>`).join('')}</div>
+    <div class="card-b" style="padding:0;overflow-x:auto"><table class="data"><thead><tr>
+    ${th('no','No.')}${th('lote','Lote')}${th('cliente','Cliente')}<th>Vendedor</th>${th('fecha','Fecha')}
+    ${th('valor','Valor',1)}${th('recaudado','Recaudado',1)}${th('vencido','Vencido',1)}${th('estado','Estado')}</tr></thead><tbody>`;
+  if(!filas.length) h+=`<tr><td colspan="9"><div class="empty">${q?'Nada coincide con la búsqueda.':'No hay contratos en este filtro.'}</div></td></tr>`;
+  filas.forEach(({c,ec,cli})=>{
+    h+=`<tr class="click" onclick="abrirContrato('${c.id}')"><td><b>${c.no}</b></td><td>${esc(c.lote)}${c.fase?` <span class="hint">${esc(c.fase)}</span>`:''}</td>
+      <td>${cli&&cli!=='(sin titular)'?esc(cli):'<span class="hint">Sin cliente</span>'}</td><td>${c.vendedor?esc(c.vendedor):'<span class="hint">Sin vendedor</span>'}</td>
       <td>${fmtD(c.fecha)}</td><td class="num">${Qk(c.precio)}</td><td class="num">${Qk(ec.recaudado)}</td>
-      <td>${estadoBadge(c.estado)}</td></tr>`;});
+      <td class="num">${ec.montoVencido?`<span style="color:var(--mora)">${Qk(ec.montoVencido)}</span>`:'—'}</td>
+      <td>${ec.enMora?'<span class="badge b-mora">Mora</span>':estadoBadge(c.estado)}</td></tr>`;});
   h+=`</tbody></table></div></div>`;
   C().innerHTML=h;
 }
