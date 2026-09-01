@@ -934,7 +934,7 @@ function mensajeRecordatorio(c){
      no por Recurrente: ese enlace era de otra operación y mandaba al
      cliente a pagar a otro lado. */
   const cta=CUENTAS_COBRO[0];
-  const pago=`Puede pagar por transferencia o depósito en Banrural:\n*Cuenta monetaria ${cta.numero}*\nA nombre de *${cta.dueno} S.A.*\n\nDespués de pagar, envíenos la foto de la boleta por este medio.`;
+  const pago=`Puede pagar por transferencia o depósito en Banrural:\n*Cuenta ${cta.tipo.toLowerCase()} ${cta.numero}*\nA nombre de *${cta.dueno}*\n\nDespués de pagar, envíenos la foto de la boleta por este medio.`;
   if(dif>0) return `Hola ${nombre}, le saluda La Esperanza 🌿\n\nLe recordamos su cuota ${c.q}/${c.p} del lote ${c.l} por *${Q(c.m)}*, con fecha de pago el *${fecha}*.\n\n${pago}\n\nGracias por su puntualidad.`;
   if(dif===0) return `Hola ${nombre}, hoy vence su cuota ${c.q}/${c.p} del lote ${c.l} por *${Q(c.m)}*.\n\n${pago}`;
   return `Hola ${nombre}, notamos que su cuota ${c.q}/${c.p} del lote ${c.l} por ${Q(c.m)} sigue pendiente.\n\nA partir del vencimiento corre una mora del 2% mensual.\n\n${pago}\n\nSi tiene alguna dificultad, escríbanos — buscamos la manera de ayudarle.`;

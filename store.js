@@ -117,10 +117,10 @@ const comisionaEn = (p, fecha) => {
    la fila por número, el pago entraba sin cuenta. Una sola lista, con
    los mismos números que 15_catalogo_base.sql. */
 const CUENTAS_COBRO = [
-  { numero: '3394008726', dueno: 'ALJIBE',         desde: '2026-08-01' },
-  { numero: '3445903856', dueno: 'SOL Desarrollos', hasta: '2026-07-31' }
+  { numero: '3394008726', dueno: 'ALJIBE, S.A.',    tipo: 'Monetario', moneda: 'GTQ', desde: '2026-08-01' },
+  { numero: '3445903856', dueno: 'SOL Desarrollos', tipo: 'Monetario', moneda: 'GTQ', hasta: '2026-07-31' }
 ];
-const etiquetaCuenta = c => `Banrural ${c.numero} · ${c.dueno}`;
+const etiquetaCuenta = c => `Banrural ${c.numero} · ${c.tipo} · ${c.dueno}`;
 const opcionesCuenta = () => CUENTAS_COBRO.map(c => `<option>${etiquetaCuenta(c)}</option>`).join('');
 const rolComisiona = id => !!(ROLES_EQUIPO.find(r=>r.id===id)||{}).comisiona;
 
