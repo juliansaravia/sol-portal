@@ -502,6 +502,7 @@ function irA(v,filtro){ VISTA_FILTRO[v]=filtro||null; setView(v); }
 /* Todo lo que requiere atención, con severidad y a dónde ir. Es la
    única lista: la usan el resumen, el centro de asuntos y la insignia. */
 function asuntos(){
+  if(ROLE==='vendedor') return asuntosVendedor();
   const activos=DB.contratos.filter(c=>c.estado==='aprobado');
   const M=resumenMora();
   const pend=DB.contratos.filter(c=>c.estado==='en_aprobacion').length;
@@ -528,6 +529,24 @@ function asuntos(){
   const orden={alta:0,media:1,baja:2};
   return A.filter(a=>ROLES[ROLE]&&true).sort((a,b)=>orden[a.sev]-orden[b.sev]||b.n-a.n);
 }
+/* Lo del vendedor: sus borradores sin papeles, sus ventas en comité,
+   sus clientes en mora y sus liquidaciones esperando factura. Nada de la
+   empresa. */
+function asuntosVendedor(){
+  const yo=(window.__user&&window.__user.name)||'';
+  const mias=DB.contratos.filter(c=>c.vendedor===yo);
+  const A=[];
+  const borr=mias.filter(c=>c.estado==='borrador');
+  if(borr.length) A.push({sev:'alta',n:borr.length,t:borr.length===1?'venta con expediente incompleto':'ventas con expediente incompleto',d:'Subí los papeles y enviala a aprobación',ir:()=>setView('vender')});
+  const com=mias.filter(c=>c.estado==='en_aprobacion');
+  if(com.length) A.push({sev:'baja',n:com.length,t:com.length===1?'venta en el comité':'ventas en el comité',d:'Esperando aprobación',ir:()=>setView('vender')});
+  const mora=mias.filter(c=>c.estado==='aprobado'&&estadoCuenta(c).enMora);
+  if(mora.length) A.push({sev:'media',n:mora.length,t:mora.length===1?'cliente tuyo en mora':'clientes tuyos en mora',d:'Un recordatorio a tiempo evita el desistimiento',ir:()=>setView('clientes')});
+  const fact=(DB.liquidaciones||[]).filter(l=>l.vendedor===yo&&l.estado==='borrador');
+  if(fact.length) A.push({sev:'media',n:fact.length,t:fact.length===1?'liquidación espera tu factura':'liquidaciones esperan tu factura',d:'Sin factura no se paga la comisión',ir:()=>setView('comisiones')});
+  const orden={alta:0,media:1,baja:2};
+  return A.sort((a,b)=>orden[a.sev]-orden[b.sev]||b.n-a.n);
+}
 const SEV={alta:['Alta','sev-alta'],media:['Media','sev-media'],baja:['Baja','sev-baja']};
 function filaAsunto(a,i){
   return `<div class="prio-row"><div class="prio-ico ${SEV[a.sev][1]}">!</div>
@@ -547,7 +566,30 @@ function renderAsuntos(){
   h+=`</div></div>`; C().innerHTML=h; pintarBadgeAsuntos();
 }
 
+/* Inicio del vendedor: lo suyo, en grande, con el botón de vender. */
+function renderInicioVendedor(){
+  const yo=(window.__user&&window.__user.name)||'';
+  const mias=DB.contratos.filter(c=>c.vendedor===yo&&c.estado!=='anulado');
+  const mes=HOY_ISO.slice(0,7);
+  const delMes=mias.filter(c=>String(c.fecha||'').startsWith(mes));
+  const E=estadoVendedor(yo);
+  const A=asuntos();
+  let h=`<div class="kpis">
+    <div class="kpi accent"><div class="kpi-label">Ventas este mes</div><div class="kpi-value">${delMes.length}</div><div class="kpi-sub">${Qk(delMes.reduce((s,c)=>s+c.precio,0))}</div></div>
+    <div class="kpi"><div class="kpi-label">Ventas totales</div><div class="kpi-value">${mias.length}</div><div class="kpi-sub">${Qk(mias.reduce((s,c)=>s+c.precio,0))}</div></div>
+    <div class="kpi"><div class="kpi-label">Comisión cobrada</div><div class="kpi-value sm">${Qk(E.pagado)}</div><div class="kpi-sub">${E.enProceso?`${Qk(E.enProceso)} en proceso`:'a la fecha'}</div></div>
+  </div>
+  <div class="card"><div class="card-b" style="text-align:center;padding:18px">
+    <button class="btn btn-primary btn-lg" onclick="modalNuevoContrato()">＋ Ingresar venta</button></div></div>`;
+  h+=`<div class="card"><div class="card-h"><h2>Pendientes</h2></div><div class="card-b">${A.length?A.map(filaAsunto).join(''):'<div class="empty">Todo al día 🎉</div>'}</div></div>`;
+  const rec=mias.slice().sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))).slice(0,5);
+  if(rec.length){ h+=`<div class="sect-t">Mis últimas ventas</div><div class="tarjetas">`;
+    rec.forEach(c=>{ h+=`<div class="tarjeta" onclick="abrirContrato('${c.id}')"><div class="tarjeta-top"><b>${c.no}</b>${estadoBadge(c.estado)}</div>
+      <div>${esc(nombreCliente(c.clienteId))}</div><div class="hint">Lote ${esc(c.lote)} · ${Qk(c.precio)} · ${fmtD(c.fecha)}</div></div>`; }); h+=`</div>`; }
+  C().innerHTML=h; pintarBadgeAsuntos();
+}
 function renderInicio(){
+  if(ROLE==='vendedor') return renderInicioVendedor();
   const vend=DB.lotes.filter(l=>l.estado==='vendido').length;
   const disp=DB.lotes.filter(l=>l.estado==='disponible').length;
   const activos=DB.contratos.filter(c=>c.estado==='aprobado');
@@ -2170,7 +2212,39 @@ async function doConfirmar(id,ok){ if(await confirmarPago(id,ok)){toast(ok?'Pago
    historial de lo ya pagado. Nada se borra nunca. */
 let comTab='pendientes';
 
+/* El vendedor ve SUS comisiones y nada más: cobradas, en proceso, por
+   liquidar, y cada una de sus ventas con su comisión. Ni totales de la
+   empresa, ni otros vendedores, ni «registrar lo ya pagado». */
+function renderMisComisiones(){
+  const yo=(window.__user&&window.__user.name)||'';
+  const E=estadoVendedor(yo);
+  const pend=comisionesPendientes().find(x=>x.persona&&x.persona.nombre===yo)||{contratos:[],retenidos:[],total:0,totalRetenido:0};
+  const EST={borrador:['Esperando tu factura','b-pend'],facturada:['Factura recibida · por pagar','b-info'],pagada:['Pagada','b-ok'],anulada:['Anulada','b-nod']};
+  let h=`<div class="kpis">
+    <div class="kpi accent"><div class="kpi-label">Cobrado</div><div class="kpi-value sm">${Qk(E.pagado)}</div><div class="kpi-sub">total pagado a la fecha</div></div>
+    <div class="kpi"><div class="kpi-label">En proceso</div><div class="kpi-value sm">${Qk(E.enProceso)}</div><div class="kpi-sub">liquidado, pendiente de pago</div></div>
+    <div class="kpi"><div class="kpi-label">Por liquidar</div><div class="kpi-value sm">${Qk(pend.total)}</div><div class="kpi-sub">${pend.contratos.length} venta(s) devengadas</div></div>
+    ${pend.totalRetenido?`<div class="kpi warn"><div class="kpi-label">Retenido</div><div class="kpi-value sm">${Qk(pend.totalRetenido)}</div><div class="kpi-sub">${pend.retenidos.length} venta(s) sin expediente</div></div>`:''}
+  </div>`;
+  h+=`<div class="sect-t">Mis liquidaciones · ${E.liquidaciones.length}</div>`;
+  if(!E.liquidaciones.length) h+=`<div class="card"><div class="empty">Todavía no tenés liquidaciones. Se arman cada quincena con las ventas cobradas.</div></div>`;
+  else { h+=`<div class="tarjetas">`; E.liquidaciones.forEach(l=>{ const e=EST[l.estado]||[l.estado,'b-nod'];
+    h+=`<div class="tarjeta"><div class="tarjeta-top"><b>${esc(l.numero||'')}</b><span class="badge ${e[1]}">${e[0]}</span></div>
+      <div style="font-size:18px;font-weight:700;color:var(--green)">${Q(l.total)}</div>
+      <div class="hint">Período ${esc(l.periodo||'')}${l.pagadaEn?` · pagada el ${fmtD(l.pagadaEn)}`:''}${l.factura?` · factura ${esc(l.factura.numero)}`:''}</div>
+      ${l.estado==='borrador'?`<div style="margin-top:8px"><button class="btn btn-gold btn-sm" onclick="modalFactura('${l.id}')">Subir mi factura</button></div>`:''}</div>`; }); h+=`</div>`; }
+  h+=`<div class="sect-t" style="margin-top:16px">Mis ventas y su comisión</div>`;
+  const mias=DB.contratos.filter(c=>c.vendedor===yo&&c.estado!=='anulado').sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+  if(!mias.length) h+=`<div class="card"><div class="empty">Sin ventas todavía.</div></div>`;
+  else { h+=`<div class="tarjetas">`; mias.forEach(c=>{ const ret=(pend.retenidos||[]).find(r=>r.no===c.no); const com=calcularComision(c);
+    const est=c.estado==='aprobado'?(['liquidada','pagada'].includes(c.comisionEstado)?['Comisión '+c.comisionEstado,'b-ok']:(ret?['Retenida · falta expediente','b-pend']:['Devengada','b-info'])):(c.estado==='en_aprobacion'?['En comité','b-info']:['Borrador','b-nod']);
+    h+=`<div class="tarjeta" onclick="abrirContrato('${c.id}')"><div class="tarjeta-top"><b>${c.no}</b><span class="badge ${est[1]}">${est[0]}</span></div>
+      <div>${esc(nombreCliente(c.clienteId))} · lote ${esc(c.lote)}</div>
+      <div class="hint">${fmtD(c.fecha)} · venta ${Qk(c.precio)} · comisión <b>${Q(com)}</b>${ret&&ret.falta?` · falta: ${esc(ret.falta)}`:''}</div></div>`; }); h+=`</div>`; }
+  C().innerHTML=h;
+}
 function renderComisiones(){
+  if(ROLE==='vendedor') return renderMisComisiones();
   const R=resumenComisiones();
   let h=`<div class="kpis">
     <div class="kpi"><div class="kpi-label">Por liquidar</div><div class="kpi-value sm">${Qk(R.porLiquidar)}</div>

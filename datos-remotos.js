@@ -71,7 +71,7 @@ async function cargarDesdeSupabase() {
 
        Los pagos se quedan acá: son 738 y de ellos depende cuánto lleva
        recaudado cada contrato, que es de lo primero que se mira. */
-    const [lotes, contratos, clientes, pagos, equipo, documentos, comisiones, adjuntos, recibos, requeridos] = await Promise.all([
+    const [lotes, contratos, clientes, pagos, equipo, documentos, comisiones, adjuntos, recibos, liquidaciones, requeridos] = await Promise.all([
       todas('v_inventario', 'proyecto_id,proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado'),
       todas('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,origen,banco,boleta,lote_id,cliente_id,persona_id'),
       todas('cliente', 'id,nombre,dpi,nit,telefono,email,direccion,ocupacion'),
@@ -96,6 +96,7 @@ async function cargarDesdeSupabase() {
          llega vacío y todo pago aparece «sin boleta». */
       opcional('adjunto', 'id,entidad,entidad_id,bucket,ruta,nombre,mime,bytes,descripcion,created_at'),
       opcional('recibo', 'id,numero,pago_id,contrato_id,monto,fecha,adjunto_id'),
+      opcional('liquidacion', 'id,numero,persona_id,periodo,periodo_desde,periodo_hasta,total,estado,factura_numero,factura_fecha,pago_fecha,created_at'),
       /* La tabla nace con 14_documentos.sql. Sin ella el portal usa su
          lista de respaldo — no se cae por un catálogo que no está. */
       opcional('documento_requerido', 'codigo,nombre,descripcion,bucket,caras,obligatorio,orden')
@@ -149,6 +150,19 @@ async function cargarDesdeSupabase() {
 
     DB.recibos = (recibos || []).map(r => ({ id: r.id, numero: r.numero, pagoId: r.pago_id, contratoId: r.contrato_id,
                                             monto: _num(r.monto), fecha: _fecha(r.fecha), adjuntoId: r.adjunto_id }));
+
+    /* Las liquidaciones de comisión. El portal nunca las pedía: «Pagado»
+       daba Q0 aunque se hubiera pagado durante meses, y un vendedor no
+       podía ver lo suyo. `vendedor` es el nombre, que es como el motor
+       de comisiones (comisiones.js) identifica a la persona. */
+    DB.liquidaciones = (liquidaciones || []).map(l => {
+      const per = porPersona.get(l.persona_id) || {};
+      return { id: l.id, numero: l.numero, personaId: l.persona_id, vendedor: per.nombre || '',
+               periodo: l.periodo, desde: _fecha(l.periodo_desde), hasta: _fecha(l.periodo_hasta),
+               total: _num(l.total), estado: l.estado,
+               factura: l.factura_numero ? { numero: l.factura_numero, fecha: _fecha(l.factura_fecha) } : null,
+               pagadaEn: _fecha(l.pago_fecha), creada: _fecha(l.created_at), historial: [] };
+    });
 
     DB.documentos = documentos.map(d => ({
       id: d.id, contratoId: d.contrato_id, clienteId: d.cliente_id,

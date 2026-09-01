@@ -612,3 +612,19 @@ select.chip{appearance:auto;padding:6px 10px}
 .recibo .linea{border-top:1px solid #000;width:180px;margin:36px auto 6px}
 .recibo .pie{font-size:10px;color:#666;text-align:center;margin-top:24px}
 .recibo-prev{border:1px solid var(--line);border-radius:8px;overflow:auto;max-height:55vh}
+
+/* ── Móvil · filas que respiran ── */
+@media(max-width:760px){
+  html,body{overflow-x:hidden}
+  .main{margin-left:0 !important;width:100%}
+  .sidebar{transform:translateX(-100%);width:248px;z-index:70}
+  .sidebar.abierta{transform:none;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+  .sidebar .brand-name,.sidebar .brand-sub,.sidebar .nav-item span:not(.nav-ico),.sidebar .sidebar-foot{display:block}
+  .btn-menu{display:inline-flex}
+  .prio-row{display:grid;grid-template-columns:34px 1fr;grid-template-areas:"ico txt" "acc acc";gap:8px 12px}
+  .prio-ico{grid-area:ico}.prio-txt{grid-area:txt}.prio-row .sev,.prio-row .btn{grid-area:acc}
+  .prio-row .sev{justify-self:start;align-self:center}.prio-row .btn{justify-self:end;margin-left:0}
+  .prio-row{position:relative}.prio-row .sev{position:absolute;right:0;top:12px}
+  .card-h{flex-wrap:wrap;gap:8px}.card-h .hint{width:100%}
+  .kpi-value{font-size:22px}.kpi-value.sm{font-size:18px}
+}
