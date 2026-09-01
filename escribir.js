@@ -701,6 +701,106 @@ async function sbComisionesPorVendedor() {
 }
 
 /* ============================================================
+   RESPALDO PARA TODO
+
+   Un pago sin su boleta, una comisión sin su factura o un costo
+   sin la factura del proveedor son afirmaciones sin papel detrás.
+   El día que alguien pregunte «¿y con qué respaldás esto?», la
+   respuesta no puede ser una fila en una tabla.
+
+   `adjunto` cuelga de cualquier registro: dice de qué tabla es y
+   de qué fila. El permiso lo hereda de lo que respalda — quien
+   puede ver un pago puede ver su boleta, y quien no puede ver la
+   contabilidad tampoco ve el soporte de una partida.
+   ============================================================ */
+
+/* A qué bucket va cada cosa. Los tres primeros ya existían con sus
+   propias políticas; `soportes` es para lo que no tenía dónde. */
+const BUCKET_DE = {
+  pago: 'boletas', recaudacion: 'boletas',
+  liquidacion: 'facturas',
+  contrato: 'contratos',
+  cliente: 'expedientes'
+};
+
+/**
+ * Sube un archivo de respaldo y lo cuelga de un registro.
+ * @param {string} entidad  'pago', 'liquidacion', 'costo_proyecto'…
+ * @param {number} id       la fila de esa tabla
+ * @param {File}   archivo
+ * @param {string} [descripcion]  qué es, en palabras
+ */
+async function sbAdjuntar(entidad, id, archivo, descripcion) {
+  return escribir('subir el respaldo', async () => {
+    if (!archivo) throw new Error('No se eligió ningún archivo.');
+    const tipo = archivo.type || '';
+    if (!MIMES_OK.includes(tipo))
+      throw new Error('Solo se aceptan fotos (JPG, PNG, WEBP) o PDF. '
+                    + (tipo ? `Ese archivo es ${tipo}.` : 'Ese archivo no dice qué es.'));
+    if (archivo.size === 0) throw new Error('El archivo está vacío.');
+    if (archivo.size > 20971520)
+      throw new Error(`Pesa ${(archivo.size/1048576).toFixed(1)} MB y el máximo son 20 MB. `
+                    + 'Si es una foto, bájale la resolución.');
+
+    const bucket = BUCKET_DE[entidad] || 'soportes';
+    const marca = Date.now().toString(36);
+    /* Los buckets viejos esperan que la primera carpeta sea el id
+       —de eso dependen sus políticas—; `soportes` lleva además el
+       nombre de la entidad, para poder mirarlo por tipo. */
+    const ruta = (bucket === 'soportes')
+      ? `${entidad}/${id}/${marca}.${EXT[tipo]}`
+      : `${id}/${entidad}-${marca}.${EXT[tipo]}`;
+
+    const { error: eSubida } = await SB.storage.from(bucket)
+      .upload(ruta, archivo, { contentType: tipo, upsert: false });
+    if (eSubida) throw eSubida;
+
+    /* Si la fila falla, el archivo queda huérfano en el bucket y nadie
+       lo va a encontrar nunca. Se limpia antes de propagar el error. */
+    try {
+      return oExplota(await SB.from('adjunto').insert({
+        entidad, entidad_id: id, bucket, ruta,
+        nombre: archivo.name, mime: tipo, bytes: archivo.size,
+        descripcion: descripcion || null, subido_por: yo()
+      }).select('id,entidad,entidad_id,nombre,mime,bytes,descripcion,bucket,ruta,created_at').single());
+    } catch (e) {
+      await SB.storage.from(bucket).remove([ruta]);
+      throw e;
+    }
+  });
+}
+
+/** Lo que respalda a un registro. */
+async function sbAdjuntos(entidad, id) {
+  return escribir('leer los respaldos', async () =>
+    oExplota(await SB.from('adjunto')
+      .select('id,nombre,mime,bytes,descripcion,bucket,ruta,created_at,subido_por')
+      .eq('entidad', entidad).eq('entidad_id', id)
+      .order('created_at', { ascending: false })));
+}
+
+/** Una URL firmada, de vida corta. Nunca un enlace permanente. */
+async function sbVerAdjunto(bucket, ruta, segundos = 120) {
+  return escribir('abrir el respaldo', async () => {
+    const { data, error } = await SB.storage.from(bucket).createSignedUrl(ruta, segundos);
+    if (error) throw error;
+    return data.signedUrl;
+  });
+}
+
+/** Solo administración, y nunca de algo ya confirmado. Lo impide la base. */
+async function sbBorrarAdjunto(id) {
+  return escribir('quitar el respaldo', async () => {
+    const filas = oExplota(await SB.from('adjunto').select('bucket,ruta').eq('id', id).limit(1));
+    const borradas = oExplota(await SB.from('adjunto').delete().eq('id', id).select('id'));
+    if (!borradas.length)
+      throw new Error('No se pudo quitar. Un respaldo de algo ya confirmado no se borra.');
+    if (filas.length) await SB.storage.from(filas[0].bucket).remove([filas[0].ruta]);
+    return borradas[0];
+  });
+}
+
+/* ============================================================
    Lo que ve el resto del portal
    ============================================================ */
 Object.assign(window, {
@@ -715,5 +815,6 @@ Object.assign(window, {
   sbGuardarPersona, sbDesactivarPersona,
   sbImportarMovimientos, sbConciliar, sbActualizarConciliacion, sbDescartarConciliacion,
   huellaMovimiento,
-  sbCrearLiquidacion, sbRegistrarComisionPagada, sbComisionesPorVendedor
+  sbCrearLiquidacion, sbRegistrarComisionPagada, sbComisionesPorVendedor,
+  sbAdjuntar, sbAdjuntos, sbVerAdjunto, sbBorrarAdjunto
 });

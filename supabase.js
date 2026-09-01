@@ -212,6 +212,33 @@ async function cargarSesion(usuarioYaConocido) {
   return { ok: true, persona: p };
 }
 
+/**
+ * Manda el correo para poner una contraseña nueva.
+ *
+ * Sirve para dos cosas: el que la olvidó, y el que nunca la recibió
+ * porque la invitación se le perdió. No necesita llave de administrador
+ * —funciona con la pública— así que cualquiera puede pedirlo desde la
+ * pantalla de entrada.
+ *
+ * No dice si el correo existe o no. Decirlo permitiría averiguar quién
+ * trabaja aquí probando direcciones.
+ */
+async function pedirContrasenaNueva(email) {
+  if (!SB) return { ok: false, error: 'El portal no está conectado a la base' };
+  const correo = String(email || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo))
+    return { ok: false, error: 'Escribí un correo válido' };
+
+  try {
+    await conLimite(SB.auth.resetPasswordForEmail(correo, {
+      redirectTo: location.origin + location.pathname
+    }), 20, 'Al pedir la contraseña');
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+  return { ok: true };
+}
+
 async function cerrarSesion() {
   if (SB) await SB.auth.signOut();
   SESION.persona = SESION.rol = SESION.email = null;
@@ -228,5 +255,6 @@ window.SESION = SESION;
 window.iniciarSesion = iniciarSesion;
 window.cargarSesion = cargarSesion;
 window.cerrarSesion = cerrarSesion;
+window.pedirContrasenaNueva = pedirContrasenaNueva;
 window.hayRemoto = hayRemoto;
 window.rolDePortal = rolDePortal;

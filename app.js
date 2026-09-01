@@ -78,8 +78,9 @@ function renderAuth(){
         <input id="au-pass" type="password" autocomplete="current-password"
                onkeydown="if(event.key==='Enter')entrar()"></div>
       <button id="au-entrar" class="btn btn-primary" style="width:100%" onclick="entrar()">Entrar</button>
-      <div class="login-foot">Tu contraseña la maneja Supabase.<br>
-        Si no puedes entrar, pídele a administración que revise tu usuario.</div></div>`;
+      <div class="login-foot">
+        <a href="#" onclick="olvideContrasena();return false;">No recuerdo mi contraseña</a>
+        <br>Si el correo no te llega, pídele a administración que te reenvíe la invitación.</div></div>`;
     setTimeout(()=>document.getElementById('au-email')?.focus(),50);
     return;
   }
@@ -288,6 +289,20 @@ function startApp(role){
   const destino=(location.hash||'').slice(1);
   setView(ROLES[role].views.includes(destino) ? destino : ROLES[role].home);
 }
+/* Que nadie dependa de que alguien más esté disponible para volver a
+   entrar. El correo lo manda Supabase; el portal solo lo pide. */
+async function olvideContrasena(){
+  const correo = (document.getElementById('au-email')?.value || '').trim();
+  if(!correo){ toast('Escribí tu correo arriba y volvé a tocar aquí'); 
+               document.getElementById('au-email')?.focus(); return; }
+  const r = await pedirContrasenaNueva(correo);
+  if(!r.ok) return toast(r.error, 6000, true);
+  /* No se dice si el correo existe: eso permitiría averiguar quién
+     trabaja aquí probando direcciones. */
+  toast('Si ese correo tiene usuario, le acaba de llegar un enlace para poner '
+      + 'una contraseña nueva. Revisá también la carpeta de no deseados.', 9000);
+}
+
 function logout(){
   /* Con la base conectada hay que cerrar la sesión de verdad, no solo
      volver a la pantalla de login: si no, el token sigue vivo y quien
@@ -1334,7 +1349,7 @@ function renderEquipo(){
       <td>${rolLabel(p.rol)}</td>
       <td class="num">${cts.length}</td>
       <td class="num">${val?Qk(val):'—'}</td>
-      <td class="num">${com?Q(com):'—'}</td>
+      <td class="num">${com?Q(com):(cts.length?`<span title="Su rol no genera comisión" style="color:#B0562F">sin comisión</span>`:'—')}</td>
       <td>${p.activo?'<span class="badge b-ok">Activo</span>':'<span class="badge b-nod">Inactivo</span>'}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="modalPersona('${p.id}')">Editar</button>
         ${cts.length?`<button class="btn btn-ghost btn-sm" onclick="modalReasignar('${esc(p.nombre)}')">Reasignar</button>`:''}
@@ -1342,6 +1357,39 @@ function renderEquipo(){
                   :`<button class="btn btn-ghost btn-sm" onclick="reactivarPersona('${p.id}')">Reactivar</button>`}
       </td></tr>`;
   };
+  /* Cuando alguien tiene contratos a su nombre pero su rol no comisiona,
+     esa comisión no la cobra nadie. No es un error de cálculo: es una
+     pregunta sin contestar sobre quién vendió de verdad. */
+  const raros = act.filter(p=>!rolComisiona(p.rol) && contratosDe(p.nombre).length);
+  if(raros.length){
+    const totalCts = raros.reduce((s,p)=>s+contratosDe(p.nombre).length,0);
+    const perdida  = raros.reduce((s,p)=>s+contratosDe(p.nombre).reduce((t,c)=>t+calcularComision(c),0),0);
+    h+=`<div class="aviso-err" style="margin-bottom:14px">
+      <b>${totalCts} contrato(s)</b> están a nombre de alguien cuyo rol no genera comisión:
+      ${raros.map(p=>`${esc(p.nombre)} (${rolLabel(p.rol)}, ${contratosDe(p.nombre).length})`).join(' · ')}.
+      <br><span class="hint">Así como está, <b>${Q(perdida)}</b> de comisión no la cobra nadie.
+      O esas ventas son de otra persona y hay que reasignarlas, o el rol está mal puesto.
+      El Estado de Cartera traía ese nombre en la columna de vendedor; el sistema no lo inventó.</span></div>`;
+  }
+
+  /* Y el conflicto de verdad: alguien que verifica o confirma pagos y a
+     la vez tiene contratos a su nombre estaría dando por bueno el
+     dinero de sus propias ventas. Es la misma familia de reglas que
+     «quien concilia no confirma», pero por persona y no por rol, así
+     que la matriz de permisos no lo veía. */
+  const jueceYparte = act.filter(p =>
+    ['confirmacion','financiero'].includes(p.rol) && contratosDe(p.nombre).length);
+  if(jueceYparte.length){
+    h+=`<div class="aviso-err" style="margin-bottom:14px;border-left:3px solid #C0492B">
+      <b>Juez y parte.</b>
+      ${jueceYparte.map(p=>`${esc(p.nombre)} verifica pagos y tiene
+        <b>${contratosDe(p.nombre).length} contrato(s)</b> a su nombre`).join(' · ')}.
+      <br><span class="hint">Estaría dando por bueno el dinero de sus propias ventas.
+      Es la misma regla que «quien concilia no confirma», pero por persona: la matriz de
+      permisos no la ve porque mira roles, no quién vendió qué.
+      Se resuelve reasignando esos contratos a quien los vendió de verdad.</span></div>`;
+  }
+
   act.forEach(p=>h+=fila(p));
   if(inac.length){h+=`<tr><td colspan="8" style="background:var(--tint);font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:700">Inactivos</td></tr>`;
     inac.forEach(p=>h+=fila(p));}
@@ -2497,13 +2545,16 @@ function modalNuevoContrato(loteSel,pre){
       </div>
       <div id="n-carga"></div>
 
-      <div class="sect-t" style="margin-top:18px">Un pariente que responda por él</div>
+      <!-- No siempre es un pariente: a veces es el fiador, el patrono o
+           un amigo. Lo que importa es que sea OTRA persona a quien se
+           pueda llamar, no de quién es pariente. -->
+      <div class="sect-t" style="margin-top:18px">Referencia · pariente, fiador o quien responda</div>
       <div class="hint" style="margin-bottom:10px">Tiene que ser un contacto distinto: si el cliente cambia de número, es a quien se llama.</div>
       <div class="form-grid">
-        ${campo('pnom','Nombre del pariente')}
-        ${campo('ptel','Teléfono celular del pariente','placeholder="5555 5555" inputmode="numeric"')}
-        ${campo('pmail','Correo del pariente','type="email"','full')}
-        ${campo('pdir','Dirección del pariente','','full')}
+        ${campo('pnom','Nombre')}
+        ${campo('ptel','Teléfono celular','placeholder="5555 5555" inputmode="numeric"')}
+        ${campo('pmail','Correo','type="email"','full')}
+        ${campo('pdir','Dirección','','full')}
       </div>
       <div id="n-errores"></div>
     </div>
@@ -2569,7 +2620,7 @@ async function crearContrato(){
     r.errores.forEach(e=>{const el=document.getElementById('e-'+e.campo); if(el) el.textContent=e.msg;});
     const caja=document.getElementById('n-errores');
     if(caja) caja.innerHTML=`<div class="aviso-err">Faltan ${r.errores.length} dato(s) para poder cerrar la venta.
-      <br><span class="hint">Sin teléfono ni pariente no hay a quién cobrarle después. Hoy hay 90 contratos en mora sin un solo número registrado.</span></div>`;
+      <br><span class="hint">Sin teléfono ni referencia no hay a quién cobrarle después. Hoy hay 90 contratos en mora sin un solo número registrado.</span></div>`;
     const primero=document.getElementById('n-'+r.errores[0].campo);
     if(primero&&primero.scrollIntoView) primero.scrollIntoView({block:'center',behavior:'smooth'});
     toast('Faltan '+r.errores.length+' dato(s) obligatorio(s)');
