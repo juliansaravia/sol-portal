@@ -265,6 +265,20 @@ async function reanudarSesion(){
   if(!hayRemoto()) return false;
   const r = await cargarSesion();
   if(!r.ok) return false;
+
+  /* El mismo portón que entrar(). Sin esto el segundo factor se pedía
+     al escribir la contraseña y nunca más: con una sesión aal1 viva,
+     un F5 entraba directo. Quien dejara la computadora abierta después
+     de teclear la contraseña —o antes de escribir el código— le
+     regalaba el portal a quien la agarrara.
+
+     renderAuth() ya dejó la pantalla de login puesta; devolver false la
+     mantiene, y el modal ahora se dibuja encima de ella. */
+  if(typeof faltaSegundoFactor==='function' && await faltaSegundoFactor()){
+    pedirCodigo2FA();
+    return false;
+  }
+
   const carga = await cargarDesdeSupabase();
   if(!carga.ok){ console.warn('[sesión] sin datos:', carga.error); return false; }
   window.__user = { name: SESION.persona.nombre, role: rolDePortal(SESION.rol) };
