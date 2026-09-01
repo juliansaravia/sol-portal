@@ -31,24 +31,33 @@ const REQUISITOS = [
   { que: 'Contabilidad', archivo: '12_contabilidad.sql',
     prueba: async () => !(await SB.from('partida').select('id').limit(1)).error },
 
-  { que: 'Contabilidad encendida', archivo: '15_catalogo_base.sql',
+  { que: 'Contabilidad encendida', archivo: "insert into ajuste (clave,valor) values ('contabilidad_automatica','true') on conflict (clave) do update set valor='true';",
     prueba: async () => {
       const { data, error } = await SB.from('ajuste').select('valor')
         .eq('clave','contabilidad_automatica').maybeSingle();
       return !error && data && data.valor === 'true';
     },
-    siNo: 'El catálogo está creado pero la contabilidad no se ha encendido. '
-        + 'Mirá: select * from v_catalogo_pendiente;' },
+    siNo: 'No falta ninguna migración: falta ENCENDER el interruptor. Antes revisá que '
+        + 'select * from v_catalogo_pendiente; devuelva cero filas; después corré el insert de la derecha '
+        + 'y select * from asentar_historico(false); para ver en seco.' },
 
   { que: 'Buckets de archivos', archivo: '04_storage.sql · 20_adjuntos.sql',
     prueba: async () => {
-      const { data, error } = await SB.storage.listBuckets();
-      if (error) return false;
-      const hay = new Set((data || []).map(b => b.name));
-      return ['expedientes','contratos','boletas','facturas','soportes'].every(b => hay.has(b));
+      /* listBuckets() respeta las políticas de storage.buckets, y a un
+         usuario normal esa tabla no le muestra nada: devolvía vacío con
+         los cinco creados. Se pregunta bucket por bucket: «Bucket not
+         found» es que no existe; cualquier otra respuesta —incluida una
+         negativa de la política— es que sí. */
+      const faltan = [];
+      for (const b of ['expedientes','contratos','boletas','facturas','soportes']) {
+        const { error } = await SB.storage.from(b).list('', { limit: 1 });
+        if (error && /not found/i.test(error.message || '')) faltan.push(b);
+      }
+      window.__bucketsFaltan = faltan;
+      return faltan.length === 0;
     },
-    siNo: 'Falta algún bucket de los cinco (expedientes, contratos, boletas, facturas, soportes). '
-        + 'Sin él, subir ese tipo de archivo falla aunque la tabla exista.' },
+    siNo: 'No existe: ' + ((window.__bucketsFaltan || []).join(', ') || '(ver consola)')
+        + '. Los cuatro primeros los crea 04_storage.sql y «soportes» 20_adjuntos.sql — en sol-hub.' },
 
   { que: 'Cuadre bancario', archivo: '13_conciliacion.sql',
     prueba: async () => !(await SB.from('movimiento_banco').select('id').limit(1)).error },
