@@ -2410,6 +2410,12 @@ function renderReporteria(){
   const Qk_ = typeof Qk==='function' ? Qk : (x=>x);
 
   let h = `<div class="card"><div class="card-b" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+      <div class="chips" style="padding:0;border:0;width:100%">
+        <button class="chip" onclick="repRango('mes')">Este mes</button>
+        <button class="chip" onclick="repRango('anterior')">Mes anterior</button>
+        <button class="chip" onclick="repRango('90')">Últimos 90 días</button>
+        <button class="chip" onclick="repRango('anio')">Este año</button>
+        <span class="hint" style="margin-left:auto">Período ${fmtD(n.desde)} – ${fmtD(n.hasta)} · datos al ${fmtD(HOY_ISO)}</span></div>
       <div class="field" style="margin:0"><label>Desde</label>
         <input type="date" id="rep-desde" value="${n.desde}" onchange="REP.desde=this.value;renderReporteria()"></div>
       <div class="field" style="margin:0"><label>Hasta</label>
