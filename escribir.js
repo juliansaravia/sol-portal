@@ -561,16 +561,26 @@ async function sbGuardarPersona(datos) {
     /* Si 26_vendedor_hasta.sql no se ha corrido, la columna no existe
        (42703). Se guarda todo lo demás y se avisa qué falta, en vez de
        perder la edición entera por un campo. */
-    const SIN_MIGRAR = [
-      { cols: ['vendedor_hasta'],                          sql: '26_vendedor_hasta.sql', que: '«Vendió hasta»' },
-      { cols: ['externo', 'organizacion', 'acceso_hasta'], sql: '23_externos.sql',       que: 'externo y vencimiento' }
-    ];
-    for (const m of SIN_MIGRAR) {
-      if (!(r.error && r.error.code === '42703' && m.cols.some(c => c in campos))) continue;
-      const tenia = m.cols.some(c => campos[c]);
-      m.cols.forEach(c => delete campos[c]);
+    /* Columna que la base todavía no tiene. Llega de dos formas: 42703
+       desde Postgres, o PGRST204 desde PostgREST («Could not find the
+       'x' column of 'persona' in the schema cache»), que es la que se ve
+       en producción. Se quita SOLO esa columna, se reintenta, y se dice
+       qué migración falta. Hasta tres veces, por si faltan varias. */
+    const MIGRACION_DE = {
+      vendedor_hasta: '26_vendedor_hasta.sql',
+      externo: '23_externos.sql', organizacion: '23_externos.sql', acceso_hasta: '23_externos.sql'
+    };
+    for (let i = 0; i < 3 && r.error; i++) {
+      const e = r.error, msg = String(e.message || '');
+      const m = msg.match(/column ["']?([a-z_]+)["']?/i) || msg.match(/find the ['"]([a-z_]+)['"] column/i);
+      const col = m && m[1];
+      const faltaCol = (e.code === '42703' || e.code === 'PGRST204') && col && col in campos;
+      if (!faltaCol) break;
+      const tenia = !!campos[col];
+      delete campos[col];
       r = await guardar(campos);
-      if (!r.error && tenia) avisar(`Se guardó la persona, pero ${m.que} no: falta correr ${m.sql} en la base.`);
+      if (!r.error && tenia)
+        avisar(`Se guardó la persona, pero «${col}» no: falta correr ${MIGRACION_DE[col] || 'su migración'} en la base.`);
     }
     const fila = oExplota(r);
 
