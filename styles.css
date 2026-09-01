@@ -475,3 +475,7 @@ tr.cot-sel td{background:#fbf3df !important;font-weight:700}
    es el único caso en que interrumpir al usuario está justificado. */
 .toast-error{background:var(--mora);color:#fff;border-color:var(--mora);
   max-width:min(520px,92vw);white-space:normal;line-height:1.45;text-align:left}
+
+/* Botón que existe pero este rol no puede apretar: se ve, se explica
+   en el title, no se disfraza de activo. */
+.btn-bloqueado,.btn:disabled{opacity:.45;cursor:not-allowed;filter:saturate(.3)}

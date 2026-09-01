@@ -389,6 +389,31 @@ const nombreProyecto = () => PROYECTO.corto;
    igual que un dato y hacen creer que no hay nada que cobrar. */
 const VISTAS_CON_CARTERA = ['cobranza','agenda','recaudacion','reporteria','contratos','comisiones'];
 
+/* Lo que escribe, para quien no puede escribir, no se ofrece.
+
+   Manus entró como «Solo lectura» y vio Crear, Editar, Reasignar, Dar
+   de baja y Reiniciar datos: la base los rebotaba, pero la pantalla los
+   ofrecía igual. Un botón que no se puede apretar es peor que ninguno.
+
+   Se reconoce por el nombre de lo que invoca: modal*, guardar*, hacer*,
+   invitar*, do* (menos los que solo generan o buscan), etc. Se deja
+   visible pero deshabilitado y con el motivo, salvo los de alta —los
+   «+ Nuevo…», que se quitan— y «Reiniciar datos», que sólo ve el admin. */
+const ESCRIBE_RX=/^(modal(?!Enrolar2FA$)|guardar|hacer|invitar|asignar|reactivar|deshacer|crear|cotVender|onlineFirmar|enviarEC|copiarCierre|do(?!Hoja$|CompartirPDF$|BuscarContrato$))/;
+const SOLO_LEE_RX=/^(modalNuevoContrato|modalPersona|modalPago|modalCobro|modalNoCobro|modalDocumento|modalGestion|modalIntegrante|modalFactura|modalCierreSemana|crearContrato|cotVender)$/;
+function aplicarSoloLectura(){
+  const reset=document.querySelector('.btn-reset');
+  if(reset) reset.hidden = !(typeof SESION!=='undefined' && SESION && SESION.rol==='admin');
+  if(puedeEscribir()) return;
+  const porque = (typeof SESION!=='undefined' && SESION && SESION.rol==='consulta')
+    ? 'Tu acceso es de solo lectura' : 'Modo consulta: todavía no se registra nada';
+  document.querySelectorAll('.content button[onclick], .drawer button[onclick]').forEach(b=>{
+    const fn=(b.getAttribute('onclick')||'').match(/^\s*([a-zA-Z_$][\w$]*)\s*\(/);
+    if(!fn||!ESCRIBE_RX.test(fn[1])) return;
+    if(SOLO_LEE_RX.test(fn[1]) && /^\s*[+＋]/.test(b.textContent)) { b.remove(); return; }
+    b.disabled=true; b.title=porque; b.classList.add('btn-bloqueado');
+  });
+}
 function setView(v){
   if(SCREEN==='app' && ROLES[ROLE] && !ROLES[ROLE].views.includes(v)) return;
   try{ if(location.hash.slice(1)!==v) history.replaceState(null,'','#'+v); }catch(e){}
@@ -402,6 +427,8 @@ function setView(v){
     clientes:renderClientes,aprobacion:renderAprobacion,cobranza:renderCobranza,
     confirmacion:renderConfirmacion,comisiones:renderComisiones,reporteria:renderReporteria,
     agenda:renderAgenda,recaudacion:renderRecaudacion,conciliacion:renderConciliacion,seguridad:renderSeguridad,expedientes:renderExpedientes,equipo:renderEquipo,automatizaciones:renderAutomatizaciones}[v])();
+
+  aplicarSoloLectura();
 
   /* El aviso va DESPUÉS de pintar, arriba del todo: si fuera antes, el
      render lo borraría al escribir en el mismo contenedor. */
@@ -690,6 +717,16 @@ function estadoBadge(e){
 
 /* ============================================================ CLIENTES */
 function renderClientes(){
+  /* «Clientes · 0» con 148 contratos no es un dato: es que este rol no
+     ve la tabla cliente (la base se la esconde a «consulta»). Se dice. */
+  if(!DB.clientes.length && DB.contratos.length){
+    C().innerHTML=`<div class="card"><div class="empty">
+      <b>Tu rol no ve la ficha de los clientes.</b><br>
+      Hay ${DB.contratos.length} contratos, pero los datos personales de sus titulares
+      (nombre, DPI, teléfono) sólo los ven administración, ventas y cobranza.
+      No falta información: está protegida.</div></div>`;
+    return;
+  }
   let h=`<div class="card"><div class="card-h"><h2>Clientes · ${DB.clientes.length}</h2>
     <input class="chip" style="min-width:220px" placeholder="Buscar por nombre o DPI…" oninput="filtrarClientes(this.value)"></div>
     <div class="card-b" style="padding:0"><table class="data" id="tblClientes"><thead><tr>
@@ -2276,7 +2313,7 @@ function renderReporteria(){
       <td style="font-size:12px;color:var(--muted);max-width:230px">${esc(r.para)}</td>
       <td style="width:120px;text-align:right">
         ${typeof descargarReporte==='function'
-            ? `<button class="btn btn-ghost btn-sm" onclick="descargarReporte('${r.id}')">Descargar</button>`
+            ? `<button class="btn btn-ghost btn-sm" onclick="descargarReporte('${r.id}')">Descargar ${esc(String(r.nombre||r.id).toLowerCase())}</button>`
             : `<span class="hint">reportes.js no cargado</span>`}</td>
     </tr>`;
   });

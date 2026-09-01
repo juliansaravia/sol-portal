@@ -98,6 +98,16 @@ const ROLES_EQUIPO = [
 ];
 const rolLabel = id => (ROLES_EQUIPO.find(r=>r.id===id)||{}).label || id;
 
+/* ¿Quien está adentro puede registrar algo? Espejo de puede_escribir()
+   en la base y del portón de escribir.js: modo consulta frena a todos
+   menos al admin, y el rol «consulta» no escribe nunca. La interfaz
+   usa esto para NO ofrecer botones que después rebotan. */
+function puedeEscribir() {
+  if (typeof SESION === 'undefined' || !SESION) return true;
+  if (SESION.rol === 'consulta') return false;
+  return !(SESION.modoConsulta && SESION.rol !== 'admin');
+}
+
 /* ¿Esta persona comisiona por una venta hecha en esa fecha?
 
    Comisionar depende del rol que se TENÍA al vender, no del de hoy.
