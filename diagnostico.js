@@ -76,6 +76,15 @@ const REQUISITOS = [
   { que: 'Accesos de solo lectura', archivo: '21_rol_consulta.sql',
     prueba: async () => !(await SB.rpc('solo_mira')).error },
 
+  { que: 'Asignar contraseñas desde el portal', archivo: 'supabase functions deploy contrasena',
+    prueba: async () => {
+      const { data: { session } } = await SB.auth.getSession();
+      if (!session) return false;
+      const r = await fetch((window.SUPABASE_CONFIG?.url || '') + '/functions/v1/contrasena', { method: 'OPTIONS' });
+      return r.status < 400;
+    },
+    siNo: 'La función no está desplegada. Se despliega junto con invitar: npx supabase functions deploy --project-ref wdykbczkihveccgujqfc' },
+
   { que: 'Invitar al equipo desde el portal', archivo: 'supabase functions deploy invitar',
     prueba: async () => {
       const { data: { session } } = await SB.auth.getSession();

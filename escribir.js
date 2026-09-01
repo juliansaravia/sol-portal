@@ -876,6 +876,26 @@ async function sbInvitar(quien) {
   });
 }
 
+/* Asignar una contraseña ahora. Solo administración; la clave viaja
+   por HTTPS a la función y no se guarda en ningún lado del portal. */
+async function sbContrasena(persona_id, contrasena) {
+  return escribir('asignar la contraseña', async () => {
+    const { data: { session } } = await SB.auth.getSession();
+    if (!session) throw new Error('Tu sesión caducó. Volvé a entrar.');
+    const r = await fetch((window.SUPABASE_CONFIG?.url || '') + '/functions/v1/contrasena', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ persona_id: Number(persona_id), contrasena })
+    });
+    let d = null; try { d = await r.json(); } catch (_) {}
+    if (r.status === 404)
+      throw new Error('La función de contraseñas no está desplegada todavía. '
+                    + 'Se despliega una vez con: npx supabase functions deploy contrasena');
+    if (!r.ok) throw new Error(d?.error || `El servidor respondió ${r.status}`);
+    return d;
+  });
+}
+
 /* ============================================================
    Lo que ve el resto del portal
    ============================================================ */
@@ -888,7 +908,7 @@ Object.assign(window, {
   sbGestion, sbDocumento, sbIntegrante,
   sbSubirDocumento, sbVerDocumento, sbVerificarDocumento, sbFaltantes,
   MIMES_OK,
-  sbGuardarPersona, sbDesactivarPersona,
+  sbGuardarPersona, sbDesactivarPersona, sbContrasena,
   sbImportarMovimientos, sbConciliar, sbActualizarConciliacion, sbDescartarConciliacion,
   huellaMovimiento,
   sbCrearLiquidacion, sbRegistrarComisionPagada, sbComisionesPorVendedor,

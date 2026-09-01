@@ -1471,8 +1471,8 @@ function renderEquipo(){
         ${p.activo && !p.entra ? (p.email
             ? `<button class="btn btn-gold btn-sm" onclick="invitarA('${p.id}')">Invitar</button>`
             : `<span class="hint" title="Sin correo no se le puede invitar">sin correo</span>`) : ''}
-        ${p.activo && p.entra && p.email && SESION.rol==='admin'
-            ? `<button class="btn btn-ghost btn-sm" onclick="restablecerContrasenaDe('${p.id}')" title="Le llega un correo para elegir una nueva">Contraseña</button>` : ''}
+        ${p.activo && p.email && SESION.rol==='admin'
+            ? `<button class="btn btn-ghost btn-sm" onclick="modalContrasena('${p.id}')">Contraseña</button>` : ''}
       </td></tr>`;
   };
   /* Cuando alguien tiene contratos a su nombre pero su rol no comisiona,
@@ -1586,6 +1586,43 @@ async function restablecerContrasenaDe(id){
   if(!r||!r.ok){ if(r) toast(r.error, 7000, true); return; }
   anotar('equipo.contrasena', p.nombre+' · '+p.email);
   toast(`Enlace enviado a ${p.email}. Si no le llega, que revise no deseados.`, 7000);
+}
+
+/* Dos maneras, en un solo lugar: mandarle el enlace (elige ella) o
+   asignarle una ahora (para quien no tiene bandeja, como un agente).
+   La contraseña se escribe acá y viaja a la función; el portal no la
+   guarda ni la muestra en ningún otro sitio. */
+function modalContrasena(id){
+  const p=DB.equipo.find(x=>mismoId(x.id,id)); if(!p) return;
+  openModal(`<div class="modal-h"><h3>Contraseña de ${esc(p.nombre)}</h3><p>${esc(p.email)}</p></div>
+    <div class="modal-b">
+      <div class="sect-t">Opción 1 · que la elija la persona</div>
+      <p class="hint" style="margin-bottom:8px">Le llega un correo con un enlace. ${p.entra?'La actual sigue sirviendo hasta que la cambie.':'Necesita tener cuenta: usá «Invitar» primero.'}</p>
+      <button class="btn btn-ghost" ${p.entra?'':'disabled'} onclick="closeModal();restablecerContrasenaDe('${p.id}')">Mandar enlace</button>
+      <div class="sect-t" style="margin-top:18px">Opción 2 · asignarle una ahora</div>
+      <p class="hint" style="margin-bottom:8px">${p.entra?'Reemplaza la actual de inmediato.':'Le crea la cuenta ya confirmada — no espera ningún correo.'} Mínimo 10 caracteres, letras y números.</p>
+      <div class="form-grid">
+        <div class="field"><label>Contraseña nueva</label><input id="pw-1" type="password" autocomplete="new-password"></div>
+        <div class="field"><label>Repetila</label><input id="pw-2" type="password" autocomplete="new-password"></div>
+      </div>
+      <label class="hint" style="display:block;margin-top:6px"><input type="checkbox" onchange="['pw-1','pw-2'].forEach(i=>document.getElementById(i).type=this.checked?'text':'password')"> Mostrar</label>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="asignarContrasena('${p.id}')">Asignar contraseña</button></div>`);
+}
+async function asignarContrasena(id){
+  const p=DB.equipo.find(x=>mismoId(x.id,id)); if(!p) return;
+  const a=v('pw-1'), b=v('pw-2');
+  if(a.length<10) return toast('Mínimo 10 caracteres', 5000, true);
+  if(!/[a-z]/i.test(a)||!/\d/.test(a)) return toast('Mezclá letras y números', 5000, true);
+  if(a!==b) return toast('No coinciden', 5000, true);
+  const r=await conBoton(()=>sbContrasena(p.id, a));
+  if(!r||!r.ok) return;
+  ['pw-1','pw-2'].forEach(i=>{ const e=document.getElementById(i); if(e) e.value=''; });
+  if(r.dato.creada) p.entra=true;
+  anotar('equipo.contrasena', p.nombre+' · asignada'+(r.dato.creada?' · cuenta creada':''));
+  closeModal(); toast(r.dato.creada?`Cuenta creada para ${p.nombre}. Ya puede entrar.`:`Contraseña de ${p.nombre} cambiada.`, 6000);
+  renderEquipo();
 }
 
 /* ---------- Invitar al equipo ----------
