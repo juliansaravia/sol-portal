@@ -2372,7 +2372,7 @@ async function renderDiagnostico(destino){
       <td style="width:100px;text-align:right">${x.ok
         ? '<span class="badge b-ok">Funciona</span>'
         : (x.esencial ? '<span class="badge b-mora">Bloqueado</span>'
-                      : '<span class="badge b-pend">Falta correrlo</span>')}</td></tr>`;
+                      : `<span class="badge b-pend">${esc(x.pendiente||'Falta correrlo')}</span>`)}</td></tr>`;
   });
   h+=`</tbody></table></div>`;
 

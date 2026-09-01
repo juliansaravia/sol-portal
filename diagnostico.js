@@ -31,7 +31,7 @@ const REQUISITOS = [
   { que: 'Contabilidad', archivo: '12_contabilidad.sql',
     prueba: async () => !(await SB.from('partida').select('id').limit(1)).error },
 
-  { que: 'Contabilidad encendida', archivo: "insert into ajuste (clave,valor) values ('contabilidad_automatica','true') on conflict (clave) do update set valor='true';",
+  { que: 'Contabilidad encendida', pendiente: 'Falta encender', archivo: "insert into ajuste (clave,valor) values ('contabilidad_automatica','true') on conflict (clave) do update set valor='true';",
     prueba: async () => {
       const { data, error } = await SB.from('ajuste').select('valor')
         .eq('clave','contabilidad_automatica').maybeSingle();
@@ -56,7 +56,7 @@ const REQUISITOS = [
       window.__bucketsFaltan = faltan;
       return faltan.length === 0;
     },
-    siNo: 'No existe: ' + ((window.__bucketsFaltan || []).join(', ') || '(ver consola)')
+    siNo: () => 'No existe: ' + ((window.__bucketsFaltan || []).join(', ') || '?')
         + '. Los cuatro primeros los crea 04_storage.sql y «soportes» 20_adjuntos.sql — en sol-hub.' },
 
   { que: 'Cuadre bancario', archivo: '13_conciliacion.sql',
@@ -130,7 +130,9 @@ async function diagnosticar() {
     let ok = false, error = null;
     try { ok = !!(await r.prueba()); }
     catch (e) { error = e.message; }
-    return { ...r, ok, error };
+    /* siNo puede ser una función: así el texto se arma DESPUÉS de la
+       prueba, con lo que ella averiguó (qué bucket falta, por ejemplo). */
+    return { ...r, ok, error, siNo: typeof r.siNo === 'function' ? r.siNo() : r.siNo };
   }));
 }
 
