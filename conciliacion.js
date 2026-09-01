@@ -305,7 +305,7 @@ async function aplicarConciliacion({ movimientoId, asignaciones, usuario, nota, 
   });
   if (typeof hayBase === 'function' && hayBase()) {
     for (const h of hechos) {
-      const ct = DB.contratos.find(c => c.no === h.contrato);
+      const ct = indices().contratosPorNo.get(String(h.contrato));
       const r = await sbConciliar(movimientoId, {
         contrato_id: ct ? ct.id : null, monto: h.monto,
         certeza: h.via === 'referencia' ? 1 : (h.via === 'monto' ? 0.7 : null)
@@ -338,7 +338,7 @@ async function confirmarConciliacion(id, ok = true) {
 
   // Al confirmar, el pago entra a la cartera del contrato
   if (ok) {
-    const ct = DB.contratos.find(c => c.no === k.contrato);
+    const ct = indices().contratosPorNo.get(String(k.contrato));
     if (ct) { await registrarPago(ct.id, { monto: k.monto, forma: 'Depósito bancario',
                                      cuenta: 'Banrural', referencia: k.ref || '' }); }
   }

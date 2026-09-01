@@ -187,7 +187,7 @@ async function crearLiquidacion(nombreVendedor, periodo) {
     if (!r.ok) { avisar(r.error); return null; }
     // Que la pantalla no siga ofreciendo lo que ya quedó amarrado.
     pend.contratos.forEach(c => {
-      const ct = DB.contratos.find(x => x.no === c.no);
+      const ct = indices().contratosPorNo.get(String(c.no));
       if (ct) ct.comisionEstado = 'liquidada';
     });
     l.id = r.dato.id;

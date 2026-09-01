@@ -1622,7 +1622,7 @@ function renderCobranza(){
       <th>Contrato</th><th>Lote</th><th>Cliente</th><th>Vendedor</th><th>Fecha</th>
       <th class="num">Vencido</th><th class="num">Comisión generada</th></tr></thead><tbody>`;
     M.nuncaPagaron.forEach(m=>{
-      const ct=DB.contratos.find(c=>c.no===m.no);
+      const ct=indices().contratosPorNo.get(String(m.no));
       h+=`<tr class="click" ${ct?`onclick="abrirContrato('${ct.id}')"`:''}>
         <td><b>${m.no}</b></td><td>${m.lote}</td>
         <td>${ct?esc(nombreCliente(ct.clienteId)):'—'}</td>

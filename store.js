@@ -120,6 +120,90 @@ const uid = () => Math.random().toString(36).slice(2, 9);
    ------------------------------------------------------------ */
 const mismoId = (a, b) => a != null && b != null && String(a) === String(b);
 
+/* ------------------------------------------------------------
+   Índices · buscar sin recorrerlo todo
+
+   El portal buscaba con `.find()` y `.filter()` sobre los arreglos
+   completos, una vez por fila dibujada. Con los datos reales eso
+   son, en una sola pantalla de cartera:
+
+     nombreCliente()  148 filas × 148 clientes  =  21,904 vueltas
+     recaudadoDe()    148 filas × 738 pagos     = 109,224 vueltas
+
+   Y la reportería, la agenda y comisiones hacen lo mismo otra vez.
+   Con diez contratos de demostración no se nota; con 148 y 5,550
+   giros, sí.
+
+   Acá se arma un índice por llave, una sola vez, y las búsquedas
+   pasan a ser directas. Se reconstruye solo cuando cambia el
+   tamaño de algún arreglo —que es lo que pasa al crear, borrar o
+   recargar— sin tener que acordarse de avisarle desde cada sitio
+   que escribe.
+   ------------------------------------------------------------ */
+let _idx = null;
+let _huella = '';
+
+const _huellaActual = () =>
+  `${DB.clientes.length}|${DB.contratos.length}|${DB.pagos.length}|` +
+  `${DB.documentos.length}|${DB.lotes.length}|${DB.equipo.length}`;
+
+function indices() {
+  const h = _huellaActual();
+  if (_idx && _huella === h) return _idx;
+
+  const porId = (arr) => { const m = new Map(); for (const x of arr) m.set(String(x.id), x); return m; };
+  const agrupar = (arr, llave) => {
+    const m = new Map();
+    for (const x of arr) {
+      const k = String(llave(x));
+      const g = m.get(k);
+      if (g) g.push(x); else m.set(k, [x]);
+    }
+    return m;
+  };
+
+  _idx = {
+    clientes:  porId(DB.clientes),
+    contratos: porId(DB.contratos),
+    lotesPorClave: (() => {
+      const m = new Map();
+      for (const l of DB.lotes) {
+        if (l.clave) m.set(l.clave, l);
+        /* Los códigos se repiten entre fases: el índice por código
+           guarda el primero y `getLote` avisa si hubo ambigüedad. */
+        if (!m.has(l.codigo)) m.set(l.codigo, l);
+      }
+      return m;
+    })(),
+    pagosPorContrato: agrupar(DB.pagos, p => p.contratoId),
+    docsPorContrato:  agrupar(DB.documentos, d => d.contratoId),
+    contratosPorVendedor: agrupar(
+      DB.contratos.filter(c => c.estado !== 'anulado'), c => c.vendedor || ''),
+    /* Media docena de sitios buscan por número de contrato («SD-42») y
+       no por id: es la llave que sale del Excel, del banco y de la
+       conversación. Sin este índice, cada uno recorría los 148. */
+    contratosPorNo: (() => {
+      const m = new Map();
+      for (const c of DB.contratos) if (c.no) m.set(String(c.no), c);
+      return m;
+    })(),
+    contratoPorLote: (() => {
+      const m = new Map();
+      for (const c of DB.contratos) {
+        if (c.estado === 'anulado') continue;
+        if (c.clave && !m.has(c.clave)) m.set(c.clave, c);
+        if (c.lote && !m.has(c.lote))   m.set(c.lote, c);
+      }
+      return m;
+    })()
+  };
+  _huella = h;
+  return _idx;
+}
+
+/** Para cuando algo cambió sin cambiar de tamaño (renombrar un vendedor). */
+const reindexar = () => { _idx = null; };
+
 /* Cuando algo no se pudo guardar hay que decirlo, y decirlo fuerte.
    El silencio es lo peor que puede pasar acá: el usuario cierra el
    modal creyendo que registró un pago que no existe. */
@@ -279,7 +363,7 @@ const buscarPersona  = nombre => {
    equipo está "Andy Chavac". Sin esto la comisión se le pierde. */
 const nombreCanonico = v => { const p = buscarPersona(v); return p ? p.nombre : v; };
 /* Contratos y comisión acumulada de una persona */
-const contratosDe = nombre => DB.contratos.filter(c => c.vendedor===nombre && c.estado!=='anulado');
+const contratosDe = nombre => indices().contratosPorVendedor.get(String(nombre)) || [];
 async function guardarPersona(datos){
   if (typeof hayBase === 'function' && hayBase()) {
     const r = await sbGuardarPersona(datos);
@@ -350,7 +434,7 @@ async function crearCliente(nombreCompleto, extra = {}) {
   if (!r.ok) { avisar(r.error); return null; }
   return DB.clientes[DB.clientes.length - 1];
 }
-const getCliente = id => DB.clientes.find(c => mismoId(c.id, id));
+const getCliente = id => (id == null) ? undefined : indices().clientes.get(String(id));
 const nombreCliente = id => { const c = getCliente(id); return c ? `${c.nombre} ${c.apellido}`.trim() : '—'; };
 
 /* ---------- Obligaciones y giros (estructura real del CRM) ---------- */
@@ -425,7 +509,7 @@ const calcularComision = ct =>
   (ct && ct.comisionMonto != null) ? r2(ct.comisionMonto) : r2((ct.precio || 0) * COMISION_PCT);
 
 /* ---------- Cálculos de cartera ---------- */
-const pagosDe = ct => DB.pagos.filter(p => p.contratoId === ct.id);
+const pagosDe = ct => (ct ? (indices().pagosPorContrato.get(String(ct.id)) || []) : []);
 const recaudadoDe = ct => {
   const propios = pagosDe(ct).filter(p => p.estado === 'confirmado').reduce((s, p) => s + p.monto, 0);
   return (ct.recaudadoBase || 0) + propios;
@@ -581,8 +665,8 @@ function getLote(x) {
   const v = String(x);
 
   // La llave completa: fase·código. Es la que manda.
-  const porClave = DB.lotes.find(l => l.clave === v);
-  if (porClave) return porClave;
+  const porClave = indices().lotesPorClave.get(v);
+  if (porClave && porClave.clave === v) return porClave;
 
   const porCodigo = DB.lotes.filter(l => l.codigo === v);
   if (porCodigo.length === 1) return porCodigo[0];
@@ -598,10 +682,10 @@ function getLote(x) {
 
 /** La llave con la que se debe pedir un lote desde la interfaz. */
 const claveDe = l => (l && (l.clave || l.codigo)) || '';
-const getContrato = id => DB.contratos.find(c => mismoId(c.id, id));
-const contratoDeLote = codigo => DB.contratos.find(c => c.lote === codigo && c.estado !== 'anulado');
+const getContrato = id => (id == null) ? undefined : indices().contratos.get(String(id));
+const contratoDeLote = codigo => indices().contratoPorLote.get(String(codigo));
 const gestionesDe = id => DB.gestiones.filter(g => g.contratoId === id).sort((a, b) => b.fecha.localeCompare(a.fecha));
-const documentosDe = id => DB.documentos.filter(d => d.contratoId === id);
+const documentosDe = id => indices().docsPorContrato.get(String(id)) || [];
 
 /* El contacto del titular de un contrato.
 
@@ -613,9 +697,9 @@ const documentosDe = id => DB.documentos.filter(d => d.contratoId === id);
 
    Ahora sale de la base, que es donde vive el dato de verdad. */
 function contactoDe(numeroContrato) {
-  const ct = DB.contratos.find(c => c.no === numeroContrato);
+  const ct = indices().contratosPorNo.get(String(numeroContrato));
   if (!ct) return null;
-  const cl = DB.clientes.find(c => mismoId(c.id, ct.clienteId)) || {};
+  const cl = getCliente(ct.clienteId) || {};
   return {
     tel:       cl.tel || ct.tel || '',
     correo:    cl.correo || '',
@@ -735,7 +819,7 @@ const motivoLabel = id => (MOTIVOS_NO_COBRO.find(m=>m.id===id)||{}).label || id;
  * quien cobra no confirma — eso lo hace el financiero (separación de funciones).
  */
 async function marcarCobrada(contrato, fecha, { monto, forma, cuenta, referencia, nota }) {
-  const ct = DB.contratos.find(c => c.no === contrato);
+  const ct = indices().contratosPorNo.get(String(contrato));
 
   if (typeof hayBase === 'function' && hayBase()) {
     if (!ct) { avisar('No se encontró el contrato ' + contrato); return null; }
@@ -770,7 +854,7 @@ async function marcarCobrada(contrato, fecha, { monto, forma, cuenta, referencia
 
 /** Marca una cuota como NO COBRADA con su motivo. */
 async function marcarNoCobrada(contrato, fecha, { motivo, nota, promesa }) {
-  const ct = DB.contratos.find(c => c.no === contrato);
+  const ct = indices().contratosPorNo.get(String(contrato));
 
   if (typeof hayBase === 'function' && hayBase()) {
     if (!ct) { avisar('No se encontró el contrato ' + contrato); return null; }
@@ -806,7 +890,7 @@ async function desmarcarCuota(contrato, fecha) {
   if (i < 0) return;
 
   if (typeof hayBase === 'function' && hayBase()) {
-    const ct = DB.contratos.find(c => c.no === contrato);
+    const ct = indices().contratosPorNo.get(String(contrato));
     if (!ct) { avisar('No se encontró el contrato ' + contrato); return; }
     const r = await sbDesmarcarCuota(ct.id, fecha);
     if (!r.ok) { avisar(r.error); return; }
