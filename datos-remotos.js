@@ -71,7 +71,7 @@ async function cargarDesdeSupabase() {
 
        Los pagos se quedan acá: son 738 y de ellos depende cuánto lleva
        recaudado cada contrato, que es de lo primero que se mira. */
-    const [lotes, contratos, clientes, pagos, equipo, documentos, comisiones, requeridos] = await Promise.all([
+    const [lotes, contratos, clientes, pagos, equipo, documentos, comisiones, adjuntos, requeridos] = await Promise.all([
       todas('v_inventario', 'proyecto_id,proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado'),
       todas('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,origen,banco,boleta,lote_id,cliente_id,persona_id'),
       todas('cliente', 'id,nombre,dpi,nit,telefono,email,direccion,ocupacion'),
@@ -91,6 +91,10 @@ async function cargarDesdeSupabase() {
       /* `comision` existe desde 01_schema, pero puede estar vacía o sin
          permisos para el rol que entró. Que eso no tumbe la cartera. */
       opcional('comision', 'id,contrato_id,persona_id,monto,base,estado,periodo'),
+      /* Los respaldos genéricos (20_adjuntos.sql): con ellos el portal sabe
+         qué pago tiene su boleta y cuál no. Si la migración no corrió,
+         llega vacío y todo pago aparece «sin boleta». */
+      opcional('adjunto', 'id,entidad,entidad_id,bucket,ruta,nombre,mime,bytes,descripcion,created_at'),
       /* La tabla nace con 14_documentos.sql. Sin ella el portal usa su
          lista de respaldo — no se cae por un catálogo que no está. */
       opcional('documento_requerido', 'codigo,nombre,descripcion,bucket,caras,obligatorio,orden')
@@ -122,6 +126,11 @@ async function cargarDesdeSupabase() {
 
     /* Los expedientes se arman con esto: sin los documentos de la base,
        la pantalla marcaba TODOS los contratos como incompletos. */
+    DB.adjuntos = (adjuntos || []).map(a => ({
+      id: a.id, entidad: a.entidad, entidadId: a.entidad_id, bucket: a.bucket, ruta: a.ruta,
+      nombre: a.nombre, mime: a.mime, bytes: a.bytes, descripcion: a.descripcion, fecha: _fecha(a.created_at)
+    }));
+
     DB.documentos = documentos.map(d => ({
       id: d.id, contratoId: d.contrato_id, clienteId: d.cliente_id,
       tipo: d.tipo, nombre: d.nombre, fecha: _fecha(d.created_at),

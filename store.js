@@ -65,7 +65,8 @@ const DB = {
   gestiones: [], documentos: [], leadsFunnel: [], equipo: [],
   recaudacion: [], movimientos: [], declaradas: [], conciliaciones: [], liquidaciones: [],
   bitacora: [],
-  meta: { correlativo: 131, version: 1 }
+  meta: { correlativo: 131, version: 1 },
+  adjuntos: []
 };
 
 /* ---------- Bitácora ----------
@@ -722,6 +723,11 @@ const getContrato = id => (id == null) ? undefined : indices().contratos.get(Str
 const contratoDeLote = codigo => indices().contratoPorLote.get(String(codigo));
 const gestionesDe = id => DB.gestiones.filter(g => g.contratoId === id).sort((a, b) => b.fecha.localeCompare(a.fecha));
 const documentosDe = id => indices().docsPorContrato.get(String(id)) || [];
+/* Respaldos genéricos de cualquier cosa (20_adjuntos.sql). */
+const adjuntosDe = (entidad, id) => (DB.adjuntos || []).filter(a => a.entidad === entidad && mismoId(a.entidadId, id));
+/* ¿El contrato firmado está en el sistema? Una fila de documento sin
+   archivo no cuenta: el papel tiene que estar subido. */
+const contratoFirmadoDe = ct => documentosDe(ct.id).find(d => d.tipo === 'contrato' && d.bucket && d.ruta) || null;
 
 /* El contacto del titular de un contrato.
 

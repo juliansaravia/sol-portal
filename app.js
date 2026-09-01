@@ -471,6 +471,10 @@ function asuntos(){
   if(pend) A.push({sev:'media',n:pend,t:'solicitudes por aprobar',d:'El comité decide y se genera el plan de giros',ir:()=>setView('aprobacion')});
   if(sinVend) A.push({sev:'media',n:sinVend,t:'contratos sin vendedor',d:'Sin responsable no hay comisión ni seguimiento',ir:()=>irA('contratos',{f:'sin_vendedor'})});
   if(sinCli) A.push({sev:'media',n:sinCli,t:'contratos sin cliente vinculado',d:'Existe la venta, falta la ficha del titular',ir:()=>irA('contratos',{f:'sin_cliente'})});
+  const pagosSinBoleta=DB.pagos.filter(p=>p.estado==='confirmado'&&!adjuntosDe('pago',p.id).length).length;
+  if(pagosSinBoleta) A.push({sev:'media',n:pagosSinBoleta,t:pagosSinBoleta===1?'pago cobrado sin boleta de respaldo':'pagos cobrados sin boleta de respaldo',d:'Lo cobrado antes del portal entró sin comprobante: hay que subir cada boleta',ir:()=>irA('contratos',{f:'sin_boleta'})});
+  const sinFirmado=activos.filter(c=>!contratoFirmadoDe(c)).length;
+  if(sinFirmado) A.push({sev:'media',n:sinFirmado,t:sinFirmado===1?'contrato sin el firmado en el sistema':'contratos sin el firmado en el sistema',d:'El contrato existe en papel; falta subir el escaneado',ir:()=>irA('contratos',{f:'sin_firmado'})});
   if(sinAcceso) A.push({sev:'baja',n:sinAcceso,t:'usuarios sin acceso',d:'Pendientes de invitación o de correo',ir:()=>setView('equipo')});
   if(sinAlta) A.push({sev:'baja',n:sinAlta,t:'lotes del plano sin dar de alta',d:'Están dibujados pero no en el inventario',ir:()=>setView('inventario')});
   if(sinUbic) A.push({sev:'baja',n:sinUbic,t:'lotes sin ubicación en el plano',d:'Existen en inventario, no en el dibujo',ir:()=>setView('inventario')});
@@ -783,6 +787,8 @@ const FILTROS_CT={
   sin_vendedor:{t:'Sin vendedor',f:c=>c.estado==='aprobado'&&(!c.vendedor||!buscarPersona(c.vendedor))},
   sin_cliente:{t:'Sin cliente',f:c=>c.estado==='aprobado'&&!getCliente(c.clienteId)},
   bajo_recaudo:{t:'Bajo % recaudado',f:(c,ec)=>c.estado==='aprobado'&&ec.totalGiros>0&&ec.recaudado/ec.totalGiros<0.15},
+  sin_boleta:{t:'Pagos sin boleta',f:c=>c.estado==='aprobado'&&(indices().pagosPorContrato.get(String(c.id))||[]).some(p=>p.estado==='confirmado'&&!adjuntosDe('pago',p.id).length)},
+  sin_firmado:{t:'Sin contrato firmado',f:c=>c.estado==='aprobado'&&!contratoFirmadoDe(c)},
   anulados:{t:'Anulados',f:c=>c.estado==='anulado'},
 };
 let ctBusca='', ctOrden={k:'no',asc:false};
@@ -2830,9 +2836,16 @@ function pintarContrato(){
       <div><div class="f-lbl">Teléfono</div><div class="f-val">${esc(cli&&cli.telefono)||'—'}</div></div>
       <div class="f-full"><div class="f-lbl">Correo</div><div class="f-val">${esc(cli&&cli.email)||'—'}</div></div>
     </div>
-    <div class="btn-row">${typeof generarContrato==='function'
-        ? `<button class="btn btn-gold btn-sm" onclick="generarContrato('${ct.id}')">📄 Generar contrato</button>`
+    ${(()=>{ const firmado=contratoFirmadoDe(ct);
+      if(firmado) return `<div class="hint" style="margin:6px 0">Contrato firmado en el sistema · <a href="#" onclick="verDocumento('${firmado.id}');return false;">ver</a></div>`;
+      /* Los contratos históricos (sin origen: vinieron de la carga masiva)
+         ya están firmados en papel: no se genera otro, se sube ese. Sólo
+         una venta hecha en el portal genera su contrato para firmar. */
+      return `<div class="aviso-err" style="margin:6px 0">Falta el contrato firmado. ${ct.origen?'Generalo, firmalo y subilo.':'Es un contrato que ya existe: hay que subir el firmado.'}</div>`; })()}
+    <div class="btn-row">${(typeof generarContrato==='function' && ct.origen && !contratoFirmadoDe(ct))
+        ? `<button class="btn btn-ghost btn-sm" onclick="generarContrato('${ct.id}')">📄 Generar contrato para firma</button>`
         : ''}
+      ${!contratoFirmadoDe(ct)?`<button class="btn btn-gold btn-sm" onclick="modalDocumentoTipo('${ct.id}','contrato')">Subir contrato firmado</button>`:''}
       <button class="btn btn-ghost btn-sm" onclick="abrirCliente('${ct.clienteId}')">Ver ficha del cliente</button></div>
     <div class="sect-t">Integrantes del contrato</div>`;
     const ints=ct.integrantes||[];
@@ -2850,6 +2863,18 @@ function pintarContrato(){
       h+=`<div class="btn-row"><button class="btn btn-primary" onclick="modalPago('${ct.id}')">Registrar pago</button>
         <button class="btn btn-ghost" onclick="verEstadoCuenta('${ct.id}')">Ver completo / imprimir</button>
         <button class="btn btn-ghost" onclick="enviarEC('${ct.id}')">Enviar por WhatsApp</button></div>`;
+    /* Cada pago con su boleta. Lo cobrado antes del portal entró sin
+       respaldo; acá se ve cuál falta y se sube desde la misma fila. */
+    const pagos=(indices().pagosPorContrato.get(String(ct.id))||[]).slice().sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+    const sinBol=pagos.filter(p=>p.estado!=='rechazado'&&!adjuntosDe('pago',p.id).length);
+    h+=`<div class="sect-t" style="margin-top:16px">Pagos y boletas · ${pagos.length}${sinBol.length?` <span class="nav-badge">${sinBol.length} sin boleta</span>`:''}</div>`;
+    if(!pagos.length) h+=`<div class="hint">Sin pagos registrados.</div>`;
+    pagos.forEach(p=>{ const bol=adjuntosDe('pago',p.id);
+      h+=`<div class="pay-item"><div class="pay-ico" style="${bol.length?'':'color:var(--gold)'}">${bol.length?'🗎':'⚠'}</div>
+        <div class="pay-main"><div class="pay-title">${Q(p.monto)} · ${esc(p.forma||'')} ${p.referencia?`· ref. ${esc(p.referencia)}`:''}</div>
+          <div class="pay-sub">${fmtD(p.fecha)} · ${esc(p.estado||'')}${bol.length?` · boleta subida`:' · <b>sin boleta</b>'}</div></div>
+        <div>${bol.length?`<button class="btn btn-ghost btn-sm" onclick="verAdjunto('${bol[0].id}')">Ver</button>`:''}
+          ${p.estado!=='rechazado'?`<button class="btn ${bol.length?'btn-ghost':'btn-gold'} btn-sm" onclick="modalBoleta('${p.id}')">${bol.length?'Otra boleta':'Subir boleta'}</button>`:''}</div></div>`;});
   }
 
   if(drawerTab==='gestiones'){
@@ -3197,6 +3222,35 @@ const DOCS_REQ = () => (typeof DB !== 'undefined' && DB.documentosRequeridos && 
      {codigo:'contrato',   nombre:'Contrato firmado',     caras:1, obligatorio:true},
      {codigo:'plan_pagos', nombre:'Plan de pagos firmado',caras:1, obligatorio:true}];
 
+/* Boleta de un pago ya registrado (histórico o no). */
+function modalBoleta(pagoId){
+  const p=DB.pagos.find(x=>mismoId(x.id,pagoId)); if(!p) return;
+  const ct=getContrato(p.contratoId);
+  openModal(`<div class="modal-h"><h3>Boleta del pago</h3><p>${ct?ct.no+' · ':''}${Q(p.monto)} · ${fmtD(p.fecha)}${p.referencia?' · ref. '+esc(p.referencia):''}</p></div>
+    <div class="modal-b"><div class="field"><label>Foto o PDF de la boleta *</label>
+      <input id="b-archivo" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment">
+      <div class="hint">JPG, PNG o PDF · máximo 5 MB. Queda colgada del pago como respaldo de lo cobrado.</div></div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarBoleta('${p.id}')">Subir boleta</button></div>`);
+}
+async function guardarBoleta(pagoId){
+  const p=DB.pagos.find(x=>mismoId(x.id,pagoId)); if(!p) return;
+  const entrada=document.getElementById('b-archivo'); const archivo=entrada&&entrada.files&&entrada.files[0];
+  if(!archivo) return toast('Elegí el archivo de la boleta', 5000, true);
+  if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se pueden subir archivos', 5000, true);
+  const r=await conBoton(()=>sbAdjuntar('pago', p.id, archivo, 'Boleta '+(p.referencia||'')));
+  if(!r||!r.ok) return;
+  const a=r.dato||{};
+  (DB.adjuntos=DB.adjuntos||[]).push({ id:a.id, entidad:'pago', entidadId:p.id, bucket:a.bucket, ruta:a.ruta, nombre:a.nombre, mime:a.mime, bytes:a.bytes, descripcion:a.descripcion, fecha:HOY_ISO });
+  anotar('pago.boleta', (getContrato(p.contratoId)||{}).no+' · '+Q(p.monto));
+  closeModal(); toast('Boleta subida ✓'); drawerTab='cuenta'; pintarContrato(); pintarBadgeAsuntos();
+}
+async function verAdjunto(id){
+  const a=(DB.adjuntos||[]).find(x=>mismoId(x.id,id)); if(!a) return toast('No se encontró el respaldo');
+  const r=await sbVerDocumento(a.bucket,a.ruta); if(!r||!r.ok){ if(r) toast(r.error,6000,true); return; }
+  window.open(r.dato.url||r.dato,'_blank','noopener');
+}
+function modalDocumentoTipo(id,tipo){ modalDocumento(id); const sel=document.getElementById('d-tipo'); if(sel){ sel.value=tipo; if(typeof docCaras==='function') docCaras(); } }
 function modalDocumento(id){
   const reqs=DOCS_REQ();
   openModal(`<div class="modal-h"><h3>Subir respaldo</h3><p>Expediente del contrato</p></div>
