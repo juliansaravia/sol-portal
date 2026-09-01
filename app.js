@@ -462,8 +462,10 @@ function setView(v){
   try{ if(location.hash.slice(1)!==v) history.replaceState(null,'','#'+v); }catch(e){}
   vista=v;
   document.querySelectorAll('.nav-item,.tab-item').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
-  document.getElementById('viewTitle').textContent=TITLES[v][0];
-  document.getElementById('viewSub').textContent=TITLES[v][1];
+  const T=(ROLE==='vendedor'&&v==='inicio')?['Mi resumen','Tus ventas, tus comisiones, tus pendientes']
+         :(ROLE==='vendedor'&&v==='comisiones')?['Mis comisiones','Lo cobrado, lo que viene y cada venta con su comisión']:TITLES[v];
+  document.getElementById('viewTitle').textContent=T[0];
+  document.getElementById('viewSub').textContent=T[1];
   const faltaCartera = typeof DB!=='undefined' && DB.meta && DB.meta.carteraLista === false
                     && VISTAS_CON_CARTERA.includes(v);
   /* Por NOMBRE y resuelto al momento: vendedor.html y cliente.html no
