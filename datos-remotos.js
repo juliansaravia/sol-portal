@@ -73,7 +73,7 @@ async function cargarDesdeSupabase() {
        recaudado cada contrato, que es de lo primero que se mira. */
     const [lotes, contratos, clientes, pagos, equipo, documentos, comisiones, requeridos] = await Promise.all([
       todas('v_inventario', 'proyecto_id,proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado'),
-      todas('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,banco,boleta,lote_id,cliente_id,persona_id'),
+      todas('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,origen,banco,boleta,lote_id,cliente_id,persona_id'),
       todas('cliente', 'id,nombre,dpi,nit,telefono,email,direccion,ocupacion'),
       todas('pago', 'id,contrato_id,monto,fecha_pago,forma_pago,referencia,estado'),
       /* `auth_uid` viene para saber quién ya puede entrar. No se guarda
@@ -166,6 +166,12 @@ async function cargarDesdeSupabase() {
         tasa: _num(c.tasa_mensual),
         estado: estadoDePortal(c.estado),
         estadoBase: c.estado,
+        /* No se pedía, así que la columna Origen de cuatro pantallas
+           pintaba la palabra «undefined». Los 148 contratos históricos
+           la tienen en NULL —la carga masiva nunca la llenó—, de modo
+           que se normaliza a cadena vacía y cada pantalla decide cómo
+           decir «no se registró». */
+        origen: c.origen || '',
         banco: c.banco || '',
         boleta: c.boleta || '',
         obligaciones: []

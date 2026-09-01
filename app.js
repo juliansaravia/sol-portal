@@ -656,7 +656,7 @@ function renderContratos(){
   DB.contratos.slice().sort((a,b)=>b.no.localeCompare(a.no)).forEach(c=>{
     const ec=estadoCuenta(c);
     h+=`<tr class="click" onclick="abrirContrato('${c.id}')"><td><b>${c.no}</b></td><td>${c.lote}</td>
-      <td>${esc(nombreCliente(c.clienteId))}</td><td><span class="pill">${c.origen}</span></td>
+      <td>${esc(nombreCliente(c.clienteId))}</td><td><span class="pill">${esc(c.origen||'—')}</span></td>
       <td>${fmtD(c.fecha)}</td><td class="num">${Qk(c.precio)}</td><td class="num">${Qk(ec.recaudado)}</td>
       <td>${estadoBadge(c.estado)}</td></tr>`;});
   h+=`</tbody></table></div></div>`;
@@ -1664,7 +1664,7 @@ async function hacerReasignacion(de){
 function renderLeads(){
   const L=(DB.leadsFunnel||[]).slice().reverse();
   const conv=L.filter(x=>x.estado==='convertido').length;
-  const porOrigen={}; L.forEach(x=>{porOrigen[x.origen]=(porOrigen[x.origen]||0)+1;});
+  const porOrigen={}; L.forEach(x=>{const k=x.origen||'Sin registrar';porOrigen[k]=(porOrigen[k]||0)+1;});
   let h=`<div class="kpis">
     <div class="kpi"><div class="kpi-label">Leads capturados</div><div class="kpi-value">${L.length}</div><div class="kpi-sub">desde el embudo público</div></div>
     <div class="kpi accent"><div class="kpi-label">Convertidos</div><div class="kpi-value">${conv}</div><div class="kpi-sub">${L.length?Math.round(conv/L.length*100):0}% de conversión</div></div>
@@ -1684,7 +1684,7 @@ function renderLeads(){
     <th class="num">Enganche</th><th>Origen</th><th>Fecha</th><th>Estado</th></tr></thead><tbody>`;
   if(!L.length)h+=`<tr><td colspan="7" class="empty">Aún no hay leads. Se capturan desde <b>comprar.html</b> (el link para redes sociales).</td></tr>`;
   L.forEach(x=>{h+=`<tr><td><b>${esc(x.nombre)}</b></td><td>${esc(x.telefono)}</td><td>${esc(x.lote)}</td>
-    <td class="num">${Qk(x.enganche||0)}</td><td><span class="pill">${esc(x.origen)}</span></td>
+    <td class="num">${Qk(x.enganche||0)}</td><td><span class="pill">${esc(x.origen||'—')}</span></td>
     <td>${(x.fecha||'').slice(0,10)}</td>
     <td>${x.estado==='convertido'?`<span class="badge b-ok">Convertido ${esc(x.contrato||'')}</span>`:'<span class="badge b-pend">Por contactar</span>'}</td></tr>`;});
   h+=`</tbody></table></div></div>
@@ -1703,7 +1703,7 @@ function renderAprobacion(){
     const cli=getCliente(c.clienteId), docs=documentosDe(c.id).length;
     const completo=cli&&cli.dpi&&cli.telefono;
     h+=`<tr><td><b>${c.no}</b></td><td>${c.lote}</td><td>${esc(nombreCliente(c.clienteId))}</td>
-      <td><span class="pill">${c.origen}</span></td><td class="num">${Qk(c.precio)}</td>
+      <td><span class="pill">${esc(c.origen||'—')}</span></td><td class="num">${Qk(c.precio)}</td>
       <td>${completo?'<span class="badge b-ok">Completo</span>':'<span class="badge b-pend">Falta info</span>'} <span class="muted">${docs} doc.</span></td>
       <td><button class="btn btn-ghost btn-sm" onclick="abrirContrato('${c.id}')">Ver</button>
           <button class="btn btn-primary btn-sm" onclick="doAprobar('${c.id}')">Aprobar</button>
@@ -2531,7 +2531,7 @@ function pintarContrato(){
       <div><div class="f-lbl">Lote</div><div class="f-val">${ct.lote}</div></div>
       <div><div class="f-lbl">Precio de venta</div><div class="f-val">${Q(ct.precio)}</div></div>
       <div><div class="f-lbl">Vendedor</div><div class="f-val">${esc(ct.vendedor)}</div></div>
-      <div><div class="f-lbl">Origen</div><div class="f-val">${ct.origen}</div></div>
+      <div><div class="f-lbl">Origen</div><div class="f-val">${esc(ct.origen||'—')}</div></div>
       <div><div class="f-lbl">Firma</div><div class="f-val">${ct.firma}</div></div>
       <div><div class="f-lbl">Fuente</div><div class="f-val">${ct.fuente||'Suite'}</div></div>
     </div>
