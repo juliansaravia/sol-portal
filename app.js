@@ -645,9 +645,28 @@ function datosCotizacion(){
            ingreso:+cot.ingreso||0 };
 }
 function doHoja(tipo){ abrirHoja(tipo, datosCotizacion()); }
+/* El cliente debe recibir UN archivo, no una ristra de mensajes. Un PDF
+   se guarda, se reenvía al esposo y se lleva al banco.
+
+   Cuando el hub esté desplegado, este botón lo manda solo: el endpoint
+   /cotizacion/whatsapp arma el PDF con pdfkit y lo envía como documento.
+   Mientras tanto abre la hoja lista para guardar como PDF y deja el
+   mensaje copiado. Antes fallaba en silencio contra una URL que no
+   existe. */
+function doCompartirPDF(){
+  const d=datosCotizacion();
+  if(window.API_URL && d.telefono){ enviarCotizacionWhatsApp(d); return; }
+  compartirCotizacionPDF(d);
+}
+
+/* Se conserva el envío automático para cuando el hub esté arriba. */
 function doWhatsAppCot(){
   const d=datosCotizacion();
   if(!d.telefono){ toast('Anota el teléfono del cliente para poder enviarle el PDF'); return; }
+  if(!window.API_URL){
+    toast('El envío automático necesita el hub desplegado. Por ahora: «Compartir PDF por WhatsApp».', 7000, true);
+    return;
+  }
   enviarCotizacionWhatsApp(d);
 }
 
@@ -709,9 +728,9 @@ function pintarCot(){
     <div class="cot-acc">
         <button class="btn btn-primary" onclick="doHoja('cliente')">Hoja para el cliente</button>
         <button class="btn btn-ghost" onclick="doHoja('interna')">Hoja interna</button>
-        <button class="btn btn-ghost" onclick="doWhatsAppCot()">Enviar PDF por WhatsApp</button>
+        <button class="btn btn-ghost" onclick="doCompartirPDF()">Compartir PDF por WhatsApp</button>
       <button class="btn btn-primary" onclick="cotVender()">Convertir en venta →</button>
-      <button class="btn btn-ghost" onclick="cotCompartir()">Compartir por WhatsApp</button>
+      <button class="btn btn-ghost" onclick="cotCompartir()">Copiar resumen</button>
       <button class="btn btn-ghost" onclick="window.print()">Imprimir</button>
     </div>
   </div>`;
@@ -1319,6 +1338,8 @@ function renderEquipo(){
       <td>${p.activo?'<span class="badge b-ok">Activo</span>':'<span class="badge b-nod">Inactivo</span>'}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="modalPersona('${p.id}')">Editar</button>
         ${cts.length?`<button class="btn btn-ghost btn-sm" onclick="modalReasignar('${esc(p.nombre)}')">Reasignar</button>`:''}
+        ${p.activo?`<button class="btn btn-ghost btn-sm" onclick="modalDarDeBaja('${p.id}')">Dar de baja</button>`
+                  :`<button class="btn btn-ghost btn-sm" onclick="reactivarPersona('${p.id}')">Reactivar</button>`}
       </td></tr>`;
   };
   act.forEach(p=>h+=fila(p));
@@ -1356,6 +1377,76 @@ async function guardarEquipo(id){
   if(antes&&antes!==nom) await reasignarContratos(antes,nom);   // mantiene el historial ligado
   closeModal(); toast('Equipo actualizado ✓'); renderEquipo();
 }
+/* ---------- Dar de baja a alguien ----------
+   No se borra: se desactiva. Un vendedor que se fue sigue siendo quien
+   vendió 47 contratos, y esa historia no se puede perder — la comisión
+   que se le debe, el cliente que preguntará por él.
+
+   Y no se le da de baja con contratos vivos encima sin decir qué pasa
+   con ellos: la cartera se quedaría sin quien la atienda. */
+function modalDarDeBaja(id){
+  const p=DB.equipo.find(x=>mismoId(x.id,id)); if(!p) return;
+  const cts=contratosDe(p.nombre);
+  const com=rolComisiona(p.rol)?cts.reduce((s,c)=>s+calcularComision(c),0):0;
+
+  openModal(`<div class="modal-h"><h3>Dar de baja a ${esc(p.nombre)}</h3>
+      <p>${rolLabel(p.rol)}${p.codigo?' · '+esc(p.codigo):''}</p></div>
+    <div class="modal-b">
+      <div class="hint" style="margin-bottom:12px">
+        No se borra a nadie. Queda <b>inactivo</b>: pierde el acceso al portal, pero su
+        historial se conserva entero — quién vendió qué, y qué se le debe.</div>
+      ${cts.length?`<div class="aviso-err" style="margin-bottom:12px">
+        Tiene <b>${cts.length} contrato(s)</b> a su nombre${com?` y <b>${Q(com)}</b> en comisión`:''}.
+        Antes de darle de baja hay que decidir quién los atiende.</div>
+        <div class="field"><label>Pasar sus contratos a</label>
+          <select id="baja-dest">
+            <option value="">— dejarlos a su nombre por ahora —</option>
+            ${vendedores().filter(v=>!mismoId(v.id,p.id)).map(v=>`<option value="${esc(v.nombre)}">${esc(v.nombre)}</option>`).join('')}
+          </select></div>
+        <div class="hint">Si los dejás a su nombre, van a seguir apareciendo como suyos
+          en cartera y comisiones. Es válido —a veces es lo correcto— pero que sea
+          a propósito.</div>`
+        :`<div class="hint" style="margin-bottom:12px">No tiene contratos a su nombre.</div>`}
+      <div class="field" style="margin-top:12px"><label>¿Por qué se va?</label>
+        <input id="baja-motivo" placeholder="Renunció, se le terminó el contrato, cambió de área…"></div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="hacerBaja('${p.id}')">Dar de baja</button></div>`);
+}
+
+async function hacerBaja(id){
+  const p=DB.equipo.find(x=>mismoId(x.id,id)); if(!p) return;
+  const motivo=v('baja-motivo').trim();
+  if(motivo.length<4){toast('Escribí por qué se va — dentro de seis meses nadie se va a acordar');return;}
+
+  const dest=document.getElementById('baja-dest');
+  const destino=dest?dest.value:'';
+
+  const ok = await conBoton(async()=>{
+    if(destino){
+      const n=await reasignarContratos(p.nombre,destino);
+      if(!n) return null;                    // el motivo ya se mostró
+    }
+    return await borrarPersona(p.id);
+  });
+  if(!ok) return;
+
+  anotar('equipo.baja', p.nombre+' · '+motivo, {destino: destino||null});
+  closeModal();
+  toast(esc(p.nombre)+' quedó inactivo'+(destino?' · sus contratos pasaron a '+destino:''), 5000);
+  renderEquipo();
+}
+
+async function reactivarPersona(id){
+  const p=DB.equipo.find(x=>mismoId(x.id,id)); if(!p) return;
+  if(!confirm(`Reactivar a ${p.nombre}. Va a recuperar el acceso al portal con su rol de ${rolLabel(p.rol)}.`)) return;
+  const r=await guardarPersona({id:p.id, nombre:p.nombre, codigo:p.codigo, rol:p.rol,
+                                activo:true, telefono:p.tel||'', email:p.email||''});
+  if(!r) return;
+  anotar('equipo.reactivar', p.nombre);
+  toast(esc(p.nombre)+' vuelve a tener acceso'); renderEquipo();
+}
+
 function modalReasignar(de){
   const cts=de==='Sin asignar'
     ? DB.contratos.filter(c=>c.estado!=='anulado'&&(!c.vendedor||c.vendedor==='Sin asignar'))
@@ -1558,8 +1649,16 @@ function renderComisiones(){
   h+=`<div class="card"><div class="card-b" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
     ${[['pendientes','Por liquidar'],['proceso','En proceso'],['historial','Historial de pagos'],['vendedores','Por vendedor']]
       .map(([k,l])=>`<button class="btn btn-sm ${comTab===k?'btn-primary':'btn-ghost'}" onclick="comTab='${k}';renderComisiones()">${l}</button>`).join('')}
+    <button class="btn btn-sm btn-ghost" onclick="modalYaPagado()">Registrar lo ya pagado</button>
     <span class="hint" style="margin-left:auto">Base: ${(COMISION_PCT*100).toFixed(0)}% del valor del lote · liquidación quincenal</span>
   </div></div>`;
+
+  if(R.pagado===0 && R.total>0)
+    h+=`<div class="aviso-err" style="margin-bottom:14px">
+      Dice <b>Q0 pagado</b>, y eso no es cierto: se ha pagado comisión durante meses,
+      por fuera del sistema. Mientras no se cargue, <b>${Qk(R.total)}</b> aparece como
+      pendiente cuando gran parte ya se pagó — y esa cifra no sirve ni para pagar ni
+      para provisionar. Cargalo con <b>«Registrar lo ya pagado»</b>.</div>`;
 
   if(comTab==='proceso')         h+=comProceso(R);
   else if(comTab==='historial')  h+=comHistorial(R);
@@ -1619,8 +1718,86 @@ function guardarLiberacion(contratoNo){
        closeModal(); toast('Comisión liberada'); renderComisiones(); }
   catch(e){ toast(e.message); }
 }
+/* ---------- Registrar comisiones ya pagadas ----------
+   Lo que se pagó antes de que existiera el sistema. No es una
+   liquidación nueva: es cargar historia para que la cifra pendiente
+   sea real. */
+function modalYaPagado(vendedorSel){
+  const R=comisionesPendientes();
+  if(!R.length){toast('No hay comisiones pendientes que marcar como pagadas');return;}
+  const sel=R.find(x=>x.persona.nombre===vendedorSel)||R[0];
+
+  openModal(`<div class="modal-h"><h3>Registrar lo ya pagado</h3>
+      <p>Comisiones que se pagaron antes de que existiera el sistema</p></div>
+    <div class="modal-b">
+      <div class="hint" style="margin-bottom:12px">
+        Esto no crea una liquidación nueva ni mueve dinero: <b>carga historia</b>, para
+        que lo que aparece como pendiente sea de verdad lo que se debe.</div>
+      <div class="field"><label>Vendedor</label>
+        <select id="yp-vend" onchange="modalYaPagado(this.value)">
+          ${R.map(x=>`<option value="${esc(x.persona.nombre)}" ${x.persona.nombre===sel.persona.nombre?'selected':''}>${esc(x.persona.nombre)} · ${x.contratos.length} contrato(s) · ${Qk(x.total)}</option>`).join('')}
+        </select></div>
+      <div class="form-grid">
+        <div class="field"><label>¿Cuándo se pagó? *</label>
+          <input id="yp-fecha" type="date" value="${HOY_ISO}"></div>
+        <div class="field"><label>Referencia</label>
+          <input id="yp-ref" placeholder="Transferencia, cheque, recibo…"></div>
+      </div>
+      <div class="field full"><label>Nota</label>
+        <input id="yp-nota" placeholder="Por qué se está cargando ahora"></div>
+
+      <div style="display:flex;align-items:center;gap:10px;margin:12px 0 6px">
+        <b style="font-size:13px">¿Cuáles se le pagaron?</b>
+        <button class="btn btn-ghost btn-sm" onclick="ypTodos(true)">Todas</button>
+        <button class="btn btn-ghost btn-sm" onclick="ypTodos(false)">Ninguna</button>
+        <span class="hint" id="yp-suma" style="margin-left:auto"></span>
+      </div>
+      <div style="max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:8px">
+        <table class="data"><tbody>
+        ${sel.contratos.map(c=>`<tr>
+          <td style="width:34px"><input type="checkbox" class="yp-chk" data-com="${c.comisionId||''}"
+              data-monto="${c.comision}" onchange="ypSuma()" checked></td>
+          <td><b>${esc(c.no)}</b> · ${esc(c.lote)}</td>
+          <td style="font-size:12px;color:var(--muted)">${fmtD(c.fecha)}</td>
+          <td class="num">${Q(c.comision)}</td></tr>`).join('')}
+        </tbody></table>
+      </div>
+      ${sel.contratos.some(c=>!c.comisionId)?`<div class="hint" style="margin-top:8px;color:#B0562F">
+        Algunas comisiones todavía no están registradas en la base. Esas no se pueden
+        marcar hasta que se corra la carga.</div>`:''}
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="hacerYaPagado('${esc(sel.persona.nombre)}')">Registrar como pagado</button></div>`);
+  ypSuma();
+}
+function ypTodos(v){ document.querySelectorAll('.yp-chk').forEach(c=>c.checked=v); ypSuma(); }
+function ypSuma(){
+  const chk=[...document.querySelectorAll('.yp-chk:checked')];
+  const t=chk.reduce((s,c)=>s+Number(c.dataset.monto||0),0);
+  const el=document.getElementById('yp-suma');
+  if(el) el.innerHTML=`<b>${chk.length}</b> seleccionada(s) · <b>${Q(t)}</b>`;
+}
+async function hacerYaPagado(nombre){
+  const R=comisionesPendientes().find(x=>x.persona.nombre===nombre);
+  if(!R) return;
+  const fecha=v('yp-fecha');
+  if(!fecha){toast('Poné la fecha en que se pagó');return;}
+  const ids=[...document.querySelectorAll('.yp-chk:checked')]
+    .map(c=>c.dataset.com).filter(Boolean).map(Number);
+  if(!ids.length){toast('Marcá al menos una comisión');return;}
+
+  const r=await conBoton(()=>sbRegistrarComisionPagada(
+    R.persona.id, ids, fecha, v('yp-ref').trim(), v('yp-nota').trim()));
+  if(!r||!r.ok){ if(r&&r.error) toast(r.error,7000,true); return; }
+
+  anotar('comision.historica', nombre+' · '+ids.length+' comisiones · '+fecha);
+  closeModal();
+  toast(`${r.dato.liq_comisiones} comisión(es) de ${nombre} quedaron como pagadas · ${Q(r.dato.liq_total)}`, 6000);
+  renderComisiones();
+}
+
 async function doCrearLiq(nombre){
-  try{ const l=await crearLiquidacion(nombre); toast('Liquidación '+l.numero+' creada'); comTab='proceso'; }
+  try{ const l=await crearLiquidacion(nombre); if(!l) return; toast('Liquidación '+l.numero+' creada'); comTab='proceso'; }
   catch(e){ toast(e.message); }
   renderComisiones();
 }

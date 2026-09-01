@@ -233,8 +233,41 @@ function verExpediente(id) {
       ${dato('Estado', e.enMora ? `en mora · ${e.vencidas} cuotas` : 'al día')}
     </div></div></div>`;
 
+  /* El botón de subir va ACÁ, que es donde la gente busca el
+     expediente. Antes solo existía en la ficha del contrato, en una
+     pestaña, y desde esta pantalla no había manera. */
+  const conArchivo = docs.filter(d => d.bucket && d.ruta);
   h += `<div class="card"><div class="card-h"><h2>Los papeles</h2>
-    <span style="font-size:12px;color:#8A7F76">${docs.length} archivo${docs.length === 1 ? '' : 's'}</span></div>`;
+    <span style="font-size:12px;color:#8A7F76">${conArchivo.length} archivo${conArchivo.length === 1 ? '' : 's'}</span>
+    <button class="btn btn-primary btn-sm" style="margin-left:auto"
+            onclick="modalDocumento('${ct.id}')">+ Subir respaldo</button></div>`;
+
+  /* Lo obligatorio, y si está o no. Un expediente se lee por lo que le
+     falta, no por lo que tiene. */
+  const reqs = (typeof DB !== 'undefined' && DB.documentosRequeridos && DB.documentosRequeridos.length)
+    ? DB.documentosRequeridos
+    : [{codigo:'dpi',nombre:'DPI del titular',caras:2,obligatorio:true},
+       {codigo:'contrato',nombre:'Contrato firmado',caras:1,obligatorio:true},
+       {codigo:'plan_pagos',nombre:'Plan de pagos firmado',caras:1,obligatorio:true}];
+
+  h += `<div class="card-b" style="padding:0"><table class="data"><tbody>`;
+  for (const r of reqs) {
+    const hay = conArchivo.filter(d => d.tipo === r.codigo).length;
+    const caras = r.caras || 1;
+    const listo = hay >= caras;
+    h += `<tr>
+      <td style="width:26px">${listo ? '✓' : '○'}</td>
+      <td><b>${esc(r.nombre)}</b>${r.obligatorio ? '' : ' <span style="color:#8A7F76">· opcional</span>'}
+        ${caras > 1 ? `<div class="ec-obl">${hay} de ${caras} caras</div>` : ''}</td>
+      <td style="text-align:right">${listo
+        ? '<span class="badge b-ok">Está</span>'
+        : (r.obligatorio ? '<span class="badge b-mora">Falta</span>' : '<span class="badge b-nod">Sin subir</span>')}</td>
+      <td style="width:90px;text-align:right">${listo ? '' :
+        `<button class="btn btn-ghost btn-sm" onclick="modalDocumento('${ct.id}')">Subir</button>`}</td>
+    </tr>`;
+  }
+  h += `</tbody></table></div>`;
+
   if (!docs.length) {
     h += `<div class="card-b" style="font-size:13px;color:#B0562F">
       No hay ningún documento escaneado de este contrato.</div>`;

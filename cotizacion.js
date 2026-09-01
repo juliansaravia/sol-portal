@@ -299,7 +299,48 @@ function hojaInterna(o) {
 /* ============================================================
    Abrir para imprimir o guardar como PDF
    ============================================================ */
-function abrirHoja(tipo, o) {
+/* ------------------------------------------------------------
+   Compartir la cotización como PDF, no como mensaje
+
+   Un mensaje de texto se pierde en la conversación. Un PDF se
+   guarda, se reenvía al esposo y se lleva al banco.
+
+   El PDF de verdad lo arma el hub con pdfkit —hay tipografías y
+   control de página que el navegador no da—, pero el hub no está
+   desplegado y ese botón fallaba en silencio contra una URL que
+   no existe.
+
+   Mientras tanto, esto: se abre la hoja del cliente y se dispara
+   el diálogo de impresión, donde «Guardar como PDF» es una opción
+   en todos los navegadores y en el teléfono. El texto que acompaña
+   queda copiado, para que solo haya que pegar y adjuntar.
+
+   No es automático, pero produce el mismo archivo y funciona hoy.
+   ------------------------------------------------------------ */
+async function compartirCotizacionPDF(o) {
+  const resumen = resumenCotizacion(o);
+
+  // El texto que acompaña al archivo, listo para pegar.
+  try { await navigator.clipboard.writeText(resumen); } catch (_) {}
+
+  abrirHoja('cliente', o, { imprimir: true });
+
+  toast('Guardá la hoja como PDF y adjuntala en WhatsApp · '
+      + 'el mensaje que la acompaña ya quedó copiado', 8000);
+}
+
+/** El texto corto que va con el archivo. Sin cifras sueltas: van en el PDF. */
+function resumenCotizacion(o) {
+  const p = (typeof planFinanciamiento === 'function')
+    ? planFinanciamiento(o.precio, o.enganche, o.plazo) : {};
+  return `*La Esperanza Residencial*\n`
+    + (o.cliente ? `Cotización para ${o.cliente}\n` : '')
+    + (o.lote ? `Lote ${o.lote}\n` : '')
+    + `\nCuota mensual: *${_Qc ? _Qc(p.cuota) : p.cuota}* a ${o.plazo} meses.\n`
+    + `Le adjunto la cotización completa en PDF.\n\nSOL Desarrollos`;
+}
+
+function abrirHoja(tipo, o, opciones) {
   const w = window.open('', '_blank');
   if (!w) { toast('Permite las ventanas emergentes'); return; }
   const css = [...document.querySelectorAll('link[rel=stylesheet]')]
@@ -324,6 +365,15 @@ function abrirHoja(tipo, o) {
     </div>
     ${cuerpo}</body></html>`);
   w.document.close();
+
+  /* Cuando se viene de «Compartir por WhatsApp», el diálogo de impresión
+     se abre solo: es donde vive «Guardar como PDF». Se espera a que la
+     hoja termine de cargar sus estilos, si no sale sin formato. */
+  if (opciones && opciones.imprimir) {
+    const imprimir = () => { try { w.focus(); w.print(); } catch (_) {} };
+    if (w.document.readyState === 'complete') setTimeout(imprimir, 350);
+    else w.addEventListener('load', () => setTimeout(imprimir, 250));
+  }
 }
 
 const abrirCotizacion = o => abrirHoja('cliente', o);

@@ -669,6 +669,37 @@ async function sbCrearLiquidacion({ persona_id, proyecto_id, periodo, desde, has
   });
 }
 
+/**
+ * Registra comisiones que YA se pagaron, antes de que existiera el
+ * sistema. Sin esto, la pantalla dice «Q156,821 por liquidar · Q0
+ * pagado», y lo segundo es falso: se ha pagado comisión durante meses.
+ * Mientras eso no se cargue, la cifra no sirve ni para pagar ni para
+ * provisionar.
+ */
+async function sbRegistrarComisionPagada(persona_id, comisiones, fecha, referencia, nota) {
+  return escribir('registrar la comisión ya pagada', async () => {
+    if (!comisiones || !comisiones.length) throw new Error('No se marcó ninguna comisión.');
+    if (!fecha) throw new Error('Hay que decir cuándo se pagó.');
+    const fila = oExplota(await SB.rpc('registrar_comision_pagada', {
+      p_persona: persona_id, p_comisiones: comisiones,
+      p_fecha: fecha, p_referencia: referencia || null, p_nota: nota || null
+    }).maybeSingle());
+
+    // Que la pantalla deje de ofrecer lo que ya quedó pagado.
+    for (const ct of DB.contratos)
+      if (comisiones.includes(ct.comisionId)) ct.comisionEstado = 'pagada';
+
+    return fila;
+  });
+}
+
+/** Lo pendiente y lo pagado por vendedor, según la base. */
+async function sbComisionesPorVendedor() {
+  return escribir('consultar las comisiones', async () =>
+    oExplota(await SB.from('v_comisiones_por_vendedor')
+      .select('persona_id,nombre,codigo,pendientes,monto_pendiente,pagadas,monto_pagado,monto_historico')));
+}
+
 /* ============================================================
    Lo que ve el resto del portal
    ============================================================ */
@@ -684,5 +715,5 @@ Object.assign(window, {
   sbGuardarPersona, sbDesactivarPersona,
   sbImportarMovimientos, sbConciliar, sbActualizarConciliacion, sbDescartarConciliacion,
   huellaMovimiento,
-  sbCrearLiquidacion
+  sbCrearLiquidacion, sbRegistrarComisionPagada, sbComisionesPorVendedor
 });
