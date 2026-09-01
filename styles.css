@@ -553,3 +553,11 @@ a.btn{text-decoration:none;display:inline-block}
 .paso{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--ink);margin:14px 0 8px;font-size:13px}
 .paso-n{width:22px;height:22px;border-radius:50%;background:var(--green-soft);color:var(--green);display:inline-flex;align-items:center;justify-content:center;font-size:12px}
 .chip.active{background:var(--green-soft);color:var(--green);border-color:var(--green);font-weight:600}
+
+/* ── Fase D · checklist de Equipo ── */
+.check-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}
+.check-row:last-child{border-bottom:0}
+.check-row.hecho{opacity:.6}.check-row.hecho .check-ico{background:var(--green-soft);color:var(--green)}
+.check-ico{width:30px;height:30px;border-radius:50%;background:var(--amber-soft);color:#8A5F12;display:flex;align-items:center;justify-content:center;font-weight:700;flex:none}
+.check-txt{flex:1;min-width:0}.check-acc{white-space:nowrap}
+select.chip{appearance:auto;padding:6px 10px}

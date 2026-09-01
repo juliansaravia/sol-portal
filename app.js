@@ -707,12 +707,23 @@ function pintarMapa(){
     r.style.opacity=ok?1:0.12;
     r.style.pointerEvents=ok?'auto':'none';
   });
+  /* La búsqueda centra el primer lote que coincide, una vez por texto:
+     escribir «A-01» tiene que llevarte al lote, no sólo atenuar el resto. */
+  if(t && t!==window.__mapaCentrado){
+    const primero=[...document.querySelectorAll('.lotm')].find(r=>r.style.opacity==='1');
+    if(primero && primero.getBBox && window.PLAN_CLIP){
+      try{ const b=primero.getBBox(), clip=window.PLAN_CLIP, w=Math.max(clip.w*0.18,b.width*6), h=w*(clip.h/clip.w);
+           setViewBox(b.x+b.width/2-w/2, b.y+b.height/2-h/2, w, h); }catch(e){}
+    }
+    window.__mapaCentrado=t;
+  }
+  if(!t) window.__mapaCentrado='';
 }
 function setFiltro(f){filtro=f;renderInventario();}
 function mostrarTip(e,l){
   const tip=document.getElementById('tip'), wrap=document.querySelector('.map-wrap');
   const ct=contratoDeLote(l.codigo), m=ESTADO_MAP[l.estado]||ESTADO_MAP.disponible;
-  tip.innerHTML=`<b>Lote ${l.codigo}</b> · ${l.area} m²<br>${l.precio?Qk(l.precio):'Precio por definir'}
+  tip.innerHTML=`<b>Lote ${l.codigo}</b>${l.fase?` <span style="opacity:.75">· ${esc(l.fase)}</span>`:''} · ${l.area} m²<br>${l.precio?Qk(l.precio):'Precio por definir'}
     ${ct?'<br>'+esc(nombreCliente(ct.clienteId)):''}
     <div class="tt-badge" style="background:${m.fill}">${m.label}</div>`;
   tip.hidden=false;
@@ -1589,13 +1600,39 @@ function renderEquipo(){
     <div class="kpi"><div class="kpi-label">Inactivas</div><div class="kpi-value">${inac.length}</div><div class="kpi-sub">sin acceso</div></div>
     <div class="kpi ${sinAsig.length?'warn':''}"><div class="kpi-label">Contratos sin vendedor</div><div class="kpi-value">${sinAsig.length}</div><div class="kpi-sub">${sinAsig.length?'requieren asignación':'todo asignado'}</div></div>
   </div>`;
-  if(sinAsig.length)
-    h+=`<div class="card"><div class="card-b" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-      <b style="color:var(--dark)">${sinAsig.length} contratos no tienen vendedor asignado.</b>
-      <button class="btn btn-gold btn-sm" onclick="modalReasignar('Sin asignar')">Asignarlos a alguien</button></div></div>`;
+  /* Poner el equipo en marcha: los avisos administrativos convertidos
+     en un checklist con contador, explicación y acción (dirección de
+     Manus). Cada paso se tacha solo cuando su contador llega a cero. */
+  const sinAccesoT = act.filter(p=>!p.entra), invitablesT = sinAccesoT.filter(p=>p.email), sinCorreoT = sinAccesoT.filter(p=>!p.email);
+  const sinComT = p => contratosDe(p.nombre).filter(c=>!comisionaEn(p,c.fecha));
+  const rarosT = act.filter(p=>sinComT(p).length);
+  const perdida = rarosT.reduce((s,p)=>s+sinComT(p).reduce((t,c)=>t+calcularComision(c),0),0);
+  const pasos=[
+    {n:sinCorreoT.length, t:'Completar correos', d:sinCorreoT.length?`Sin correo no se puede invitar: ${sinCorreoT.map(p=>esc(p.nombre)).join(', ')}`:'Todos tienen correo',
+     b:sinCorreoT.length?`<button class="btn btn-ghost btn-sm" onclick="modalPersona('${sinCorreoT[0].id}')">Editar a ${esc(sinCorreoT[0].nombre.split(' ')[0])}</button>`:''},
+    {n:invitablesT.length, t:'Invitar usuarios', d:invitablesT.length?'Reciben un correo y eligen su propia contraseña':'Todos los que tienen correo ya entran',
+     b:invitablesT.length?`<button class="btn btn-gold btn-sm" onclick="invitarATodos()">Invitar a ${invitablesT.length===1?'esa persona':'las '+invitablesT.length}</button>`:''},
+    {n:sinAsig.length, t:'Asignar vendedores', d:sinAsig.length?`${sinAsig.length} contrato(s) sin responsable: sin vendedor no hay comisión ni seguimiento`:'Todos los contratos tienen vendedor',
+     b:sinAsig.length?`<button class="btn btn-gold btn-sm" onclick="modalReasignar('Sin asignar')">Asignarlos</button> <button class="btn btn-ghost btn-sm" onclick="irA('contratos',{f:'sin_vendedor'})">Ver casos</button>`:''},
+    {n:rarosT.length, t:'Revisar roles sin comisión', d:rarosT.length?`${rarosT.map(p=>`${esc(p.nombre)} (${rolLabel(p.rol)}, ${sinComT(p).length})`).join(' · ')} — ${Q(perdida)} de comisión sin dueño. Si vendió y cambió de puesto, anotá «Vendió hasta» en su ficha.`:'Toda venta comisiona a alguien',
+     b:rarosT.length?`<button class="btn btn-ghost btn-sm" onclick="modalPersona('${rarosT[0].id}')">Revisar a ${esc(rarosT[0].nombre.split(' ')[0])}</button>`:''},
+  ];
+  const pendientes=pasos.filter(x=>x.n).length;
+  h+=`<div class="card"><div class="card-h"><h2>Poner el equipo en marcha</h2><span class="hint">${pendientes?`${pendientes} paso(s) pendientes`:'Todo listo'}</span></div>
+    <div class="card-b">${pasos.map(x=>`<div class="check-row ${x.n?'':'hecho'}">
+      <div class="check-ico">${x.n?'○':'✓'}</div>
+      <div class="check-txt"><b>${x.t}${x.n?` <span class="nav-badge">${x.n}</span>`:''}</b><div class="hint">${x.d}</div></div>
+      <div class="check-acc">${x.b}</div></div>`).join('')}</div></div>`;
 
-  h+=`<div class="card"><div class="card-h"><h2>Equipo</h2>
-    <button class="btn btn-primary btn-sm" onclick="modalPersona()">+ Agregar persona</button></div>
+  const FE=(window.__eqFiltro||{rol:'',estado:'',q:''});
+  const filtroEq=p=>(!FE.rol||p.rol===FE.rol)&&(!FE.estado||(FE.estado==='activo'?p.activo:FE.estado==='inactivo'?!p.activo:FE.estado==='sinacceso'?(p.activo&&p.entra===false):true))
+    &&(!FE.q||`${p.nombre} ${p.codigo||''} ${p.email||''}`.toLowerCase().includes(FE.q.toLowerCase()));
+  h+=`<div class="card"><div class="card-h" style="flex-wrap:wrap;gap:10px"><h2>Equipo · ${act.filter(filtroEq).length+inac.filter(filtroEq).length}</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input class="chip" style="min-width:200px" placeholder="Buscar nombre, código o correo…" value="${esc(FE.q)}" oninput="setEq('q',this.value);document.querySelector('.card-h input').focus()">
+      <select class="chip" onchange="setEq('rol',this.value)"><option value="">Todos los roles</option>${ROLES_EQUIPO.map(r=>`<option value="${r.id}" ${FE.rol===r.id?'selected':''}>${r.label}</option>`).join('')}</select>
+      <select class="chip" onchange="setEq('estado',this.value)"><option value="">Todos</option><option value="activo" ${FE.estado==='activo'?'selected':''}>Activos</option><option value="sinacceso" ${FE.estado==='sinacceso'?'selected':''}>Sin acceso</option><option value="inactivo" ${FE.estado==='inactivo'?'selected':''}>Inactivos</option></select>
+      <button class="btn btn-primary btn-sm" onclick="modalPersona()">+ Agregar persona</button></div></div>
     <div class="card-b" style="padding:0"><table class="data"><thead><tr>
     <th>Nombre</th><th>Código</th><th>Rol</th><th class="num">Contratos</th>
     <th class="num">Vendido</th><th class="num">Comisión 2%</th><th>Estado</th><th>Acción</th></tr></thead><tbody>`;
@@ -1635,53 +1672,24 @@ function renderEquipo(){
   const sinAcceso = act.filter(p=>!p.entra);
   const invitables = sinAcceso.filter(p=>p.email);
   const sinCorreo  = sinAcceso.filter(p=>!p.email);
-  if(sinAcceso.length){
-    h+=`<div class="card" style="margin-bottom:14px;border-left:3px solid var(--gold)">
-      <div class="card-b">
-        <b>${sinAcceso.length} persona(s) todavía no pueden entrar al portal.</b>
-        ${invitables.length?`<div class="hint" style="margin-top:6px">
-           A ${invitables.length} se les puede mandar la invitación ahora: reciben un correo
-           con un enlace para poner <b>su propia contraseña</b>. Vos nunca la ves y no hay
-           nada que repartir.</div>`:''}
-        ${sinCorreo.length?`<div class="hint" style="margin-top:6px;color:#B0562F">
-           A ${sinCorreo.length} les falta el correo — ${sinCorreo.map(p=>esc(p.nombre)).join(', ')}.
-           El correo es la llave con la que entran: se pone con «Editar».</div>`:''}
-        ${invitables.length?`<div style="margin-top:10px">
-           <button class="btn btn-gold btn-sm" onclick="invitarATodos()">
-             Invitar a ${invitables.length===1?'esa persona':`las ${invitables.length}`}</button></div>`:''}
-      </div></div>`;
-  }
-
-  /* Raro es tener ventas que no comisionan: ni por el rol de hoy ni por
-     haber sido vendedor cuando se hicieron (vendedorHasta). */
   const sinComision = p => contratosDe(p.nombre).filter(c=>!comisionaEn(p,c.fecha));
   const raros = act.filter(p=>sinComision(p).length);
-  if(raros.length){
-    const totalCts = raros.reduce((s,p)=>s+sinComision(p).length,0);
-    const perdida  = raros.reduce((s,p)=>s+sinComision(p).reduce((t,c)=>t+calcularComision(c),0),0);
-    h+=`<div class="aviso-err" style="margin-bottom:14px">
-      <b>${totalCts} contrato(s)</b> están a nombre de alguien cuyo rol no genera comisión:
-      ${raros.map(p=>`${esc(p.nombre)} (${rolLabel(p.rol)}, ${sinComision(p).length})`).join(' · ')}.
-      <br><span class="hint">Si alguien vendió y después cambió de puesto, en Equipo se le anota
-      hasta qué fecha fue vendedor y sus ventas de antes vuelven a comisionar.</span>
-      <br><span class="hint">Así como está, <b>${Q(perdida)}</b> de comisión no la cobra nadie.
-      O esas ventas son de otra persona y hay que reasignarlas, o el rol está mal puesto.
-      El Estado de Cartera traía ese nombre en la columna de vendedor; el sistema no lo inventó.</span></div>`;
-  }
-
   /* Confirmar el pago de un cliente y aprobar una comisión son dos
      controles distintos: el segundo lo tiene sólo el financiero al
      liquidar. Que quien confirma pagos tenga ventas a su nombre no es
      juez y parte — el aviso que decía eso se quitó por decisión del
      dueño (1 sept 2026). */
 
-  act.forEach(p=>h+=fila(p));
-  if(inac.length){h+=`<tr><td colspan="8" style="background:var(--tint);font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:700">Inactivos</td></tr>`;
-    inac.forEach(p=>h+=fila(p));}
+  act.filter(filtroEq).forEach(p=>h+=fila(p));
+  if(inac.filter(filtroEq).length){h+=`<tr><td colspan="8" style="background:var(--tint);font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:700">Inactivos</td></tr>`;
+    inac.filter(filtroEq).forEach(p=>h+=fila(p));}
   h+=`</tbody></table></div></div>
     <div class="hint">Solo el rol <b>Vendedor</b> genera comisión. Desactivar a alguien conserva su historial pero le quita el acceso.</div>`;
   C().innerHTML=h;
 }
+/* Filtros de la tabla de Equipo. A nivel superior, para que los
+   onclick los encuentren siempre (y la prueba de botones también). */
+function setEq(k,v){ window.__eqFiltro={...(window.__eqFiltro||{rol:'',estado:'',q:''}),[k]:v}; renderEquipo(); }
 function modalPersona(id){
   const p=id?DB.equipo.find(x=>mismoId(x.id,id)):null;
   openModal(`<div class="modal-h"><h3>${p?'Editar persona':'Agregar persona'}</h3>
