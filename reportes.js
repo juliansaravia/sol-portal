@@ -215,7 +215,18 @@ function cuadreConModelo() {
     contratos: activos.length,
     ventas: activos.reduce((s, c) => s + (c.precio || 0), 0),
     enganches: activos.reduce((s, c) => s + ((c.plan || {}).enganche || c.enganche || 0), 0),
-    financiado: cuentas.reduce((s, e) => s + e.totalGiros, 0),
+    /* El modelo llama «financiado» al capital financiado más sus
+       intereses, y el capital financiado es la venta MENOS el enganche.
+       Acá se sumaban todos los giros —enganche incluido—, así que la
+       fila salía Q2,020,197.54 arriba: exactamente los enganches. Era
+       una diferencia de definición marcada como descuadre.
+
+       Restado el enganche quedan Q13,305,165.56 contra los
+       Q13,305,165.62 del modelo: seis centavos de redondeo repartidos
+       entre 148 contratos. */
+    carteraTotal: cuentas.reduce((s, e) => s + e.totalGiros, 0),
+    financiado: cuentas.reduce((s, e) => s + e.totalGiros, 0)
+                - activos.reduce((s, c) => s + ((c.plan || {}).enganche || c.enganche || 0), 0),
     recaudado: cuentas.reduce((s, e) => s + e.recaudado, 0),
     saldo: cuentas.reduce((s, e) => s + e.saldo, 0),
     enMora: enMora.length,
@@ -237,7 +248,10 @@ function cuadreConModelo() {
       linea('Ventas contratadas',    MODELO.ventas,      sis.ventas),
       linea('Enganches contratados', MODELO.enganches,   sis.enganches),
       linea('Total financiado',      MODELO.financiado,  sis.financiado,
-            'Capital más intereses de todo el plan.'),
+            'Capital financiado más intereses, sin el enganche — como lo define el modelo.'),
+      linea('Cartera total',         MODELO.financiado + MODELO.enganches, sis.carteraTotal,
+            'Lo mismo con el enganche incluido: todo lo que el cliente va a pagar. '
+          + 'Es la cifra que muestra el tablero.'),
       linea('Recaudado',             MODELO.cuotasCobradas, sis.recaudado,
             'El modelo cuenta solo las cuotas. El sistema cuenta todo el dinero que entró, '
           + 'enganches incluidos. La diferencia son los enganches ya cobrados — no es un descuadre.'),
