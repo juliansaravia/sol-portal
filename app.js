@@ -1543,6 +1543,10 @@ function modalPersona(id){
       <div class="field"><label>Teléfono</label><input id="e-tel" value="${esc(p?p.telefono:'')}"></div>
       <div class="field"><label>Correo</label><input id="e-mail" value="${esc(p?p.email:'')}"></div>
       <div class="field full"><label>Nota</label><input id="e-nota" value="${esc(p?(p.nota||''):'')}" placeholder="Ej. ya no labora en la empresa"></div>
+      <div class="field full"><label>Vendió hasta</label>
+        <input id="e-vhasta" type="date" value="${esc(p&&p.vendedorHasta?p.vendedorHasta:'')}">
+        <div class="hint">Solo si vendió y después cambió de puesto: sus ventas con fecha hasta ese día
+          siguen comisionando aunque hoy tenga otro rol. Vacío = decide el rol de hoy.</div></div>
     </div></div>
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarEquipo('${id||''}')">Guardar</button></div>`);
@@ -1551,7 +1555,8 @@ async function guardarEquipo(id){
   const nom=v('e-nom').trim(); if(!nom){toast('El nombre es obligatorio');return;}
   const antes=id?(DB.equipo.find(x=>mismoId(x.id,id))||{}).nombre:null;
   const r=await conBoton(()=>guardarPersona({id:id||undefined,nombre:nom,codigo:v('e-cod').trim().toUpperCase(),
-    rol:v('e-rol'),activo:v('e-act')==='1',telefono:v('e-tel'),email:v('e-mail'),nota:v('e-nota').trim()}));
+    rol:v('e-rol'),activo:v('e-act')==='1',telefono:v('e-tel'),email:v('e-mail'),nota:v('e-nota').trim(),
+    vendedorHasta:v('e-vhasta')||null}));
   if(!r) return;
   if(antes&&antes!==nom) await reasignarContratos(antes,nom);   // mantiene el historial ligado
   closeModal(); toast('Equipo actualizado ✓'); renderEquipo();

@@ -546,15 +546,29 @@ async function sbGuardarPersona(datos) {
     if (datos.rol)    campos.rol = datos.rol === 'cobrador' ? 'cobranza' : datos.rol;
     if (datos.email)  campos.email = datos.email;
     if (datos.activo !== undefined) campos.activo = !!datos.activo;
+    if (datos.vendedorHasta !== undefined) campos.vendedor_hasta = datos.vendedorHasta || null;
 
-    const fila = datos.id
-      ? oExplota(await SB.from('persona').update(campos).eq('id', datos.id).select().single())
-      : oExplota(await SB.from('persona').insert(campos).select().single());
+    const guardar = async c => datos.id
+      ? await SB.from('persona').update(c).eq('id', datos.id).select().single()
+      : await SB.from('persona').insert(c).select().single();
+
+    let r = await guardar(campos);
+    /* Si 26_vendedor_hasta.sql no se ha corrido, la columna no existe
+       (42703). Se guarda todo lo demás y se avisa qué falta, en vez de
+       perder la edición entera por un campo. */
+    if (r.error && r.error.code === '42703' && 'vendedor_hasta' in campos) {
+      delete campos.vendedor_hasta;
+      r = await guardar(campos);
+      if (!r.error && datos.vendedorHasta)
+        avisar('Se guardó la persona, pero «Vendió hasta» no: falta correr 26_vendedor_hasta.sql en la base.');
+    }
+    const fila = oExplota(r);
 
     const p = DB.equipo.find(x => mismoId(x.id, fila.id));
     const mapeada = { id: fila.id, nombre: fila.nombre, codigo: fila.codigo,
                       rol: rolDePortal(fila.rol), email: fila.email,
-                      tel: fila.telefono, activo: fila.activo };
+                      tel: fila.telefono, activo: fila.activo,
+                      vendedorHasta: fila.vendedor_hasta || null };
     if (p) Object.assign(p, mapeada); else DB.equipo.push(mapeada);
     return fila;
   });
