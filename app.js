@@ -80,7 +80,8 @@ function renderAuth(reanudando){
                onkeydown="if(event.key==='Enter')entrar()"></div>
       <button id="au-entrar" class="btn btn-primary" style="width:100%" onclick="entrar()" ${reanudando?'disabled':''}>${reanudando?'Reanudando tu sesión…':'Entrar'}</button>
       <div class="login-foot">
-        <a href="#" onclick="olvideContrasena();return false;">No recuerdo mi contraseña</a>
+        <div id="au-err" class="err" style="min-height:18px;margin:8px 0 4px;color:#C0492B;font-weight:600"></div>
+        <div class="hint">¿Olvidaste tu contraseña? Solo administración puede restablecerla: pedísela a Julián.</div>
         <br>Si el correo no te llega, pídele a administración que te reenvíe la invitación.</div></div>`;
     setTimeout(()=>document.getElementById('au-email')?.focus(),50);
     return;
@@ -144,7 +145,11 @@ async function entrar(){
 
   const r = await iniciarSesion(email, pass);
   if(btn){ btn.disabled=false; btn.textContent='Entrar'; }
-  if(!r.ok){ toast(r.error); return; }
+  if(!r.ok){
+    const e=document.getElementById('au-err'); if(e) e.textContent=r.error;
+    const pass=document.getElementById('au-pass'); if(pass){ pass.value=''; pass.focus(); }
+    toast(r.error, 6000, true); return;
+  }
 
   /* La contraseña sola no alcanza si esta persona ya enroló su
      teléfono. El token que Supabase acaba de dar es aal1; hasta que no
@@ -340,18 +345,8 @@ function startApp(role){
 }
 /* Que nadie dependa de que alguien más esté disponible para volver a
    entrar. El correo lo manda Supabase; el portal solo lo pide. */
-async function olvideContrasena(){
-  const correo = (document.getElementById('au-email')?.value || '').trim();
-  if(!correo){ toast('Escribí tu correo arriba y volvé a tocar aquí'); 
-               document.getElementById('au-email')?.focus(); return; }
-  const r = await pedirContrasenaNueva(correo);
-  if(!r.ok) return toast(r.error, 6000, true);
-  /* No se dice si el correo existe: eso permitiría averiguar quién
-     trabaja aquí probando direcciones. */
-  toast('Si ese correo tiene usuario, le acaba de llegar un enlace para poner '
-      + 'una contraseña nueva. Revisá también la carpeta de no deseados.', 9000);
-}
-
+/* No hay «olvidé mi contraseña» en el formulario: solo administración
+   restablece contraseñas, desde Equipo. Decisión del dueño (1 sept 2026). */
 function logout(){
   /* Con la base conectada hay que cerrar la sesión de verdad, no solo
      volver a la pantalla de login: si no, el token sigue vivo y quien

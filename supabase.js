@@ -130,7 +130,7 @@ async function iniciarSesion(email, contrasena) {
     if (!error.status)
       return { ok: false, error: 'No se pudo hablar con el servidor: ' + msg };
     console.warn('[login] auth respondió', error.status, cod || msg);
-    return { ok: false, error: 'Correo o contraseña incorrectos' };
+    return { ok: false, error: 'Contraseña o correo equivocados. Revisá y volvé a intentar.' };
   }
 
   /* `signInWithPassword` ya devolvió el usuario. Volver a pedirlo con
