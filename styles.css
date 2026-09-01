@@ -532,3 +532,19 @@ tr.cot-sel td{background:#fbf3df !important;font-weight:700}
 .chips{display:flex;gap:8px;flex-wrap:wrap;padding:10px 24px;border-bottom:1px solid var(--line)}
 .chip.on{background:var(--green-soft);color:var(--green);border-color:var(--green);font-weight:600}
 th.click{cursor:pointer;user-select:none}th.click:hover{color:var(--ink)}
+
+/* ── Fase C · cobranza priorizada, agenda, responsive ── */
+.badge.b-info{background:var(--info-soft);color:var(--info)}
+td.acciones{white-space:nowrap}td.acciones .btn{margin-right:4px}
+a.btn{text-decoration:none;display:inline-block}
+.card-b{overflow-x:auto}
+@media(max-width:1100px){.kpis-5{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:700px){
+  .kpis,.kpis-5{grid-template-columns:1fr 1fr}
+  .content{padding:14px 12px 60px}
+  .topbar{padding:10px 12px;flex-wrap:wrap}
+  .search-wrap{width:100%}
+  .alerta-global{flex-wrap:wrap}
+  table.data{font-size:12.5px}table.data th,table.data td{padding:8px 8px}
+  .prio-row{flex-wrap:wrap}.prio-row .btn{margin-left:46px}
+}
