@@ -258,12 +258,19 @@ function verExpediente(id) {
 /* Un documento no se sirve con un enlace fijo: se pide una URL firmada
    que vive 60 segundos. Un enlace permanente a un DPI escaneado es un
    DPI publicado, aunque nadie haya escrito la dirección en ningún lado. */
-function abrirDocumento(docId) {
-  if (typeof API === 'undefined') {
-    toast('Los documentos se abren cuando el suite esté conectado a la base.');
-    return;
-  }
-  API.urlFirmada(docId, 60)
-    .then(url => window.open(url, '_blank', 'noopener'))
-    .catch(() => toast('No se pudo abrir. Puede que no tengas permiso para ver este documento.'));
+async function abrirDocumento(docId) {
+  /* Esto esperaba un objeto `API` —el hub— que nunca llegó a existir en
+     el navegador, así que el botón «Ver» siempre contestaba «se abren
+     cuando el suite esté conectado a la base». Ya lo está: los archivos
+     viven en Supabase Storage y la URL firmada la pide el propio
+     portal, sin pasar por el hub. */
+  if (typeof verDocumento === 'function') return verDocumento(docId);
+
+  const d = (DB.documentos || []).find(x => String(x.id) === String(docId));
+  if (!d) return toast('No se encontró el documento');
+  if (!d.bucket || !d.ruta)
+    return toast('Ese documento se anotó pero nunca se subió el archivo', 6000, true);
+  const r = await sbVerDocumento(d.bucket, d.ruta);
+  if (!r.ok) return toast(r.error, 6000, true);
+  window.open(r.dato, '_blank', 'noopener');
 }
