@@ -1521,23 +1521,11 @@ function renderEquipo(){
       El Estado de Cartera traía ese nombre en la columna de vendedor; el sistema no lo inventó.</span></div>`;
   }
 
-  /* Y el conflicto de verdad: alguien que verifica o confirma pagos y a
-     la vez tiene contratos a su nombre estaría dando por bueno el
-     dinero de sus propias ventas. Es la misma familia de reglas que
-     «quien concilia no confirma», pero por persona y no por rol, así
-     que la matriz de permisos no lo veía. */
-  const jueceYparte = act.filter(p =>
-    ['confirmacion','financiero'].includes(p.rol) && contratosDe(p.nombre).length);
-  if(jueceYparte.length){
-    h+=`<div class="aviso-err" style="margin-bottom:14px;border-left:3px solid #C0492B">
-      <b>Juez y parte.</b>
-      ${jueceYparte.map(p=>`${esc(p.nombre)} verifica pagos y tiene
-        <b>${contratosDe(p.nombre).length} contrato(s)</b> a su nombre`).join(' · ')}.
-      <br><span class="hint">Estaría dando por bueno el dinero de sus propias ventas.
-      Es la misma regla que «quien concilia no confirma», pero por persona: la matriz de
-      permisos no la ve porque mira roles, no quién vendió qué.
-      Se resuelve reasignando esos contratos a quien los vendió de verdad.</span></div>`;
-  }
+  /* Confirmar el pago de un cliente y aprobar una comisión son dos
+     controles distintos: el segundo lo tiene sólo el financiero al
+     liquidar. Que quien confirma pagos tenga ventas a su nombre no es
+     juez y parte — el aviso que decía eso se quitó por decisión del
+     dueño (1 sept 2026). */
 
   act.forEach(p=>h+=fila(p));
   if(inac.length){h+=`<tr><td colspan="8" style="background:var(--tint);font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:700">Inactivos</td></tr>`;
