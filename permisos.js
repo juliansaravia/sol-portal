@@ -132,8 +132,10 @@ const MATRIZ = {
     etiqueta: 'Solo lectura', color: '#7A8A99',
     nota: 'Mira, no toca. Para revisar UX/UI: ve estructura y números, ninguna persona.',
     acciones: ['venta.ver_todas','cotizar',
-               'cobranza.ver','cobranza.gestionar','recaudo.marcar','banco.conciliar','pago.confirmar',
+               'cobranza.ver','cobranza.gestionar','recaudo.marcar','banco.conciliar',
                'comision.ver_todas','equipo.ver'],
+    /* Sin pago.confirmar: chocaría con «quien concilia no confirma» y
+       «quien marca cobrada no confirma», y la base tampoco se lo da. */
   },
 };
 
