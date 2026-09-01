@@ -249,12 +249,21 @@ function segBitacora() {
    La pantalla
    ============================================================ */
 function renderSeguridad() {
+  /* Lo primero: qué funciona y qué no. Es lo que trae a alguien a esta
+     pantalla cuando algo no aparece — y hasta ahora había que
+     adivinarlo. Se pinta aparte porque le pregunta a la base. */
+  setTimeout(() => {
+    if (typeof renderDiagnostico === 'function' && typeof hayBase === 'function' && hayBase())
+      renderDiagnostico('segDiag');
+  }, 0);
+
   const act = DB.equipo.filter(p => p.activo);
   const admins = act.filter(p => p.rol === 'admin').length;
   const pend = conflictos().length + contrastarRLS().length;
   const sinMfa = act.filter(p => p.mfa !== true && ['admin','gerencia','financiero'].includes(p.rol)).length;
 
-  let h = `<div class="kpis">
+  let h = `<div id="segDiag"></div>
+  <div class="kpis">
     <div class="kpi"><div class="kpi-label">Con acceso</div><div class="kpi-value">${act.length}</div>
       <div class="kpi-sub">${DB.equipo.length - act.length} sin acceso</div></div>
     <div class="kpi ${admins>3?'warn':''}"><div class="kpi-label">Administradores</div>

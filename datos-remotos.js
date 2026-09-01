@@ -58,12 +58,24 @@ async function cargarDesdeSupabase() {
   try {
     // Se piden en paralelo: son consultas independientes y la más
     // lenta manda. En serie esto tardaba el triple.
-    const [lotes, contratos, clientes, pagos, giros, equipo, documentos, obligaciones, comisiones, requeridos] = await Promise.all([
+    /* ── Qué se espera y qué no ──
+
+       Los giros son 5,550 filas: el 74 % de todo lo que baja el portal,
+       seis páginas de mil, y la primera pantalla no los usa. Esperarlos
+       para poder mostrar algo es lo que hacía que entrar «costara».
+
+       Así que la carga va en dos tiempos. Esto es el primero: lo que
+       hace falta para dibujar. La cartera —giros y obligaciones— se
+       pide después, con la aplicación ya en pantalla, y cuando llega se
+       vuelve a pintar la vista que esté abierta.
+
+       Los pagos se quedan acá: son 738 y de ellos depende cuánto lleva
+       recaudado cada contrato, que es de lo primero que se mira. */
+    const [lotes, contratos, clientes, pagos, equipo, documentos, comisiones, requeridos] = await Promise.all([
       todas('v_inventario', 'proyecto_id,proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado'),
       todas('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,banco,boleta,lote_id,cliente_id,persona_id'),
       todas('cliente', 'id,nombre,dpi,nit,telefono,email,direccion,ocupacion'),
       todas('pago', 'id,contrato_id,monto,fecha_pago,forma_pago,referencia,estado'),
-      todas('giro', 'id,obligacion_id,numero,vencimiento,monto,estado,abonado'),
       todas('persona', 'id,nombre,codigo,rol,email,telefono,activo'),
       /* Las columnas del respaldo llegaron con 14_documentos.sql. Si esa
          migración todavía no se corrió, se piden las de siempre: el portal
@@ -72,7 +84,6 @@ async function cargarDesdeSupabase() {
       conRespaldo('documento',
         'id,contrato_id,cliente_id,tipo,nombre,created_at',
         'bucket,ruta,mime,bytes,cara,verificado_en'),
-      todas('obligacion', 'id,contrato_id,tipo,descripcion,monto_total,orden'),
       /* `comision` existe desde 01_schema, pero puede estar vacía o sin
          permisos para el rol que entró. Que eso no tumbe la cartera. */
       opcional('comision', 'id,contrato_id,persona_id,monto,base,estado,periodo'),
@@ -159,12 +170,14 @@ async function cargarDesdeSupabase() {
       referencia: p.referencia, estado: p.estado
     }));
 
-    // Los giros cuelgan de la obligación, y la obligación del contrato.
-    // Las obligaciones se piden arriba, junto con todo lo demás: antes
-    // se pedían acá, después de esperar a las otras siete consultas,
-    // y esa espera en serie era casi un segundo regalado.
-    const oblDe = new Map(obligaciones.map(o => [o.id, o]));
     const porContrato = new Map(DB.contratos.map(c => [c.id, c]));
+    /* La cartera llega en la segunda fase. Mientras tanto los contratos
+       tienen `obligaciones: []`, y las pantallas que dependen de eso lo
+       dicen en vez de mostrar ceros como si fueran datos. */
+    DB.meta = DB.meta || {};
+    DB.meta.carteraLista = false;
+    const giros = [], obligaciones = [];
+    const oblDe = new Map(obligaciones.map(o => [o.id, o]));
 
     for (const o of obligaciones) {
       const ct = porContrato.get(o.contrato_id);
@@ -234,6 +247,61 @@ async function cargarDesdeSupabase() {
  * Supabase corta en 1,000 por consulta; con 5,550 giros eso significa
  * que sin paginar se perdía el 80% de la cartera sin avisar.
  */
+/* ============================================================
+   SEGUNDA FASE · la cartera
+
+   Los giros son 5,550 filas y la primera pantalla no los necesita.
+   Se piden con la aplicación ya abierta, y cuando llegan se vuelve
+   a pintar lo que esté en pantalla.
+
+   Mientras tanto `DB.meta.carteraLista` es false, y las pantallas
+   que dependen de la cartera lo dicen — en vez de mostrar ceros,
+   que se leen igual que un dato.
+   ============================================================ */
+async function cargarCartera() {
+  if (!window.SB) return { ok: false, error: 'sin conexión' };
+  const t0 = Date.now();
+  try {
+    const [obligaciones, giros] = await Promise.all([
+      todas('obligacion', 'id,contrato_id,tipo,descripcion,monto_total,orden'),
+      todas('giro', 'id,obligacion_id,numero,vencimiento,monto,estado,abonado')
+    ]);
+
+    const porContrato = new Map(DB.contratos.map(c => [c.id, c]));
+    for (const ct of DB.contratos) ct.obligaciones = [];
+
+    const oblDe = new Map(obligaciones.map(o => [o.id, o]));
+    for (const o of obligaciones) {
+      const ct = porContrato.get(o.contrato_id);
+      if (ct) ct.obligaciones.push({ id: o.id, tipo: o.tipo, desc: o.descripcion,
+                                     monto: _num(o.monto_total), orden: o.orden, giros: [] });
+    }
+    for (const g of giros) {
+      const o = oblDe.get(g.obligacion_id);
+      const ct = o && porContrato.get(o.contrato_id);
+      if (!ct) continue;
+      const dest = ct.obligaciones.find(x => x.id === g.obligacion_id);
+      if (dest) dest.giros.push({ n: g.numero, vence: _fecha(g.vencimiento),
+                                  monto: _num(g.monto), estado: g.estado,
+                                  abonado: _num(g.abonado) });
+    }
+    for (const ct of DB.contratos) {
+      ct.obligaciones.sort((a, b) => a.orden - b.orden);
+      ct.obligaciones.forEach(o => o.giros.sort((a, b) => a.n - b.n));
+      if (typeof planFinanciamiento === 'function')
+        ct.plan = planFinanciamiento(ct.precio, ct.enganche, ct.plazo, ct.tasa);
+    }
+
+    DB.meta.carteraLista = true;
+    if (typeof reindexar === 'function') reindexar();
+    console.log(`[datos] cartera: ${giros.length} giros en ${Date.now() - t0} ms`);
+    return { ok: true, giros: giros.length, ms: Date.now() - t0 };
+  } catch (e) {
+    console.error('[datos] no se pudo cargar la cartera:', e);
+    return { ok: false, error: e.message };
+  }
+}
+
 /**
  * Como `todas`, pero si la tabla no existe devuelve vacío en vez de
  * tumbar la carga. Para lo que llega con una migración que puede no
@@ -288,5 +356,6 @@ async function todas(tabla, columnas, tam = 1000) {
 }
 
 window.cargarDesdeSupabase = cargarDesdeSupabase;
+window.cargarCartera = cargarCartera;
 window.claveLote = claveLote;
 window.estadoDePortal = estadoDePortal;

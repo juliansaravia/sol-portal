@@ -154,7 +154,18 @@ async function entrar(){
   window.__user = { name: SESION.persona.nombre, role: rolDePortal(SESION.rol) };
   anotar('sesion.entrar', SESION.persona.nombre+' · '+SESION.rol);
   startApp(window.__user.role);
+  traerCartera();
   if(SESION.modoConsulta) avisoModoConsulta();
+}
+
+/* La cartera —5,550 giros, el 74% de todo— se pide con la aplicación ya
+   en pantalla. Cuando llega, se vuelve a pintar lo que esté abierto. */
+async function traerCartera(){
+  if(typeof cargarCartera!=='function' || !hayRemoto()) return;
+  const r = await cargarCartera();
+  if(!r.ok){ toast('No se pudo cargar la cartera: '+r.error, 7000, true); return; }
+  if(typeof vista!=='undefined' && vista) setView(vista);
+  const av=document.getElementById('avisoCartera'); if(av) av.remove();
 }
 
 /* El estado del segundo factor, donde todos lo ven: debajo del nombre.
@@ -258,6 +269,7 @@ async function reanudarSesion(){
   if(!carga.ok){ console.warn('[sesión] sin datos:', carga.error); return false; }
   window.__user = { name: SESION.persona.nombre, role: rolDePortal(SESION.rol) };
   startApp(window.__user.role);
+  traerCartera();
   if(SESION.modoConsulta) avisoModoConsulta();
   return true;
 }
@@ -340,6 +352,11 @@ function cambiarProyecto(codigo){
 const nombreProyecto = () => PROYECTO.corto;
 
 /* ============================================================ ROUTER */
+/* Las pantallas que no se pueden leer sin la cartera. Mientras los
+   giros no lleguen, muestran un aviso en vez de ceros — que se leen
+   igual que un dato y hacen creer que no hay nada que cobrar. */
+const VISTAS_CON_CARTERA = ['cobranza','agenda','recaudacion','reporteria','contratos','comisiones'];
+
 function setView(v){
   if(SCREEN==='app' && ROLES[ROLE] && !ROLES[ROLE].views.includes(v)) return;
   try{ if(location.hash.slice(1)!==v) history.replaceState(null,'','#'+v); }catch(e){}
@@ -347,10 +364,23 @@ function setView(v){
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
   document.getElementById('viewTitle').textContent=TITLES[v][0];
   document.getElementById('viewSub').textContent=TITLES[v][1];
+  const faltaCartera = typeof DB!=='undefined' && DB.meta && DB.meta.carteraLista === false
+                    && VISTAS_CON_CARTERA.includes(v);
   ({inicio:renderInicio,cotizador:renderCotizador,vender:renderVender,inventario:renderInventario,contratos:renderContratos,
     clientes:renderClientes,aprobacion:renderAprobacion,cobranza:renderCobranza,
     confirmacion:renderConfirmacion,comisiones:renderComisiones,reporteria:renderReporteria,
     agenda:renderAgenda,recaudacion:renderRecaudacion,conciliacion:renderConciliacion,seguridad:renderSeguridad,expedientes:renderExpedientes,equipo:renderEquipo,automatizaciones:renderAutomatizaciones}[v])();
+
+  /* El aviso va DESPUÉS de pintar, arriba del todo: si fuera antes, el
+     render lo borraría al escribir en el mismo contenedor. */
+  if(faltaCartera){
+    const c=C();
+    if(c && !document.getElementById('avisoCartera'))
+      c.insertAdjacentHTML('afterbegin',
+        `<div id="avisoCartera" class="aviso-err" style="margin-bottom:14px">
+           Cargando la cartera — 5,550 giros. <b>Los saldos y la mora todavía no
+           son los buenos.</b> La pantalla se actualiza sola en unos segundos.</div>`);
+  }
 }
 
 /* ============================================================ INICIO */
@@ -2103,6 +2133,49 @@ function repRango(k){
     REP.hasta = k === 0 ? hoy : new Date(anio, mes, 0).toISOString().slice(0,10);
   }
   renderReporteria();
+}
+
+/* ---------- Qué falta y por qué ----------
+   Va en la pantalla de Seguridad, que es donde un administrador busca
+   por qué algo no funciona. */
+async function renderDiagnostico(destino){
+  const caja=document.getElementById(destino); if(!caja) return;
+  caja.innerHTML=`<div class="hint">Preguntándole a la base…</div>`;
+  const r=await diagnosticar();
+  const faltan=r.filter(x=>!x.ok);
+
+  let h=`<div class="card"><div class="card-h"><h2>Qué está funcionando</h2>
+      <span class="hint">${r.length-faltan.length} de ${r.length}</span></div>`;
+
+  if(faltan.length)
+    h+=`<div class="card-b"><div class="aviso-err">
+      <b>${faltan.length} cosa(s) no funcionan todavía.</b> El portal se despliega solo
+      con cada cambio; la base no — cada archivo SQL alguien lo pega a mano. Cuando el
+      código va por delante de la base, se ve como funcionalidad que falta.</div></div>`;
+
+  h+=`<div class="card-b" style="padding:0"><table class="data"><tbody>`;
+  r.forEach(x=>{
+    h+=`<tr>
+      <td style="width:26px">${x.ok?'✓':(x.esencial?'✗':'○')}</td>
+      <td><b>${esc(x.que)}</b>${!x.ok&&x.siNo?`<div class="ec-obl">${esc(x.siNo)}</div>`:''}
+        ${!x.ok&&x.error&&!x.siNo?`<div class="ec-obl">${esc(x.error.slice(0,110))}</div>`:''}</td>
+      <td style="font-family:monospace;font-size:11px;color:var(--muted)">${x.ok?'':esc(x.archivo)}</td>
+      <td style="width:100px;text-align:right">${x.ok
+        ? '<span class="badge b-ok">Funciona</span>'
+        : (x.esencial ? '<span class="badge b-mora">Bloqueado</span>'
+                      : '<span class="badge b-pend">Falta correrlo</span>')}</td></tr>`;
+  });
+  h+=`</tbody></table></div>`;
+
+  const porCorrer=[...new Set(faltan.map(x=>x.archivo).filter(a=>a&&a!=='—'))];
+  if(porCorrer.length)
+    h+=`<div class="card-b"><div class="hint">
+      Falta pegar en el SQL Editor, en este orden:
+      <b>${porCorrer.map(esc).join(' → ')}</b>.
+      Y después <b>18_permisos_funciones.sql</b>, <b>22_lints.sql</b> y
+      <b>24_rendimiento.sql</b>, que van siempre al final.</div></div>`;
+  h+=`</div>`;
+  caja.innerHTML=h;
 }
 
 /* ============================================================ AUTOMATIZACIONES
