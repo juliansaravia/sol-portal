@@ -840,7 +840,7 @@ async function doAplicarTodo(){
   renderConciliacion();
 }
 async function doAplicarUno(movId,contrato){
-  const mov=DB.movimientos.find(m=>m.id===movId);
+  const mov=DB.movimientos.find(m=>mismoId(m.id,movId));
   const d=repartir(saldoLibre(mov),contrato);
   if(!d.partes.length){toast('Ese contrato ya no tiene cuotas pendientes');return;}
   try{ await aplicarConciliacion({movimientoId:movId,asignaciones:d.partes,via:'manual'});
@@ -882,7 +882,7 @@ function vistaPorResolver(R){
 }
 
 function doAsignar(movId,contrato,vence){
-  const mov=DB.movimientos.find(m=>m.id===movId);
+  const mov=DB.movimientos.find(m=>mismoId(m.id,movId));
   const libre=saldoLibre(mov);
   const d=repartir(libre,contrato);
   const resumen=d.partes.map(p=>`cuota ${p.cuota} · ${Q(p.monto)}${p.completa?'':' (parcial)'}`).join('<br>');
@@ -899,7 +899,7 @@ function doAsignar(movId,contrato,vence){
       <button class="btn btn-primary" onclick="doAsignarOk('${movId}','${contrato}')">Aplicar</button></div>`);
 }
 async function doAsignarOk(movId,contrato){
-  const mov=DB.movimientos.find(m=>m.id===movId);
+  const mov=DB.movimientos.find(m=>mismoId(m.id,movId));
   const d=repartir(saldoLibre(mov),contrato);
   try{ await aplicarConciliacion({movimientoId:movId,asignaciones:d.partes,via:'manual',
         nota:document.getElementById('cnNota').value.trim()});
@@ -930,7 +930,7 @@ function cnResultados(movId){
     :`<div class="empty">Sin resultados</div>`;
 }
 function doMarcarAjeno(movId){
-  const m=DB.movimientos.find(x=>x.id===movId); if(!m)return;
+  const m=DB.movimientos.find(x=>mismoId(x.id,movId)); if(!m)return;
   m.ajeno=true; saveDB();
   toast('Marcado como ajeno a La Esperanza');
   renderConciliacion();
@@ -1038,7 +1038,7 @@ function renderRecaudacion(){
     const c=f.cuota, r=f.reg;
     let est, acc;
     if(f.estado==='cobrada'){
-      const pago=DB.pagos.find(p=>p.id===r.pagoId);
+      const pago=DB.pagos.find(p=>mismoId(p.id,r.pagoId));
       const eP=pago?pago.estado:'registrado';
       est=`<span class="badge b-ok">Cobrada</span>${eP==='confirmado'?' <span class="badge b-ok">Confirmada</span>':(eP==='rechazado'?' <span class="badge b-mora">Rechazada</span>':' <span class="badge">Por confirmar</span>')}
            <div class="hint">${esc(r.referencia||'sin boleta')} · ${Q(r.monto)}</div>`;
@@ -1227,7 +1227,7 @@ function renderEquipo(){
   C().innerHTML=h;
 }
 function modalPersona(id){
-  const p=id?DB.equipo.find(x=>x.id===id):null;
+  const p=id?DB.equipo.find(x=>mismoId(x.id,id)):null;
   openModal(`<div class="modal-h"><h3>${p?'Editar persona':'Agregar persona'}</h3>
     <p>${p?esc(p.nombre):'Nuevo miembro del equipo'}</p></div>
     <div class="modal-b"><div class="form-grid">
@@ -1247,7 +1247,7 @@ function modalPersona(id){
 }
 async function guardarEquipo(id){
   const nom=v('e-nom').trim(); if(!nom){toast('El nombre es obligatorio');return;}
-  const antes=id?(DB.equipo.find(x=>x.id===id)||{}).nombre:null;
+  const antes=id?(DB.equipo.find(x=>mismoId(x.id,id))||{}).nombre:null;
   const r=await conBoton(()=>guardarPersona({id:id||undefined,nombre:nom,codigo:v('e-cod').trim().toUpperCase(),
     rol:v('e-rol'),activo:v('e-act')==='1',telefono:v('e-tel'),email:v('e-mail'),nota:v('e-nota').trim()}));
   if(!r) return;
@@ -1578,7 +1578,7 @@ function tarjetaLiq(l,acciones){
 
 /* --- Subir la factura --- */
 function modalFactura(id){
-  const l=DB.liquidaciones.find(x=>x.id===id); if(!l)return;
+  const l=DB.liquidaciones.find(x=>mismoId(x.id,id)); if(!l)return;
   openModal(`<div class="modal-h"><h3>Factura de ${esc(l.vendedor)}</h3>
       <p>${l.numero} · la liquidación es de ${Q(l.total)}</p></div>
     <div class="modal-b"><div class="form-grid">
@@ -1611,7 +1611,7 @@ function doSubirFactura(id){
 
 /* --- Marcar pagada --- */
 function modalPagarLiq(id){
-  const l=DB.liquidaciones.find(x=>x.id===id); if(!l)return;
+  const l=DB.liquidaciones.find(x=>mismoId(x.id,id)); if(!l)return;
   openModal(`<div class="modal-h"><h3>Pagar ${Q(l.total)}</h3><p>${l.numero} · ${esc(l.vendedor)}</p></div>
     <div class="modal-b"><div class="form-grid">
       <div class="field"><label>Fecha</label><input id="pl-fec" type="date" value="${HOY_ISO}"></div>

@@ -101,6 +101,25 @@ const rolComisiona = id => !!(ROLES_EQUIPO.find(r=>r.id===id)||{}).comisiona;
 /* ---------- Utilidades ---------- */
 const uid = () => Math.random().toString(36).slice(2, 9);
 
+/* ------------------------------------------------------------
+   Comparar identificadores
+
+   En modo demostración los ids los inventa uid() y son cadenas.
+   Desde Supabase son BIGINT, o sea números. Y todo el portal los
+   hace viajar por el HTML —onclick="verExpediente('${ct.id}')"—,
+   que los devuelve SIEMPRE como texto.
+
+   Resultado: `c.id === id` comparaba el número 9001 contra la
+   cadena '9001', daba false, y la función se salía sin hacer
+   nada. Los expedientes no abrían, los contratos no abrían, los
+   pagos no se confirmaban. Ningún error en consola: simplemente
+   no pasaba nada.
+
+   Se compara como texto, que es lo único que las dos formas
+   tienen en común.
+   ------------------------------------------------------------ */
+const mismoId = (a, b) => a != null && b != null && String(a) === String(b);
+
 /* Cuando algo no se pudo guardar hay que decirlo, y decirlo fuerte.
    El silencio es lo peor que puede pasar acá: el usuario cierra el
    modal creyendo que registró un pago que no existe. */
@@ -248,12 +267,12 @@ async function guardarPersona(datos){
   if (typeof hayBase === 'function' && hayBase()) {
     const r = await sbGuardarPersona(datos);
     if (!r.ok) { avisar(r.error); return null; }
-    return DB.equipo.find(x => x.id === r.dato.id) || null;
+    return DB.equipo.find(x => mismoId(x.id, r.dato.id)) || null;
   }
-  if(datos.id){ const p=DB.equipo.find(x=>x.id===datos.id); if(p) Object.assign(p,datos); }
+  if(datos.id){ const p=DB.equipo.find(x=>mismoId(x.id,datos.id)); if(p) Object.assign(p,datos); }
   else { DB.equipo.push({ id:uid(), activo:true, telefono:'', email:'', ...datos }); }
   saveDB();
-  return datos.id ? DB.equipo.find(x=>x.id===datos.id) : DB.equipo[DB.equipo.length-1];
+  return datos.id ? DB.equipo.find(x=>mismoId(x.id,datos.id)) : DB.equipo[DB.equipo.length-1];
 }
 async function borrarPersona(id){
   if (typeof hayBase === 'function' && hayBase()) {
@@ -261,7 +280,7 @@ async function borrarPersona(id){
     if (!r.ok) { avisar(r.error); return false; }
     return true;
   }
-  const p=DB.equipo.find(x=>x.id===id); if(!p) return false;
+  const p=DB.equipo.find(x=>mismoId(x.id,id)); if(!p) return false;
   p.activo=false; saveDB(); return true;
 }
 /* Reasigna todos los contratos de un vendedor a otro.
@@ -314,7 +333,7 @@ async function crearCliente(nombreCompleto, extra = {}) {
   if (!r.ok) { avisar(r.error); return null; }
   return DB.clientes[DB.clientes.length - 1];
 }
-const getCliente = id => DB.clientes.find(c => c.id === id);
+const getCliente = id => DB.clientes.find(c => mismoId(c.id, id));
 const nombreCliente = id => { const c = getCliente(id); return c ? `${c.nombre} ${c.apellido}`.trim() : '—'; };
 
 /* ---------- Obligaciones y giros (estructura real del CRM) ---------- */
@@ -526,7 +545,7 @@ function estadoCuentaCrudo(ct) {
 
 /* ---------- Accesores ---------- */
 const getLote = c => DB.lotes.find(l => l.codigo === c);
-const getContrato = id => DB.contratos.find(c => c.id === id);
+const getContrato = id => DB.contratos.find(c => mismoId(c.id, id));
 const contratoDeLote = codigo => DB.contratos.find(c => c.lote === codigo && c.estado !== 'anulado');
 const gestionesDe = id => DB.gestiones.filter(g => g.contratoId === id).sort((a, b) => b.fecha.localeCompare(a.fecha));
 const documentosDe = id => DB.documentos.filter(d => d.contratoId === id);
@@ -543,7 +562,7 @@ const documentosDe = id => DB.documentos.filter(d => d.contratoId === id);
 function contactoDe(numeroContrato) {
   const ct = DB.contratos.find(c => c.no === numeroContrato);
   if (!ct) return null;
-  const cl = DB.clientes.find(c => c.id === ct.clienteId) || {};
+  const cl = DB.clientes.find(c => mismoId(c.id, ct.clienteId)) || {};
   return {
     tel:       cl.tel || ct.tel || '',
     correo:    cl.correo || '',
@@ -625,7 +644,7 @@ async function confirmarPago(pagoId, ok = true) {
     if (!r.ok) { avisar(r.error); return false; }
     return true;
   }
-  const p = DB.pagos.find(x => x.id === pagoId); if (!p) return false;
+  const p = DB.pagos.find(x => mismoId(x.id, pagoId)); if (!p) return false;
   p.estado = ok ? 'confirmado' : 'rechazado';
   p.fechaAprobacion = HOY_ISO;
   const ct = getContrato(p.contratoId);
@@ -744,7 +763,7 @@ async function desmarcarCuota(contrato, fecha) {
 
   const reg = DB.recaudacion[i];
   if (reg.pagoId) {
-    const j = DB.pagos.findIndex(p => p.id === reg.pagoId);
+    const j = DB.pagos.findIndex(p => mismoId(p.id, reg.pagoId));
     if (j >= 0 && DB.pagos[j].estado === 'registrado') DB.pagos.splice(j, 1);
   }
   DB.recaudacion.splice(i, 1); saveDB();
@@ -768,7 +787,7 @@ function resumenRecaudacion(desde, hasta) {
     desde, hasta, filas, cobradas, noCobradas, pendientes,
     programado, recaudado,
     porConfirmar: cobradas.filter(f => {
-      const p = DB.pagos.find(x => x.id === f.reg.pagoId);
+      const p = DB.pagos.find(x => mismoId(x.id, f.reg.pagoId));
       return p && p.estado === 'registrado';
     }).length,
     efectividad: programado > 0 ? recaudado / programado : 0,

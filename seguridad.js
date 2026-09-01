@@ -77,7 +77,7 @@ function segPersonas() {
 
 /** Quitar el acceso no borra a la persona: sus ventas y comisiones siguen ahí. */
 function segQuitarAcceso(id) {
-  const p = DB.equipo.find(x => x.id === id);
+  const p = DB.equipo.find(x => mismoId(x.id, id));
   if (!p) return;
   const cts = contratosDe(p.nombre).filter(c => c.estado !== 'anulado');
   const msg = `Quitarle el acceso a ${p.nombre}.\n\n` +
@@ -90,7 +90,7 @@ function segQuitarAcceso(id) {
 }
 
 function segDevolverAcceso(id) {
-  const p = DB.equipo.find(x => x.id === id);
+  const p = DB.equipo.find(x => mismoId(x.id, id));
   if (!p) return;
   p.activo = true;
   anotar('acceso.devuelto', `Se le devolvió el acceso a ${p.nombre} (${rolLabel(p.rol)})`, { personaId: p.id });

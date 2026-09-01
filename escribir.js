@@ -152,7 +152,7 @@ async function sbActualizarCliente(id, datos) {
       ocupacion: datos.ocupacion || null, updated_at: new Date().toISOString()
     }).eq('id', id).select().single());
 
-    const c = DB.clientes.find(x => x.id === id);
+    const c = DB.clientes.find(x => mismoId(x.id, id));
     if (c) Object.assign(c, { nombre: fila.nombre, dpi: fila.dpi, tel: fila.telefono,
                               correo: fila.email, direccion: fila.direccion, ocupacion: fila.ocupacion });
     return fila;
@@ -219,7 +219,7 @@ async function sbEstadoContrato(contrato_id, estado, estadoLote) {
     if (estadoLote && fila.lote_id)
       oExplota(await SB.from('lote').update({ estado: estadoLote }).eq('id', fila.lote_id).select('id'));
 
-    const ct = DB.contratos.find(c => c.id === contrato_id);
+    const ct = DB.contratos.find(c => mismoId(c.id, contrato_id));
     if (ct) { ct.estado = estadoDePortal(fila.estado); ct.estadoBase = fila.estado; }
     return fila;
   });
@@ -279,7 +279,7 @@ async function sbConfirmarPago(pago_id, ok = true) {
     if (ok && fila.contrato_id)
       oExplota(await SB.rpc('recalcular_contrato', { p_contrato_id: fila.contrato_id }));
 
-    const p = DB.pagos.find(x => x.id === pago_id);
+    const p = DB.pagos.find(x => mismoId(x.id, pago_id));
     if (p) p.estado = fila.estado;
     return fila;
   });
@@ -292,7 +292,7 @@ async function sbBorrarPago(pago_id) {
       .eq('id', pago_id).eq('estado', 'registrado').select('id'));
     if (!filas.length)
       throw new Error('Ese pago ya fue confirmado: no se deshace, se anula con nota.');
-    const i = DB.pagos.findIndex(x => x.id === pago_id);
+    const i = DB.pagos.findIndex(x => mismoId(x.id, pago_id));
     if (i >= 0) DB.pagos.splice(i, 1);
     return filas[0];
   });
@@ -363,7 +363,7 @@ async function sbDesmarcarCuota(contrato_id, vence) {
     if (r.pago_id) {
       oExplota(await SB.from('pago').delete()
         .eq('id', r.pago_id).eq('estado', 'registrado').select('id'));
-      const i = DB.pagos.findIndex(x => x.id === r.pago_id);
+      const i = DB.pagos.findIndex(x => mismoId(x.id, r.pago_id));
       if (i >= 0) DB.pagos.splice(i, 1);
     }
     return r;
@@ -551,7 +551,7 @@ async function sbGuardarPersona(datos) {
       ? oExplota(await SB.from('persona').update(campos).eq('id', datos.id).select().single())
       : oExplota(await SB.from('persona').insert(campos).select().single());
 
-    const p = DB.equipo.find(x => x.id === fila.id);
+    const p = DB.equipo.find(x => mismoId(x.id, fila.id));
     const mapeada = { id: fila.id, nombre: fila.nombre, codigo: fila.codigo,
                       rol: rolDePortal(fila.rol), email: fila.email,
                       tel: fila.telefono, activo: fila.activo };
@@ -564,7 +564,7 @@ async function sbDesactivarPersona(id) {
   return escribir('desactivar la persona', async () => {
     const fila = oExplota(await SB.from('persona')
       .update({ activo: false }).eq('id', id).select('id,activo').single());
-    const p = DB.equipo.find(x => x.id === id);
+    const p = DB.equipo.find(x => mismoId(x.id, id));
     if (p) p.activo = false;
     return fila;
   });

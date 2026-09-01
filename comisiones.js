@@ -212,7 +212,7 @@ const _Qc = n => 'Q ' + (Math.round(n * 100) / 100).toLocaleString('es-GT', { mi
 const LIMITE_ARCHIVO = 400 * 1024;   // 400 KB: más que eso no cabe en el navegador
 
 function adjuntarFactura(liqId, { nombre, tipo, tamaño, contenido, serie, numero, fecha, monto, nit }) {
-  const l = (DB.liquidaciones || []).find(x => x.id === liqId);
+  const l = (DB.liquidaciones || []).find(x => mismoId(x.id, liqId));
   if (!l) throw new Error('No existe esa liquidación');
   if (l.estado === 'pagada') throw new Error('Ya está pagada: no se le puede cambiar la factura');
   if (!numero) throw new Error('Falta el número de factura');
@@ -241,7 +241,7 @@ function adjuntarFactura(liqId, { nombre, tipo, tamaño, contenido, serie, numer
 /* ---------- El pago ---------- */
 
 function marcarPagada(liqId, { fecha, forma, referencia, cuenta, nota }) {
-  const l = (DB.liquidaciones || []).find(x => x.id === liqId);
+  const l = (DB.liquidaciones || []).find(x => mismoId(x.id, liqId));
   if (!l) throw new Error('No existe esa liquidación');
   if (l.estado === 'pagada') throw new Error('Ya estaba pagada');
   if (!l.factura) throw new Error('No se puede pagar sin la factura del vendedor');
@@ -260,7 +260,7 @@ function marcarPagada(liqId, { fecha, forma, referencia, cuenta, nota }) {
 }
 
 function anularLiquidacion(liqId, motivo) {
-  const l = (DB.liquidaciones || []).find(x => x.id === liqId);
+  const l = (DB.liquidaciones || []).find(x => mismoId(x.id, liqId));
   if (!l) throw new Error('No existe esa liquidación');
   if (l.estado === 'pagada') throw new Error('Una liquidación pagada no se anula — se hace una nota de crédito');
   l.estado = 'anulada';

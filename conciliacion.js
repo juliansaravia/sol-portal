@@ -279,7 +279,7 @@ function repartir(monto, contrato) {
 
 async function aplicarConciliacion({ movimientoId, asignaciones, usuario, nota, via }) {
   DB.conciliaciones = DB.conciliaciones || [];
-  const mov = DB.movimientos.find(m => m.id === movimientoId);
+  const mov = DB.movimientos.find(m => mismoId(m.id, movimientoId));
   if (!mov) throw new Error('No existe ese movimiento');
 
   for (const a of asignaciones) {
@@ -321,7 +321,7 @@ async function aplicarConciliacion({ movimientoId, asignaciones, usuario, nota, 
 
 /** El visto bueno del financiero. Aquí el dinero entra de verdad a la cartera. */
 async function confirmarConciliacion(id, ok = true) {
-  const k = (DB.conciliaciones || []).find(x => x.id === id);
+  const k = (DB.conciliaciones || []).find(x => mismoId(x.id, id));
   if (!k) throw new Error('No existe esa conciliación');
   const yo = window.__user ? window.__user.name : '';
   if (k.conciliadoPor === yo)
@@ -347,7 +347,7 @@ async function confirmarConciliacion(id, ok = true) {
 }
 
 async function desaplicarConciliacion(id) {
-  const i = (DB.conciliaciones || []).findIndex(x => x.id === id);
+  const i = (DB.conciliaciones || []).findIndex(x => mismoId(x.id, id));
   if (i < 0) return false;
   if (DB.conciliaciones[i].estado === 'confirmado')
     throw new Error('Ya fue confirmado — eso se corrige con una anulación, no borrando');
