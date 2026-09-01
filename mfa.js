@@ -61,7 +61,7 @@ async function enrolarSegundoFactor(nombreAmable) {
   if (error) {
     if (/not enabled|disabled/i.test(error.message))
       return { ok: false, error: 'El segundo factor está apagado en Supabase. '
-                               + 'Authentication → Providers → Multi-Factor Authentication → TOTP.' };
+                               + 'Authentication → Multi-Factor → TOTP (App Authenticator).' };
     if (/already exists|maximum/i.test(error.message))
       return { ok: false, error: 'Ya tienes un segundo factor enrolado. '
                                + 'Para cambiar de teléfono, que administración quite el anterior.' };
