@@ -14,8 +14,8 @@
 <div class="app" hidden>
   <aside class="sidebar">
     <div class="brand">
-      <div class="brand-name">Sol Inmobiliaria</div>
-      <div class="brand-sub" id="brandRole">Suite Comercial</div>
+      <div class="brand-mark"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 30l16-14 16 14"/><path d="M12 26v12h24V26"/><path d="M24 6v4M9 11l2.8 2.8M39 11l-2.8 2.8M4 24h4M40 24h4"/></svg></div>
+      <div><div class="brand-name">SOL</div><div class="brand-sub" id="brandRole">Inmobiliaria</div></div>
     </div>
     <div class="proyecto-sel">
       <label>Proyecto</label>
@@ -24,28 +24,30 @@
       </select>
     </div>
     <nav class="nav" id="nav">
-      <div class="nav-sec">Fundación</div>
-      <button class="nav-item active" data-view="inicio"><span class="nav-ico">◆</span><span>Inicio</span></button>
-      <button class="nav-item" data-view="inventario"><span class="nav-ico">▦</span><span>Mapa del conjunto</span></button>
+      <div class="nav-sec">Inicio</div>
+      <button class="nav-item active" data-view="inicio"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></span><span>Inicio</span></button>
+      <div class="nav-sec">Inventario</div>
+      <button class="nav-item" data-view="inventario"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg></span><span>Inventario</span></button>
       <div class="nav-sec">Ventas</div>
-      <button class="nav-item" data-view="cotizador"><span class="nav-ico">≡</span><span>Cotizador</span></button>
-      <button class="nav-item" data-view="vender"><span class="nav-ico">＋</span><span>Ingresar venta</span></button>
-      <button class="nav-item" data-view="contratos"><span class="nav-ico">◫</span><span>Contratos</span></button>
-      <button class="nav-item" data-view="expedientes"><span class="nav-ico">▤</span><span>Expedientes</span></button>
-      <button class="nav-item" data-view="clientes"><span class="nav-ico">☺</span><span>Clientes</span></button>
-      <button class="nav-item" data-view="aprobacion"><span class="nav-ico">✓</span><span>Aprobación de créditos</span></button>
+      <button class="nav-item" data-view="cotizador"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/></svg></span><span>Cotizador</span></button>
+      <button class="nav-item" data-view="vender"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></span><span>Ingresar venta</span></button>
+      <button class="nav-item" data-view="contratos"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h6"/></svg></span><span>Contratos</span></button>
+      <button class="nav-item" data-view="expedientes"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><span>Expedientes</span></button>
+      <button class="nav-item" data-view="clientes"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-5-6.3"/></svg></span><span>Clientes</span></button>
+      <button class="nav-item" data-view="aprobacion"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></span><span>Aprobación de créditos</span></button>
       <div class="nav-sec">Cartera</div>
-      <button class="nav-item" data-view="cobranza"><span class="nav-ico">◷</span><span>Cobranza</span></button>
-      <button class="nav-item" data-view="agenda"><span class="nav-ico">◔</span><span>Agenda de cobranza</span></button>
-      <button class="nav-item" data-view="recaudacion"><span class="nav-ico">◑</span><span>Recaudación semanal</span></button>
-      <button class="nav-item" data-view="conciliacion"><span class="nav-ico">⇄</span><span>Cuadre bancario</span></button>
-      <button class="nav-item" data-view="confirmacion"><span class="nav-ico">❒</span><span>Confirmación de pagos</span></button>
-      <button class="nav-item" data-view="comisiones"><span class="nav-ico">%</span><span>Comisiones</span></button>
-      <div class="nav-sec">Inteligencia</div>
-      <button class="nav-item" data-view="reporteria"><span class="nav-ico">▤</span><span>Reportería</span></button>
-      <button class="nav-item" data-view="equipo"><span class="nav-ico">☷</span><span>Equipo</span></button>
-      <button class="nav-item" data-view="seguridad"><span class="nav-ico">⚿</span><span>Seguridad y accesos</span></button>
-      <button class="nav-item" data-view="automatizaciones"><span class="nav-ico">⚡</span><span>Automatizaciones</span></button>
+      <button class="nav-item" data-view="cobranza"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5h3.5a1.75 1.75 0 0 1 0 3.5H11a1.75 1.75 0 0 0 0 3.5h3.5"/></svg></span><span>Cobranza</span></button>
+      <button class="nav-item" data-view="agenda"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span><span>Agenda de cobranza</span></button>
+      <button class="nav-item" data-view="recaudacion"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></span><span>Recaudación semanal</span></button>
+      <button class="nav-item" data-view="conciliacion"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10l9-7 9 7"/><path d="M5 9v11h14V9M10 20v-6h4v6"/></svg></span><span>Cuadre bancario</span></button>
+      <button class="nav-item" data-view="confirmacion"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 12l3 3 7-7"/></svg></span><span>Confirmación de pagos</span></button>
+      <button class="nav-item" data-view="comisiones"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 5L5 19M6.5 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM17.5 20a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/></svg></span><span>Comisiones</span></button>
+      <div class="nav-sec">Reportes</div>
+      <button class="nav-item" data-view="reporteria"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg></span><span>Reportes</span></button>
+      <div class="nav-sec">Equipo</div>
+      <button class="nav-item" data-view="equipo"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-5-6.3"/></svg></span><span>Usuarios</span></button>
+      <button class="nav-item" data-view="seguridad"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9.5 12l2 2 3.5-4"/></svg></span><span>Roles y accesos</span></button>
+      <button class="nav-item" data-view="automatizaciones"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></span><span>Automatizaciones</span></button>
     </nav>
     <div class="sidebar-foot">
       <div id="footUser" style="margin-bottom:8px"></div>

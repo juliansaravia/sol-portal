@@ -2,50 +2,59 @@
    SUITE SOL INMOBILIARIA — estilos
    ============================================================ */
 :root{
-  --dark:#14342B; --green:#2C5F4A; --gold:#E0A72E; --sage:#8FB09B;
-  --ink:#20302A; --muted:#6B7A72; --tint:#F1F5F2; --line:#E4EAE6; --white:#fff;
-  --disp:#8FB09B; --vend:#B85042; --apar:#E0A72E; --mora:#C0492B; --nod:#C7CFC9;
-  --radius:12px; --shadow:0 1px 3px rgba(20,52,43,.08),0 4px 14px rgba(20,52,43,.06);
-  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  /* ── Tokens (dirección Manus · 1 sept 2026): claro, luminoso, el
+     color como código funcional. El verde bosque sólo para acción
+     primaria, navegación activa y estado correcto; el dorado/ámbar para
+     atención; el rojo sólo para mora y error; azul grisáceo informa. ── */
+  --dark:#1F3D33; --green:#2E6B4F; --green-soft:#E8F1EC; --gold:#C9962B; --amber-soft:#FBF3E1;
+  --sage:#8FB09B; --info:#5B7A99; --info-soft:#E9EFF5;
+  --ink:#232B27; --muted:#6B7570; --tint:#F4F6F5; --line:#E3E7E5; --white:#fff;
+  --bg:#F7F8F7; --surface:#fff;
+  --disp:#9CC3A9; --vend:#B85042; --apar:#C9962B; --mora:#B8452E; --mora-soft:#FBEAE6; --nod:#CBD1CE;
+  --radius:10px; --shadow:0 1px 2px rgba(31,61,51,.06),0 2px 8px rgba(31,61,51,.05);
+  --font:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Helvetica,Arial,"Segoe UI",sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 /* El atributo hidden debe ganar siempre sobre display:flex/grid de las clases */
 [hidden]{display:none !important}
-body{font-family:var(--font);color:var(--ink);background:#F7F9F8;font-size:14px;line-height:1.45}
+body{font-family:var(--font);color:var(--ink);background:var(--bg);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
 .app{display:flex;min-height:100vh}
 
 /* Sidebar */
-.sidebar{width:236px;background:var(--dark);color:#dfe7e2;display:flex;flex-direction:column;position:fixed;top:0;bottom:0;left:0}
-.brand{padding:20px 20px 16px;border-bottom:1px solid rgba(255,255,255,.08)}
-.brand-name{font-weight:800;font-size:18px;color:#fff;letter-spacing:.5px}
-.brand-sub{font-size:11px;color:var(--gold);letter-spacing:2px;text-transform:uppercase;margin-top:2px}
+.sidebar{width:248px;background:var(--surface);color:var(--ink);display:flex;flex-direction:column;position:fixed;top:0;bottom:0;left:0;border-right:1px solid var(--line)}
+.brand{padding:22px 20px 14px;display:flex;align-items:center;gap:12px}
+.brand-name{font-weight:700;font-size:20px;color:var(--ink);letter-spacing:1px;line-height:1}
+.brand-sub{font-size:10px;color:var(--muted);letter-spacing:2.5px;text-transform:uppercase;margin-top:3px}
 .nav{padding:12px 10px;flex:1;overflow-y:auto}
-.nav-sec{font-size:10px;letter-spacing:1.5px;color:#7d9488;text-transform:uppercase;padding:14px 12px 6px}
-.nav-item{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;color:#cdd8d2;padding:9px 12px;border-radius:8px;cursor:pointer;font-size:13.5px;text-align:left;font-family:var(--font)}
-.nav-item:hover{background:rgba(255,255,255,.06);color:#fff}
-.nav-item.active{background:var(--green);color:#fff;font-weight:600}
-.nav-ico{width:18px;text-align:center;font-size:15px;opacity:.9}
-.sidebar-foot{padding:14px 20px;font-size:11px;color:#7d9488;border-top:1px solid rgba(255,255,255,.08)}
+.nav-sec{font-size:10.5px;letter-spacing:1.4px;color:var(--muted);text-transform:uppercase;padding:16px 12px 6px;font-weight:600}
+.nav-item{display:flex;align-items:center;gap:11px;width:100%;background:none;border:0;color:var(--ink);padding:9px 12px;border-radius:8px;cursor:pointer;font-size:13.5px;text-align:left;font-family:var(--font)}
+.nav-item:hover{background:var(--tint)}
+.nav-item.active{background:var(--green-soft);color:var(--green);font-weight:600}
+.nav-ico{width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;color:var(--muted);flex:none}
+.nav-item.active .nav-ico{color:var(--green)}
+.nav-ico svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.nav-badge{margin-left:auto;font-size:11px;font-weight:600;background:var(--amber-soft);color:#8A5F12;border-radius:10px;padding:1px 7px}
+.sidebar-foot{padding:14px 16px;font-size:11.5px;color:var(--muted);border-top:1px solid var(--line)}
 
 /* Main */
 .main{margin-left:236px;flex:1;min-width:0}
-.topbar{background:#fff;border-bottom:1px solid var(--line);padding:16px 28px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:20}
-.topbar h1{font-size:20px;color:var(--dark);font-weight:700}
+.topbar{background:var(--surface);border-bottom:1px solid var(--line);padding:14px 28px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:20;gap:16px}
+.topbar h1{font-size:20px;color:var(--ink);font-weight:700;letter-spacing:-.2px}
 .topbar .sub{font-size:12.5px;color:var(--muted);margin-top:2px}
 .badge-demo{font-size:11px;color:var(--green);background:var(--tint);border:1px solid var(--line);padding:5px 10px;border-radius:20px}
 .content{padding:24px 28px 60px}
 
 /* KPI cards */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:22px}
-.kpi{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
 .kpi-label{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
-.kpi-value{font-size:26px;font-weight:800;color:var(--dark);margin-top:6px;line-height:1.1}
+.kpi-value{font-size:26px;font-weight:700;color:var(--green);margin-top:6px;line-height:1.1;letter-spacing:-.3px}
 .kpi-value.sm{font-size:20px}
 .kpi-sub{font-size:11.5px;color:var(--muted);margin-top:4px}
-.kpi.accent{background:var(--dark)}
-.kpi.accent .kpi-label,.kpi.accent .kpi-sub{color:var(--sage)}
-.kpi.accent .kpi-value{color:var(--gold)}
-.kpi.warn .kpi-value{color:var(--vend)}
+.kpi.accent{background:var(--surface);border-color:var(--green)}
+.kpi.accent .kpi-label,.kpi.accent .kpi-sub{color:var(--muted)}
+.kpi.accent .kpi-value{color:var(--green)}
+.kpi.warn .kpi-value{color:var(--mora)}
 
 /* Cards / panels */
 .card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:20px}
@@ -57,7 +66,7 @@ body{font-family:var(--font);color:var(--ink);background:#F7F9F8;font-size:14px;
 
 /* Tables */
 table.data{width:100%;border-collapse:collapse;font-size:13px}
-table.data th{text-align:left;background:var(--dark);color:#fff;padding:10px 12px;font-weight:600;font-size:12px}
+table.data th{text-align:left;background:var(--tint);color:var(--muted);padding:10px 12px;font-weight:600;font-size:11.5px;letter-spacing:.3px;text-transform:uppercase;border-bottom:1px solid var(--line)}
 table.data th.num,table.data td.num{text-align:right}
 table.data td{padding:9px 12px;border-bottom:1px solid var(--line)}
 table.data tr:nth-child(even) td{background:var(--tint)}
@@ -479,3 +488,20 @@ tr.cot-sel td{background:#fbf3df !important;font-weight:700}
 /* Botón que existe pero este rol no puede apretar: se ve, se explica
    en el title, no se disfraza de activo. */
 .btn-bloqueado,.btn:disabled{opacity:.45;cursor:not-allowed;filter:saturate(.3)}
+
+/* ── Fase A · marca y sidebar claros ── */
+.brand-mark{width:40px;height:40px;flex:none}
+.brand-mark svg{width:40px;height:40px;stroke:var(--gold);fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.proyecto-sel{padding:0 16px 8px}
+.proyecto-sel label{display:block;font-size:10.5px;letter-spacing:1.4px;color:var(--muted);text-transform:uppercase;font-weight:600;margin:6px 0 6px}
+.proyecto-sel select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font-family:var(--font);font-size:13px}
+#footUser b{color:var(--ink)}
+.btn-reset{background:none;border:0;color:var(--muted);font-size:11px;text-decoration:underline;cursor:pointer;margin-top:8px;font-family:var(--font)}
+.btn-primary{background:var(--green);border-color:var(--green)}
+.btn-primary:hover{background:#255840}
+.btn-gold{background:var(--amber-soft);color:#7A5410;border-color:#E9D8AE}
+.badge.b-ok{background:var(--green-soft);color:var(--green)}
+.badge.b-pend{background:var(--amber-soft);color:#8A5F12}
+.badge.b-mora{background:var(--mora-soft);color:var(--mora)}
+.badge.b-nod{background:var(--tint);color:var(--muted)}
+.aviso-err{background:var(--amber-soft);border:1px solid #EAD9A8;color:#5B4310;border-radius:var(--radius);padding:12px 14px}
