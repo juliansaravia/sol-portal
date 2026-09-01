@@ -40,6 +40,16 @@ const REQUISITOS = [
     siNo: 'El catálogo está creado pero la contabilidad no se ha encendido. '
         + 'Mirá: select * from v_catalogo_pendiente;' },
 
+  { que: 'Buckets de archivos', archivo: '04_storage.sql · 20_adjuntos.sql',
+    prueba: async () => {
+      const { data, error } = await SB.storage.listBuckets();
+      if (error) return false;
+      const hay = new Set((data || []).map(b => b.name));
+      return ['expedientes','contratos','boletas','facturas','soportes'].every(b => hay.has(b));
+    },
+    siNo: 'Falta algún bucket de los cinco (expedientes, contratos, boletas, facturas, soportes). '
+        + 'Sin él, subir ese tipo de archivo falla aunque la tabla exista.' },
+
   { que: 'Cuadre bancario', archivo: '13_conciliacion.sql',
     prueba: async () => !(await SB.from('movimiento_banco').select('id').limit(1)).error },
 
