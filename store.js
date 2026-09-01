@@ -730,7 +730,7 @@ const reciboDe = pagoId => (DB.recibos || []).find(r => mismoId(r.pagoId, pagoId
 
 /* Cantidad en letras, al estilo del recibo del CRM:
    «VEINTIOCHO MIL SEISCIENTOS NOVENTA Y CINCO QUETZALES CON 00/100 CENTAVOS». */
-function numeroALetras(n) {
+function cantidadEnLetras(n) {
   const U = ['', 'UN', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE', 'DIEZ', 'ONCE', 'DOCE', 'TRECE', 'CATORCE', 'QUINCE',
              'DIECISÉIS', 'DIECISIETE', 'DIECIOCHO', 'DIECINUEVE', 'VEINTE', 'VEINTIÚN', 'VEINTIDÓS', 'VEINTITRÉS', 'VEINTICUATRO', 'VEINTICINCO', 'VEINTISÉIS', 'VEINTISIETE', 'VEINTIOCHO', 'VEINTINUEVE'];
   const D = ['', '', 'VEINTE', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA'];
@@ -767,7 +767,7 @@ function datosRecibo(pagoId) {
   return { pago: p, contrato: ct, cliente: cli, nombre: cli ? cli.nombre : nombreCliente(ct.clienteId),
            lote: ct.lote, obligacion, cuota, boleta, recibo: r,
            registradoPor: (typeof SESION !== 'undefined' && SESION.persona) ? SESION.persona.nombre : (window.__user ? window.__user.name : ''),
-           enLetras: numeroALetras(p.monto), emisor: 'ALJIBE, S.A.', cuenta: (typeof CUENTAS_COBRO !== 'undefined' ? CUENTAS_COBRO[0] : null) };
+           enLetras: cantidadEnLetras(p.monto), emisor: 'ALJIBE, S.A.', cuenta: (typeof CUENTAS_COBRO !== 'undefined' ? CUENTAS_COBRO[0] : null) };
 }
 /* Respaldos genéricos de cualquier cosa (20_adjuntos.sql). */
 const adjuntosDe = (entidad, id) => (DB.adjuntos || []).filter(a => a.entidad === entidad && mismoId(a.entidadId, id));
