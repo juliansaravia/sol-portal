@@ -221,6 +221,11 @@ async function entrarCon2FA(){
   window.__user = { name: SESION.persona.nombre, role: rolDePortal(SESION.rol) };
   anotar('sesion.entrar', SESION.persona.nombre+' · '+SESION.rol+' · con segundo factor');
   startApp(window.__user.role);
+  /* La cartera es la segunda fase de la carga y este camino no la
+     pedía: quien entrara con segundo factor veía Cartera Total en Q0,
+     la cobranza vacía y la agenda sin cuotas. Nadie lo notó porque el
+     modal del código era invisible y por acá no pasaba nadie. */
+  traerCartera();
   if(SESION.modoConsulta) avisoModoConsulta();
 }
 
