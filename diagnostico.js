@@ -65,6 +65,18 @@ const REQUISITOS = [
   { que: 'Accesos de solo lectura', archivo: '21_rol_consulta.sql',
     prueba: async () => !(await SB.rpc('solo_mira')).error },
 
+  { que: 'Invitar al equipo desde el portal', archivo: 'supabase functions deploy invitar',
+    prueba: async () => {
+      const { data: { session } } = await SB.auth.getSession();
+      if (!session) return false;
+      const r = await fetch((window.SUPABASE_CONFIG?.url || '') + '/functions/v1/invitar', {
+        method: 'OPTIONS'
+      });
+      return r.status < 400;
+    },
+    siNo: 'La función no está desplegada. Se despliega una vez con: '
+        + 'npx supabase functions deploy invitar --project-ref wdykbczkihveccgujqfc' },
+
   { que: 'Accesos externos con vencimiento', archivo: '23_externos.sql',
     prueba: async () => !(await SB.from('v_accesos_externos').select('id').limit(1)).error },
 ];

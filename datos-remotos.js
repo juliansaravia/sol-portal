@@ -76,7 +76,11 @@ async function cargarDesdeSupabase() {
       todas('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,banco,boleta,lote_id,cliente_id,persona_id'),
       todas('cliente', 'id,nombre,dpi,nit,telefono,email,direccion,ocupacion'),
       todas('pago', 'id,contrato_id,monto,fecha_pago,forma_pago,referencia,estado'),
-      todas('persona', 'id,nombre,codigo,rol,email,telefono,activo'),
+      /* `auth_uid` viene para saber quién ya puede entrar. No se guarda
+         el identificador, solo si lo tiene: la pantalla no necesita más
+         y el uid de nadie tiene por qué andar dando vueltas. */
+      conRespaldo('persona', 'id,nombre,codigo,rol,email,telefono,activo',
+                  'auth_uid,externo,organizacion,acceso_hasta'),
       /* Las columnas del respaldo llegaron con 14_documentos.sql. Si esa
          migración todavía no se corrió, se piden las de siempre: el portal
          funciona igual, solo que sin distinguir archivo de anotación.
@@ -133,7 +137,11 @@ async function cargarDesdeSupabase() {
 
     DB.equipo = equipo.map(p => ({
       id: p.id, nombre: p.nombre, codigo: p.codigo,
-      rol: rolDePortal(p.rol), email: p.email, tel: p.telefono, activo: p.activo
+      rol: rolDePortal(p.rol), email: p.email, tel: p.telefono, activo: p.activo,
+      // ¿Ya puede entrar? Se guarda el sí o el no, no el identificador.
+      entra: !!p.auth_uid,
+      externo: !!p.externo, organizacion: p.organizacion || null,
+      accesoHasta: _fecha(p.acceso_hasta)
     }));
 
     DB.contratos = contratos.map(c => {

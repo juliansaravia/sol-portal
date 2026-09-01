@@ -1380,16 +1380,46 @@ function renderEquipo(){
       <td class="num">${cts.length}</td>
       <td class="num">${val?Qk(val):'—'}</td>
       <td class="num">${com?Q(com):(cts.length?`<span title="Su rol no genera comisión" style="color:#B0562F">sin comisión</span>`:'—')}</td>
-      <td>${p.activo?'<span class="badge b-ok">Activo</span>':'<span class="badge b-nod">Inactivo</span>'}</td>
+      <td>${p.activo
+        ? (p.entra===false ? '<span class="badge b-pend">Sin acceso</span>'
+                           : '<span class="badge b-ok">Activo</span>')
+        : '<span class="badge b-nod">Inactivo</span>'}
+        ${p.externo?`<div class="ec-obl">${esc(p.organizacion||'externo')}${p.accesoHasta?` · hasta ${fmtD(p.accesoHasta)}`:''}</div>`:''}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="modalPersona('${p.id}')">Editar</button>
         ${cts.length?`<button class="btn btn-ghost btn-sm" onclick="modalReasignar('${esc(p.nombre)}')">Reasignar</button>`:''}
         ${p.activo?`<button class="btn btn-ghost btn-sm" onclick="modalDarDeBaja('${p.id}')">Dar de baja</button>`
                   :`<button class="btn btn-ghost btn-sm" onclick="reactivarPersona('${p.id}')">Reactivar</button>`}
+        ${p.activo && !p.entra ? (p.email
+            ? `<button class="btn btn-gold btn-sm" onclick="invitarA('${p.id}')">Invitar</button>`
+            : `<span class="hint" title="Sin correo no se le puede invitar">sin correo</span>`) : ''}
       </td></tr>`;
   };
   /* Cuando alguien tiene contratos a su nombre pero su rol no comisiona,
      esa comisión no la cobra nadie. No es un error de cálculo: es una
      pregunta sin contestar sobre quién vendió de verdad. */
+  /* Quién todavía no puede entrar. Es lo primero que hay que resolver
+     el día que arranca el equipo, y hasta ahora no se veía en ninguna
+     pantalla: había que ir a mirarlo a Supabase. */
+  const sinAcceso = act.filter(p=>!p.entra);
+  const invitables = sinAcceso.filter(p=>p.email);
+  const sinCorreo  = sinAcceso.filter(p=>!p.email);
+  if(sinAcceso.length){
+    h+=`<div class="card" style="margin-bottom:14px;border-left:3px solid var(--gold)">
+      <div class="card-b">
+        <b>${sinAcceso.length} persona(s) todavía no pueden entrar al portal.</b>
+        ${invitables.length?`<div class="hint" style="margin-top:6px">
+           A ${invitables.length} se les puede mandar la invitación ahora: reciben un correo
+           con un enlace para poner <b>su propia contraseña</b>. Vos nunca la ves y no hay
+           nada que repartir.</div>`:''}
+        ${sinCorreo.length?`<div class="hint" style="margin-top:6px;color:#B0562F">
+           A ${sinCorreo.length} les falta el correo — ${sinCorreo.map(p=>esc(p.nombre)).join(', ')}.
+           El correo es la llave con la que entran: se pone con «Editar».</div>`:''}
+        ${invitables.length?`<div style="margin-top:10px">
+           <button class="btn btn-gold btn-sm" onclick="invitarATodos()">
+             Invitar a ${invitables.length===1?'esa persona':`las ${invitables.length}`}</button></div>`:''}
+      </div></div>`;
+  }
+
   const raros = act.filter(p=>!rolComisiona(p.rol) && contratosDe(p.nombre).length);
   if(raros.length){
     const totalCts = raros.reduce((s,p)=>s+contratosDe(p.nombre).length,0);
@@ -1455,6 +1485,43 @@ async function guardarEquipo(id){
   if(antes&&antes!==nom) await reasignarContratos(antes,nom);   // mantiene el historial ligado
   closeModal(); toast('Equipo actualizado ✓'); renderEquipo();
 }
+/* ---------- Invitar al equipo ----------
+   El correo lo manda Supabase; cada quien pone su propia contraseña.
+   Nadie tiene que repartir claves por WhatsApp. */
+async function invitarA(id){
+  const p=DB.equipo.find(x=>mismoId(x.id,id)); if(!p) return;
+  if(!p.email) return toast('Primero ponele su correo: es la llave con la que entra', 6000, true);
+  if(!confirm(`Mandarle a ${p.nombre} una invitación a ${p.email}.\n\n`
+            + `Va a recibir un enlace para poner su propia contraseña. `
+            + `Vos nunca la vas a ver.`)) return;
+
+  const r=await conBoton(()=>sbInvitar({ persona_id: Number(p.id) }));
+  if(!r||!r.ok) return;
+  const d=r.dato;
+  if(d.fallaron?.length) return toast(d.fallaron[0].error, 8000, true);
+  if(!d.invitados?.length) return toast(d.nota || 'Esa persona ya entra al portal', 6000);
+  anotar('equipo.invitar', p.nombre+' · '+p.email);
+  toast(`Invitación enviada a ${p.email}. Si no le llega, que revise no deseados.`, 7000);
+  renderEquipo();
+}
+
+async function invitarATodos(){
+  const faltan=DB.equipo.filter(p=>p.activo && p.email && !p.entra);
+  if(!faltan.length) return toast('Todos los que tienen correo ya entran al portal');
+  if(!confirm(`Mandarle invitación a ${faltan.length} persona(s):\n\n`
+            + faltan.map(p=>`· ${p.nombre} — ${p.email}`).join('\n')
+            + `\n\nCada quien pone su propia contraseña.`)) return;
+
+  const r=await conBoton(()=>sbInvitar({ todos: true }));
+  if(!r||!r.ok) return;
+  const d=r.dato;
+  anotar('equipo.invitar', (d.invitados||[]).length+' invitaciones');
+  let msg=`${(d.invitados||[]).length} invitación(es) enviadas`;
+  if(d.fallaron?.length) msg+=` · ${d.fallaron.length} fallaron: ${d.fallaron[0].error}`;
+  toast(msg, 8000, !!d.fallaron?.length);
+  renderEquipo();
+}
+
 /* ---------- Dar de baja a alguien ----------
    No se borra: se desactiva. Un vendedor que se fue sigue siendo quien
    vendió 47 contratos, y esa historia no se puede perder — la comisión

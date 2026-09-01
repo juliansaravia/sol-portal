@@ -801,6 +801,45 @@ async function sbBorrarAdjunto(id) {
 }
 
 /* ============================================================
+   INVITAR AL EQUIPO
+
+   Dar de alta a alguien exigía abrir una terminal y manejar la
+   llave `service_role`. Eso no reduce trabajo: lo mueve, y obliga
+   a que alguien manipule la llave que se salta toda la seguridad.
+
+   Ahora lo hace una función que corre en Supabase. La llave vive
+   allá como secreto y nunca toca el navegador; desde acá solo se
+   dice a quién invitar, con la sesión de quien lo pide. La función
+   comprueba el rol contra la base — no contra lo que diga esta
+   pantalla.
+   ============================================================ */
+async function sbInvitar(quien) {
+  return escribir('mandar la invitación', async () => {
+    const { data: { session } } = await SB.auth.getSession();
+    if (!session) throw new Error('Tu sesión caducó. Volvé a entrar.');
+
+    const url = (window.SUPABASE_CONFIG?.url || '') + '/functions/v1/invitar';
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(quien)
+    });
+
+    let d = null;
+    try { d = await r.json(); } catch (_) {}
+
+    if (r.status === 404)
+      throw new Error('La función de invitaciones no está desplegada todavía. '
+                    + 'Se despliega una vez con: npx supabase functions deploy invitar');
+    if (!r.ok) throw new Error(d?.error || `El servidor respondió ${r.status}`);
+    return d;
+  });
+}
+
+/* ============================================================
    Lo que ve el resto del portal
    ============================================================ */
 Object.assign(window, {
@@ -816,5 +855,6 @@ Object.assign(window, {
   sbImportarMovimientos, sbConciliar, sbActualizarConciliacion, sbDescartarConciliacion,
   huellaMovimiento,
   sbCrearLiquidacion, sbRegistrarComisionPagada, sbComisionesPorVendedor,
-  sbAdjuntar, sbAdjuntos, sbVerAdjunto, sbBorrarAdjunto
+  sbAdjuntar, sbAdjuntos, sbVerAdjunto, sbBorrarAdjunto,
+  sbInvitar
 });
