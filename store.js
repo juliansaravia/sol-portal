@@ -202,7 +202,7 @@ function indices() {
 }
 
 /** Para cuando algo cambió sin cambiar de tamaño (renombrar un vendedor). */
-const reindexar = () => { _idx = null; };
+const reindexar = () => { _idx = null; _cal = null; };
 
 /* Cuando algo no se pudo guardar hay que decirlo, y decirlo fuerte.
    El silencio es lo peor que puede pasar acá: el usuario cierra el
@@ -922,6 +922,13 @@ async function desmarcarCuota(contrato, fecha) {
      c  contrato · f  vence · m  monto · n  cliente
      l  lote     · q  número de cuota · p  total de cuotas
    ------------------------------------------------------------ */
+/* La foto de julio traía el nombre del día en `d` y la agenda lo usa
+   para encabezar cada jornada. El calendario armado desde los giros no
+   lo producía, así que renderAgenda() reventaba con «charAt of
+   undefined» y la pantalla entera se quedaba en blanco. */
+const DIAS_SEM = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const diaSemana = iso => DIAS_SEM[new Date(iso + 'T00:00:00').getDay()] || '';
+
 function calendarioDeCartera() {
   const salida = [];
   for (const ct of DB.contratos) {
@@ -934,6 +941,7 @@ function calendarioDeCartera() {
       salida.push({
         c: ct.no, f: g.vence, m: g.monto,
         n: nombreCliente(ct.clienteId), l: ct.lote,
+        d: diaSemana(g.vence),
         q: i + 1, p: total
       });
     });
@@ -943,9 +951,20 @@ function calendarioDeCartera() {
 
 /* La foto de julio si está; si no, lo que hay en la base. Se recalcula
    cada vez porque los giros cambian al confirmarse un pago. */
+let _cal = null, _calHuella = '';
+
 function calendario() {
   if (typeof CALENDARIO !== 'undefined' && CALENDARIO && CALENDARIO.length) return CALENDARIO;
-  return calendarioDeCartera();
+
+  /* Recorrer 148 contratos y 5,550 giros costaba lo mismo cada vez que
+     alguien preguntaba, y la agenda preguntaba dos veces por dibujado
+     y la búsqueda una por tecla. Se guarda con la misma huella que los
+     índices: confirmar un pago mueve DB.pagos.length y la invalida. */
+  const h = _huellaActual() + '|' + (DB.meta && DB.meta.carteraLista ? '1' : '0');
+  if (_cal && _calHuella === h) return _cal;
+  _cal = calendarioDeCartera();
+  _calHuella = h;
+  return _cal;
 }
 
 /** Estado de la semana: lo programado contra lo efectivamente gestionado. */

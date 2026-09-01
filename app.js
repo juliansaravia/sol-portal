@@ -853,8 +853,11 @@ function renderAgenda(){
      porque falte un archivo — y eso se dice abajo, en su lugar. */
   const desde=isoMas(HOY_ISO, agSemana*7);
   const hasta=isoMas(desde,6);
-  const sem=calendario().filter(c=>c.f>=desde&&c.f<=hasta);
-  const vencidas=calendario().filter(c=>c.f<HOY_ISO);
+  /* Una sola vez: calendario() recorre los 5,550 giros y acá se pedía
+     dos veces por dibujado. */
+  const cal=calendario();
+  const sem=cal.filter(c=>c.f>=desde&&c.f<=hasta);
+  const vencidas=cal.filter(c=>c.f<HOY_ISO);
   const monto=sem.reduce((s,c)=>s+c.m,0);
 
   let h=`<div class="kpis">
@@ -864,8 +867,8 @@ function renderAgenda(){
       <div class="kpi-sub">esta semana</div></div>
     <div class="kpi warn"><div class="kpi-label">Vencidas acumuladas</div><div class="kpi-value">${vencidas.length}</div>
       <div class="kpi-sub">${Qk(vencidas.reduce((s,c)=>s+c.m,0))}</div></div>
-    <div class="kpi"><div class="kpi-label">Contratos en el plan</div><div class="kpi-value">${new Set(CALENDARIO.map(c=>c.c)).size}</div>
-      <div class="kpi-sub">${CALENDARIO.length} cuotas programadas</div></div>
+    <div class="kpi"><div class="kpi-label">Contratos en el plan</div><div class="kpi-value">${new Set(cal.map(c=>c.c)).size}</div>
+      <div class="kpi-sub">${cal.length} cuotas programadas</div></div>
   </div>`;
 
   h+=`<div class="card"><div class="card-b" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -886,7 +889,7 @@ function renderAgenda(){
     const dif=diasEnt(HOY_ISO,f);
     const etiqueta = dif===0?'HOY':(dif===1?'mañana':(dif<0?`hace ${-dif} días`:`en ${dif} días`));
     h+=`<div class="card"><div class="card-h">
-      <h2>${lista[0].d.charAt(0).toUpperCase()+lista[0].d.slice(1)} ${fmtD(f)}
+      <h2>${(d=>d.charAt(0).toUpperCase()+d.slice(1))(lista[0].d||diaSemana(f))} ${fmtD(f)}
         <span class="pill" style="margin-left:8px">${etiqueta}</span></h2>
       <div><b>${lista.length} cuota(s)</b> · ${Qk(mt)}</div></div>
       <div class="card-b" style="padding:0"><table class="data"><thead><tr>
@@ -915,7 +918,7 @@ function mensajeRecordatorio(c){
   return `Hola ${nombre}, notamos que su cuota ${c.q}/${c.p} del lote ${c.l} por ${Q(c.m)} sigue pendiente.\n\nA partir del vencimiento corre una mora del 2% mensual.\n\nPuede regularizar aquí: ${pago}\n\nSi tiene alguna dificultad, escríbanos — buscamos la manera de ayudarle.`;
 }
 function copiarRecordatorio(contrato,fecha){
-  const c=CALENDARIO.find(x=>x.c===contrato&&x.f===fecha); if(!c)return;
+  const c=calendario().find(x=>x.c===contrato&&x.f===fecha); if(!c)return;
   const txt=mensajeRecordatorio(c);
   const fin=()=>toast('Mensaje de '+esc(c.n).split(' ')[0]+' copiado ✓');
   if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(fin).catch(()=>modalMensaje(txt));
@@ -1119,7 +1122,7 @@ function cnResultados(movId){
   const L=document.getElementById('cnLista');
   if(t.length<2){L.innerHTML='';return;}
   const vistos={};
-  (typeof CALENDARIO!=='undefined'?CALENDARIO:[]).forEach(c=>{
+  calendario().forEach(c=>{
     if(vistos[c.c])return;
     if(String(c.c).toLowerCase().includes(t)||String(c.l).toLowerCase().includes(t)||String(c.n).toLowerCase().includes(t))
       vistos[c.c]=c;});
@@ -1188,8 +1191,13 @@ function vistaSinDeposito(R){
 let recSemana=0, recFiltro='pendiente';
 
 function renderRecaudacion(){
-  if(typeof CALENDARIO==='undefined'){
-    C().innerHTML=`<div class="card"><div class="empty">No se encontró el calendario de cobranza.</div></div>`;return;}
+  /* Antes preguntaba si CALENDARIO existía. datos-julio.js lo declara
+     vacío justamente para que nada reviente, así que la respuesta era
+     siempre «sí» y la pantalla seguía con cero cuotas y sin explicar
+     por qué. La pregunta útil es si hay cuotas. */
+  if(!calendario().length){
+    C().innerHTML=`<div class="card"><div class="empty">No hay cuotas programadas.
+      Se arman al crear contratos con plan de pagos.</div></div>`;return;}
   const desde=isoMas(HOY_ISO, recSemana*7), hasta=isoMas(desde,6);
   const R=resumenRecaudacion(desde,hasta);
   const pct=Math.round(R.efectividad*100);
@@ -1268,7 +1276,7 @@ function renderRecaudacion(){
 
 /* --- Registrar un cobro --- */
 function modalCobro(contrato,fecha){
-  const c=CALENDARIO.find(x=>x.c===contrato&&x.f===fecha); if(!c)return;
+  const c=calendario().find(x=>x.c===contrato&&x.f===fecha); if(!c)return;
   openModal(`<div class="modal-h"><h3>Registrar cobro</h3>
       <p>${esc(c.n)} · lote ${c.l} · cuota ${c.q}/${c.p}</p></div>
     <div class="modal-b">
@@ -1303,7 +1311,7 @@ async function guardarCobro(contrato,fecha){
 
 /* --- Registrar que no se cobró --- */
 function modalNoCobro(contrato,fecha){
-  const c=CALENDARIO.find(x=>x.c===contrato&&x.f===fecha); if(!c)return;
+  const c=calendario().find(x=>x.c===contrato&&x.f===fecha); if(!c)return;
   openModal(`<div class="modal-h"><h3>No se cobró</h3>
       <p>${esc(c.n)} · lote ${c.l} · cuota ${c.q}/${c.p} · ${Q(c.m)}</p></div>
     <div class="modal-b">

@@ -28,7 +28,12 @@ const _fD = iso => iso ? new Date(iso + 'T00:00:00').toLocaleDateString('es-GT',
 const difC  = (a, b) => Math.abs(Number(a) - Number(b));
 const diasC = (a, b) => Math.round((new Date(a + 'T00:00:00') - new Date(b + 'T00:00:00')) / 86400000);
 const sumaDias = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
-const CALC = () => (typeof CALENDARIO !== 'undefined' ? CALENDARIO : []);
+/* Las cuotas que se están cuadrando. Esto leía CALENDARIO —el respaldo
+   de julio, que datos-julio.js declara VACÍO a propósito—, así que
+   devolvía cero cuotas siempre: no había con qué emparejar un depósito
+   y la pantalla salía en blanco sin decir por qué. calendario() las
+   saca de los giros de la base. */
+const CALC = () => (typeof calendario === 'function' ? calendario() : []);
 
 function normRef(v) {
   if (v === null || v === undefined) return null;
