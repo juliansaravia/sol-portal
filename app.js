@@ -193,6 +193,17 @@ async function pintarEstado2FA(){
 
 /* ---------- El código de seis dígitos ---------- */
 function pedirCodigo2FA(){
+  /* Traza: desde dónde se pidió el código y qué había en pantalla. Se
+     reportó que el modal aparecía con la aplicación ya abierta detrás;
+     el código sólo lo pide entrar() y reanudarSesion(), y ninguno lo
+     hace después de startApp(). Esto deja el hecho anotado para leerlo
+     en Diagnóstico la próxima vez, en vez de reconstruirlo de memoria. */
+  try {
+    const pila=(new Error().stack||'').split('\n').slice(2,5).map(l=>l.trim().replace(/^at /,'').replace(/https?:\/\/[^\s)]+\//,'')).join(' ← ');
+    localStorage.setItem('traza2fa', JSON.stringify({ ts:new Date().toISOString(), desde:pila,
+      appVisible: !document.querySelector('.app').hidden, pantalla: typeof SCREEN!=='undefined'?SCREEN:'?',
+      vista: typeof vista!=='undefined'?vista:null }));
+  } catch(e){}
   openModal(`<div class="modal-h"><h3>Código de tu teléfono</h3>
       <p>Abrí Microsoft Authenticator y escribí el código de seis dígitos</p></div>
     <div class="modal-b">

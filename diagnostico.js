@@ -49,6 +49,17 @@ const REQUISITOS = [
   { que: 'Respaldo en todo lo demás', archivo: '20_adjuntos.sql',
     prueba: async () => !(await SB.from('adjunto').select('id').limit(1)).error },
 
+  { que: 'El código se pide antes de entrar', archivo: 'app.js',
+    prueba: async () => {
+      let t=null; try { t=JSON.parse(localStorage.getItem('traza2fa')||'null'); } catch(e){}
+      return !t || !t.appVisible;
+    },
+    siNo: (() => {
+      let t=null; try { t=JSON.parse(localStorage.getItem('traza2fa')||'null'); } catch(e){}
+      return t ? `La última vez (${t.ts.slice(0,19).replace('T',' ')}) el código se pidió con la aplicación YA visible, `
+               + `en «${t.vista||t.pantalla}», desde: ${t.desde}. Mandá esta pantalla.` : '';
+    })() },
+
   { que: 'Login rápido', archivo: '16_login.sql',
     prueba: async () => !(await SB.rpc('mi_sesion').maybeSingle()).error },
 
