@@ -67,8 +67,14 @@ function traducirError(e, queHacia) {
 async function escribir(queHacia, fn) {
   if (!hayBase())
     return { ok: false, error: 'El portal no está conectado a la base.' };
-  if (SESION.modoConsulta)
-    return { ok: false, error: 'Modo consulta: el sistema está abierto para mirar, no para registrar.' };
+  /* Espeja `puede_escribir()` de la base: es_admin() OR NOT modo_consulta().
+     El administrador queda fuera de la restricción a propósito —alguien tiene
+     que poder corregir algo el primer día—. Antes esto bloqueaba también al
+     admin, que es más estricto que la base: el portal decía que no y la base
+     habría dicho que sí. */
+  if (SESION.modoConsulta && SESION.rol !== 'admin')
+    return { ok: false, error: 'Modo consulta: el sistema está abierto para mirar, no para registrar. '
+                             + 'Lo apaga administración en la tabla «ajuste».' };
 
   try {
     const dato = await fn();

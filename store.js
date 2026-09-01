@@ -124,7 +124,8 @@ const LS = () => { try { return window.localStorage; } catch (e) { return null; 
    navegador. */
 function saveDB() {
   if (typeof SESION !== 'undefined' && SESION.persona) {
-    if (SESION.modoConsulta) {
+    // El admin sí escribe en modo consulta — igual que en la base.
+    if (SESION.modoConsulta && SESION.rol !== 'admin') {
       console.warn('[modo consulta] no se guardó nada');
       if (typeof toast === 'function') toast('Modo consulta: todavía no se registra nada');
     }
