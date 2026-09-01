@@ -65,10 +65,20 @@ async function cargarDesdeSupabase() {
       todas('pago', 'id,contrato_id,monto,fecha_pago,forma_pago,referencia,estado'),
       todas('giro', 'id,obligacion_id,numero,vencimiento,monto,estado,abonado'),
       todas('persona', 'id,nombre,codigo,rol,email,telefono,activo'),
-      todas('documento', 'id,contrato_id,cliente_id,tipo,nombre,created_at,bucket,ruta,mime,bytes,cara,verificado_en'),
+      /* Las columnas del respaldo llegaron con 14_documentos.sql. Si esa
+         migración todavía no se corrió, se piden las de siempre: el portal
+         funciona igual, solo que sin distinguir archivo de anotación.
+         Antes esto tumbaba la carga entera y la pantalla salía vacía. */
+      conRespaldo('documento',
+        'id,contrato_id,cliente_id,tipo,nombre,created_at',
+        'bucket,ruta,mime,bytes,cara,verificado_en'),
       todas('obligacion', 'id,contrato_id,tipo,descripcion,monto_total,orden'),
-      todas('comision', 'id,contrato_id,persona_id,monto,base,estado,periodo'),
-      todas('documento_requerido', 'codigo,nombre,descripcion,bucket,caras,obligatorio,orden')
+      /* `comision` existe desde 01_schema, pero puede estar vacía o sin
+         permisos para el rol que entró. Que eso no tumbe la cartera. */
+      opcional('comision', 'id,contrato_id,persona_id,monto,base,estado,periodo'),
+      /* La tabla nace con 14_documentos.sql. Sin ella el portal usa su
+         lista de respaldo — no se cae por un catálogo que no está. */
+      opcional('documento_requerido', 'codigo,nombre,descripcion,bucket,caras,obligatorio,orden')
     ]);
 
     const porLote = new Map(lotes.map(l => [l.lote_id, l]));
@@ -214,6 +224,32 @@ async function cargarDesdeSupabase() {
  * Supabase corta en 1,000 por consulta; con 5,550 giros eso significa
  * que sin paginar se perdía el 80% de la cartera sin avisar.
  */
+/**
+ * Como `todas`, pero si la tabla no existe devuelve vacío en vez de
+ * tumbar la carga. Para lo que llega con una migración que puede no
+ * haberse corrido todavía.
+ */
+async function opcional(tabla, columnas) {
+  try { return await todas(tabla, columnas); }
+  catch (e) {
+    console.warn(`[datos] ${tabla} no está todavía · falta correr su migración`);
+    return [];
+  }
+}
+
+/**
+ * Pide las columnas de siempre más las nuevas; si las nuevas no existen,
+ * repite sin ellas. Un despliegue del portal no puede quedar a merced de
+ * que alguien se acuerde de pegar un .sql.
+ */
+async function conRespaldo(tabla, base, nuevas) {
+  try { return await todas(tabla, base + ',' + nuevas); }
+  catch (e) {
+    console.warn(`[datos] ${tabla} sin ${nuevas} · falta correr su migración`);
+    return await todas(tabla, base);
+  }
+}
+
 async function todas(tabla, columnas, tam = 1000) {
   /* La primera página viene con el total (count: 'exact'), así que en
      un solo viaje sabemos cuántas páginas faltan y las pedimos TODAS
