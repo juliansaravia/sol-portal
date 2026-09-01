@@ -48,7 +48,7 @@ const ESTADOS_LIQ = {
 const liquidados = () => new Set(
   (DB.liquidaciones || [])
     .filter(l => l.estado !== 'anulada')
-    .flatMap(l => l.contratos.map(c => c.no)));
+    .flatMap(l => (l.contratos || []).map(c => c.no)));
 
 /**
  * Comisiones devengadas que todavía no entran en ninguna liquidación.

@@ -90,7 +90,7 @@ async function cargarDesdeSupabase() {
         'bucket,ruta,mime,bytes,cara,verificado_en'),
       /* `comision` existe desde 01_schema, pero puede estar vacía o sin
          permisos para el rol que entró. Que eso no tumbe la cartera. */
-      opcional('comision', 'id,contrato_id,persona_id,monto,base,estado,periodo'),
+      opcional('comision', 'id,contrato_id,persona_id,monto,base,estado,periodo,liquidacion_id'),
       /* Los respaldos genéricos (20_adjuntos.sql): con ellos el portal sabe
          qué pago tiene su boleta y cuál no. Si la migración no corrió,
          llega vacío y todo pago aparece «sin boleta». */
@@ -150,19 +150,6 @@ async function cargarDesdeSupabase() {
 
     DB.recibos = (recibos || []).map(r => ({ id: r.id, numero: r.numero, pagoId: r.pago_id, contratoId: r.contrato_id,
                                             monto: _num(r.monto), fecha: _fecha(r.fecha), adjuntoId: r.adjunto_id }));
-
-    /* Las liquidaciones de comisión. El portal nunca las pedía: «Pagado»
-       daba Q0 aunque se hubiera pagado durante meses, y un vendedor no
-       podía ver lo suyo. `vendedor` es el nombre, que es como el motor
-       de comisiones (comisiones.js) identifica a la persona. */
-    DB.liquidaciones = (liquidaciones || []).map(l => {
-      const per = porPersona.get(l.persona_id) || {};
-      return { id: l.id, numero: l.numero, personaId: l.persona_id, vendedor: per.nombre || '',
-               periodo: l.periodo, desde: _fecha(l.periodo_desde), hasta: _fecha(l.periodo_hasta),
-               total: _num(l.total), estado: l.estado,
-               factura: l.factura_numero ? { numero: l.factura_numero, fecha: _fecha(l.factura_fecha) } : null,
-               pagadaEn: _fecha(l.pago_fecha), creada: _fecha(l.created_at), historial: [] };
-    });
 
     DB.documentos = documentos.map(d => ({
       id: d.id, contratoId: d.contrato_id, clienteId: d.cliente_id,
@@ -279,6 +266,24 @@ async function cargarDesdeSupabase() {
       ct.comisionEstado = cm.estado;
       ct.comisionPeriodo = _fecha(cm.periodo);
     }
+
+    /* Las liquidaciones de comisión. El portal nunca las pedía: «Pagado»
+       daba Q0 aunque se hubiera pagado durante meses, y un vendedor no
+       podía ver lo suyo. `vendedor` es el nombre, que es como el motor
+       de comisiones (comisiones.js) identifica a la persona. */
+    DB.liquidaciones = (liquidaciones || []).map(l => {
+      const per = porPersona.get(l.persona_id) || {};
+      return { id: l.id, numero: l.numero, personaId: l.persona_id, vendedor: per.nombre || '',
+               periodo: l.periodo, desde: _fecha(l.periodo_desde), hasta: _fecha(l.periodo_hasta),
+               total: _num(l.total), estado: l.estado,
+               factura: l.factura_numero ? { numero: l.factura_numero, fecha: _fecha(l.factura_fecha) } : null,
+               pagadaEn: _fecha(l.pago_fecha), creada: _fecha(l.created_at), historial: [],
+               /* Qué ventas entraron en esta liquidación: el motor de
+                  comisiones (liquidados()) las lee de acá. */
+               contratos: (comisiones || []).filter(cm => cm.liquidacion_id === l.id)
+                 .map(cm => { const ct = porContrato.get(cm.contrato_id) || {}; return { no: ct.no || String(cm.contrato_id), comision: _num(cm.monto) }; }) };
+    });
+
 
     DB.meta = DB.meta || {};
     DB.meta.origen = 'supabase';
