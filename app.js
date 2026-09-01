@@ -1471,6 +1471,8 @@ function renderEquipo(){
         ${p.activo && !p.entra ? (p.email
             ? `<button class="btn btn-gold btn-sm" onclick="invitarA('${p.id}')">Invitar</button>`
             : `<span class="hint" title="Sin correo no se le puede invitar">sin correo</span>`) : ''}
+        ${p.activo && p.entra && p.email && SESION.rol==='admin'
+            ? `<button class="btn btn-ghost btn-sm" onclick="restablecerContrasenaDe('${p.id}')" title="Le llega un correo para elegir una nueva">Contraseña</button>` : ''}
       </td></tr>`;
   };
   /* Cuando alguien tiene contratos a su nombre pero su rol no comisiona,
@@ -1571,6 +1573,21 @@ async function guardarEquipo(id){
   if(antes&&antes!==nom) await reasignarContratos(antes,nom);   // mantiene el historial ligado
   closeModal(); toast('Equipo actualizado ✓'); renderEquipo();
 }
+/* ---------- Restablecer contraseña · solo administración ----------
+   No hay «olvidé mi contraseña» en el login: quien la pierda se la
+   pide a administración, y desde acá se le manda el enlace. La nueva
+   la elige la persona; nadie la ve ni la reparte. */
+async function restablecerContrasenaDe(id){
+  if(SESION.rol!=='admin') return toast('Solo administración restablece contraseñas', 5000, true);
+  const p=DB.equipo.find(x=>mismoId(x.id,id)); if(!p) return;
+  if(!p.email) return toast('Esa persona no tiene correo en su ficha', 5000, true);
+  if(!confirm(`Mandarle a ${p.nombre} un enlace a ${p.email} para que elija una contraseña nueva.\n\nLa actual sigue sirviendo hasta que la cambie.`)) return;
+  const r=await conBoton(()=>pedirContrasenaNueva(p.email));
+  if(!r||!r.ok){ if(r) toast(r.error, 7000, true); return; }
+  anotar('equipo.contrasena', p.nombre+' · '+p.email);
+  toast(`Enlace enviado a ${p.email}. Si no le llega, que revise no deseados.`, 7000);
+}
+
 /* ---------- Invitar al equipo ----------
    El correo lo manda Supabase; cada quien pone su propia contraseña.
    Nadie tiene que repartir claves por WhatsApp. */
