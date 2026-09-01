@@ -1797,42 +1797,129 @@ function renderReporteria(){
   C().innerHTML=h;
 }
 
-/* ============================================================ AUTOMATIZACIONES */
+/* ============================================================ AUTOMATIZACIONES
+
+   Esta pantalla quedó de otra época. Decía que el CRM era KOMMO y que
+   la cobranza por WhatsApp la hacía un bot propio, y ninguna de las
+   dos cosas es cierta.
+
+   Cómo es hoy:
+
+     Este suite es el ERP CENTRAL. Aquí viven el inventario, la
+     cartera, los contratos, los expedientes y la contabilidad. Es la
+     fuente de la verdad: lo que diga el suite es lo que hay.
+
+     NUO es el CRM y el cobrador por WhatsApp con IA. Conversa con el
+     cliente, le recuerda su cuota, le manda el enlace de pago y
+     atiende al prospecto. Tiene su propia inteligencia — no la
+     ponemos nosotros.
+
+     WABI es el canal. NUO no habla WhatsApp directo: pasa por Wabi.
+
+   Y la regla que ordena todo: **NUO conversa, nosotros sabemos.**
+   NUO no puede saber por su cuenta qué lote quedó vendido hace diez
+   minutos, cuánto debe alguien hoy, o si un pago ya entró. Eso lo
+   sabe el suite, y por eso la integración va en dos direcciones:
+
+     NUO → suite   consulta   ¿qué hay libre? ¿cuánto debe? ¿cuánto sale?
+     suite → NUO   avisa      se vendió un lote, entró un pago, cayó en mora
+
+   Sin el segundo sentido, NUO ofrece lotes ya vendidos y cobra cuotas
+   ya pagadas.
+   ============================================================ */
 const AUTOS=[
-  {ic:'⇄',t:'Integración KOMMO ↔ Hub',cad:'Tiempo real · webhooks',st:'pend',
-   pasos:['Sincroniza leads de KOMMO al Hub sin duplicar (kommo_id).','Actualiza etapas del embudo en ambos sentidos.'],
-   esc:'Requiere API key de KOMMO (API v4 + OAuth2 disponible).'},
-  {ic:'⇄',t:'Integración CRM sistemasenlaza ↔ Hub',cad:'Cada hora · incremental',st:'pend',
-   pasos:['Importa inventario, contratos, giros y pagos.','Sincronía por fecha de modificación.'],
-   esc:'Requiere export/API del proveedor.'},
-  {ic:'✆',t:'Cobranza por WhatsApp (bot)',cad:'Mensual + por evento',st:'design',
-   pasos:['Emite la cuota del mes y envía el enlace de pago.','Avisa antes del vencimiento y recuerda después.','Manda el estado de cuenta cuando lo piden.','Cotiza lotes disponibles e intenta cerrar.'],
-   esc:'Escala a una persona tras 3 recordatorios sin pago o caso atípico.'},
-  {ic:'🗀',t:'Solicitudes → Buró de créditos',cad:'Semanal',st:'design',
-   pasos:['Arma el expediente al ingresar la venta.','Agrupa las solicitudes de la semana en un paquete.'],
-   esc:'Escala al vendedor los expedientes incompletos.'},
-  {ic:'❒',t:'Ventas confirmadas → Contabilidad',cad:'Por evento',st:'design',
-   pasos:['Pide verificar el depósito al registrar el pago.','Concilia contra la cuenta bancaria acreditada.'],
-   esc:'Escala si el depósito no cuadra.'},
+  {ic:'◆',t:'Este suite · ERP central',cad:'La fuente de la verdad',st:'ok',
+   pasos:['Inventario, cartera, contratos, expedientes y contabilidad.',
+          'Lo que diga el suite es lo que hay: NUO y el equipo leen de aquí.'],
+   esc:'Nada se eleva: es la base de todo lo demás.'},
+
+  {ic:'⇄',t:'NUO consulta al suite',cad:'Tiempo real · 18 endpoints',st:'pend',
+   pasos:['Qué lotes hay libres y a qué precio.',
+          'Cuánto debe un cliente, su próxima cuota y su mora.',
+          'Cuánto sale un lote a cada plazo.'],
+   esc:'Falta generar la llave de NUO y pasársela · node tools/llave-nuo.js'},
+
+  {ic:'↗',t:'El suite le avisa a NUO',cad:'Por evento',st:'pend',
+   pasos:['Se vendió un lote — que deje de ofrecerlo.',
+          'Entró un pago — que deje de cobrarlo.',
+          'Un contrato cayó en mora — que empiece a recordarlo.'],
+   esc:'Falta lo que solo Wabi puede dar: la URL, cómo se autentica y qué forma espera el cuerpo. Mientras tanto los eventos solo se registran.'},
+
+  {ic:'✆',t:'NUO · cobrador por WhatsApp con IA',cad:'De NUO, por el canal de Wabi',st:'ext',
+   pasos:['Conversa con el cliente y le recuerda su cuota.',
+          'Manda el enlace de pago y el estado de cuenta.',
+          'Atiende al prospecto y cotiza con nuestros números.'],
+   esc:'La inteligencia es de NUO. Nosotros le damos las cifras y le avisamos lo que cambia.'},
+
+  {ic:'❒',t:'Cobro confirmado → partida contable',cad:'Por evento',st:'ok',
+   pasos:['Al confirmarse un pago se asienta solo, en las dos sociedades.',
+          'Si falta una cuenta por mapear, el asiento se encola en vez de tumbar el cobro.'],
+   esc:'Se enciende cuando el catálogo esté mapeado · select * from v_catalogo_pendiente;'},
+
+  {ic:'⇄',t:'Cuadre bancario',cad:'Al subir el estado de cuenta',st:'ok',
+   pasos:['Cruza cada depósito de Banrural contra la cuota que le toca.',
+          'Lo que casa por referencia y monto queda listo para aplicar.'],
+   esc:'Lo ambiguo, parcial o huérfano espera a que alguien decida. Y quien concilia no confirma.'},
+
   {ic:'%',t:'Comisiones quincenales',cad:'Día 15 y fin de mes',st:'design',
-   pasos:['Calcula sobre el cobro efectivo del período.','Arma la liquidación por vendedor.'],
-   esc:'Escala diferencias o ajustes manuales.'},
+   pasos:['Calcula sobre el cobro efectivo del período.',
+          'Arma la liquidación por vendedor y amarra sus comisiones.'],
+   esc:'Retiene la comisión mientras el expediente esté incompleto.'},
+
+  {ic:'✉',t:'Recordatorios de cobranza del hub',cad:'Todos los días a las 9:00',st:'pend',
+   pasos:['Arma la lista de a quién le vence hoy y quién ya venció.',
+          'Con MODO_SIMULACION dice a quién le escribiría, sin escribirle.'],
+   esc:'Falta desplegar el hub (sol-hub) en Vercel. No hace falta para que el equipo trabaje.'},
 ];
+
+/* Lo que se retiró y por qué, para que nadie lo vuelva a proponer:
+
+     KOMMO            era el CRM. Ahora es NUO.
+     Bot propio de    estaba programado y se retiró: NUO trae su propia
+     WhatsApp         IA. Lo que se conservó son los textos que dependen
+                      de la cartera —monto, fecha y mora—, porque esos
+                      salen de los números, no de la conversación.
+     sistemasenlaza   el CRM viejo del que se importó la cartera. Ya se
+                      importó; no hay sincronía que mantener. */
+
 function renderAutomatizaciones(){
-  const badge=s=>s==='pend'?'<span class="badge b-pend">Requiere API</span>':'<span class="badge b-ok">Diseñada</span>';
-  let h=`<div class="hint" style="margin-bottom:14px">Todo corre solo y <b>solo se eleva a un humano por excepción</b>.</div><div class="auto-grid">`;
+  const badge=s=>({
+    ok:   '<span class="badge b-ok">Funcionando</span>',
+    pend: '<span class="badge b-pend">Falta conectar</span>',
+    ext:  '<span class="badge b-apar">Lo hace NUO</span>',
+    design:'<span class="badge">Diseñada</span>'
+  })[s] || '';
+  let h=`<div class="hint" style="margin-bottom:14px">
+    <b>Este suite es el ERP central</b> — inventario, cartera, contratos, expedientes y
+    contabilidad. <b>NUO</b> es el CRM y el cobrador por WhatsApp con IA, y habla por el
+    canal de <b>Wabi</b>.<br>
+    La regla que ordena todo: <b>NUO conversa, nosotros sabemos</b>. NUO no puede saber por su
+    cuenta qué lote se vendió hace diez minutos ni si un pago ya entró — por eso la
+    integración va en los dos sentidos.
+  </div><div class="auto-grid">`;
   AUTOS.forEach(a=>{h+=`<div class="auto-card"><div class="auto-h"><div class="auto-ic">${a.ic}</div>
     <div><div class="auto-t">${a.t}</div><div class="auto-cad">${a.cad}</div></div>
     <div style="margin-left:auto">${badge(a.st)}</div></div>
     <ul class="auto-steps">${a.pasos.map(p=>`<li>${p}</li>`).join('')}</ul>
     <div class="auto-esc">↑ ${a.esc}</div></div>`;});
-  h+=`</div><div class="card"><div class="card-h"><h2>Vista previa · Bot de cobranza WhatsApp</h2></div>
+  /* La conversación la lleva NUO, no nosotros. Lo que sale acá es de
+     dónde salen sus cifras — que es lo único que nos toca. */
+  h+=`</div><div class="card"><div class="card-h"><h2>Quién dice qué</h2>
+      <div class="hint">La conversación es de NUO. Los números son nuestros.</div></div>
     <div class="card-b"><div class="wa">
-      <div class="wa-b bot">Hola Keyla, le saluda La Esperanza. Su cuota de julio por <b>Q 1,208.00</b> vence el <b>20/07</b>. Puede pagar aquí: <u>pago.recurrente.com/…</u></div>
+      <div class="wa-b bot">Hola Keyla, le saluda La Esperanza. Su cuota de este mes por
+        <b>Q 1,208.00</b> vence el <b>20</b>. Puede pagar aquí: <u>pago.recurrente.com/…</u></div>
       <div class="wa-b me">Ya deposité, aquí la boleta</div>
-      <div class="wa-b bot">¡Gracias! Su pago quedó registrado y pasa a verificación. Saldo: <b>Q 84,585.00</b>. Próxima cuota: <b>20/08</b>.</div>
+      <div class="wa-b bot">¡Gracias! Su pago quedó registrado y pasa a verificación.
+        Saldo: <b>Q 84,585.00</b>. Próxima cuota: <b>el 20 del mes que viene</b>.</div>
       <div class="wa-b me">¿Tienen lotes de esquina disponibles?</div>
       <div class="wa-b bot">Sí, tenemos el <b>K-04 (203 m²)</b>. ¿Le agendo una llamada con un asesor?</div>
+    </div>
+    <div class="hint" style="margin-top:14px">
+      Las palabras las pone la IA de NUO. <b>Cada cifra en negrita sale de este suite</b>:
+      el monto de la cuota y su vencimiento del plan de giros, el saldo de la cartera, y el
+      lote libre del inventario. Si el suite no le avisa que K-04 se vendió, NUO lo sigue
+      ofreciendo — por eso el aviso de vuelta no es un adorno.
     </div></div></div>`;
   C().innerHTML=h;
 }
