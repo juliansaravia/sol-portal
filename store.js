@@ -771,7 +771,7 @@ async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, res
     const r = await sbCrearContrato({
       lote: l, cliente_id: cli.id, persona_id: vend ? vend.id : null,
       enganche: enganche !== undefined ? enganche : (reserva !== undefined ? reserva : ENGANCHE_MIN),
-      plazo: plazo || girosSaldo || 60, origen: origen || 'Campo'
+      plazo: plazo || girosSaldo || 60, origen: origen || 'Campo', estado: 'borrador'
     });
     if (!r.ok) { avisar(r.error); return null; }
 
@@ -792,7 +792,7 @@ async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, res
   DB.meta.correlativo++;
   const ct = {
     id: uid(), no: 'SD-' + DB.meta.correlativo, lote, clienteId: cli.id,
-    fecha: HOY_ISO, precio: l.precio, estado: 'en_aprobacion',
+    fecha: HOY_ISO, precio: l.precio, estado: 'borrador',
     vendedor: vendedor || 'Compra en línea', firma: 'firmado',
     origen: origen || 'Campo', integrantes: [], recaudadoBase: 0, fuente: 'Suite',
     ingresoDeclarado: ingresoMensual || null, constancia: constancia || null
@@ -1082,6 +1082,21 @@ async function agregarIntegrante(contratoId, nombre, cargo) {
   ct.integrantes = ct.integrantes || [];
   ct.integrantes.push({ id: uid(), nombre, cargo });
   saveDB();
+}
+/* Del borrador al comité. Sólo con el expediente completo: lo que exige
+   el catálogo documento_requerido (14_documentos.sql + 27), con archivo. */
+async function enviarAprobacion(id) {
+  const ct = getContrato(id); if (!ct) return false;
+  if (ct.estado !== 'borrador') { avisar('Esta venta ya fue enviada.'); return false; }
+  const falta = (typeof faltantesDe === 'function' ? faltantesDe(ct) : []).filter(f => f.grave !== false);
+  if (falta.length) { avisar('Falta expediente: ' + falta.map(f => f.que).join(' · ')); return false; }
+  if (typeof hayBase === 'function' && hayBase()) {
+    const r = await sbEstadoContrato(id, 'en_aprobacion');
+    if (!r.ok) { avisar(r.error); return false; }
+  } else { saveDB(); }
+  ct.estado = 'en_aprobacion';
+  await registrarGestion(id, 'Bitácora Socios', 'Enviado', 'Expediente completo · enviado al comité');
+  return true;
 }
 async function aprobarContrato(id) {
   const ct = getContrato(id); if (!ct) return false;

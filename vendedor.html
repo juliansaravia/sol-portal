@@ -2,7 +2,10 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#F7F8F7" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="SOL Ventas" />
 <title>Sol Inmobiliaria · Portal de Vendedores</title>
 <link rel="stylesheet" href="styles.css" />
 </head>
@@ -60,6 +63,7 @@
   </main>
 </div>
 
+<nav class="tabbar" id="tabbar"><button class="tab-item" data-view="inicio"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></span><span>Inicio</span></button><button class="tab-item" data-view="cotizador"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/></svg></span><span>Cotizar</span></button><button class="tab-item" data-view="vender"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></span><span>Vender</span></button><button class="tab-item" data-view="clientes"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-5-6.3"/></svg></span><span>Clientes</span></button><button class="tab-item" data-view="comisiones"><span class="nav-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 5L5 19M6.5 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM17.5 20a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/></svg></span><span>Comisiones</span></button></nav>
 <div class="scrim" id="scrim" hidden></div>
 <div class="drawer" id="drawer" hidden></div>
 <div class="modal-scrim" id="modalScrim" hidden><div class="modal" id="modal"></div></div>
@@ -86,6 +90,7 @@
 <script src="comisiones.js"></script>
 <script src="contrato.js"></script>
 <script src="cotizacion.js"></script>
+<script src="expedientes.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

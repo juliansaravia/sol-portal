@@ -40,6 +40,7 @@ function faltantesDe(ct) {
     ? DB.documentosRequeridos.filter(r => r.obligatorio)
     : [{ codigo:'dpi', nombre:'DPI del titular', caras:2 },
        { codigo:'contrato', nombre:'Contrato firmado', caras:1 },
+       { codigo:'dpi_pariente', nombre:'DPI del pariente o fiador', caras:2 },
        { codigo:'plan_pagos', nombre:'Plan de pagos firmado', caras:1 }];
 
   const f = [];

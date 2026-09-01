@@ -361,11 +361,22 @@ async function opcional(tabla, columnas) {
  * que alguien se acuerde de pegar un .sql.
  */
 async function conRespaldo(tabla, base, nuevas) {
-  try { return await todas(tabla, base + ',' + nuevas); }
-  catch (e) {
-    console.warn(`[datos] ${tabla} sin ${nuevas} · falta correr su migración`);
-    return await todas(tabla, base);
+  /* Columna por columna: si falta sólo `vendedor_hasta` (migración 26),
+     antes se perdía el grupo entero —auth_uid incluido— y todo el equipo
+     aparecía «Sin acceso». Se quita la que la base nombra y se reintenta. */
+  let lista = nuevas.split(',').map(x => x.trim()).filter(Boolean);
+  for (let i = 0; i <= lista.length; i++) {
+    try { return await todas(tabla, [base].concat(lista).join(',')); }
+    catch (e) {
+      const msg = String(e && e.message || e);
+      const col = (msg.match(/column\s+[a-z_]+\.([a-z_]+)\s+does not exist/i) || msg.match(/find the ['"]([a-z_]+)['"] column/i) || msg.match(/([a-z_]+) does not exist/i) || [])[1];
+      const quitar = col && lista.includes(col) ? col : (lista.length ? lista[lista.length - 1] : null);
+      if (!quitar) throw e;
+      console.warn(`[datos] ${tabla} sin ${quitar} · falta correr su migración`);
+      lista = lista.filter(x => x !== quitar);
+    }
   }
+  return await todas(tabla, base);
 }
 
 async function todas(tabla, columnas, tam = 1000) {

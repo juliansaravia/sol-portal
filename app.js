@@ -421,15 +421,22 @@ function setView(v){
   if(SCREEN==='app' && ROLES[ROLE] && !ROLES[ROLE].views.includes(v)) return;
   try{ if(location.hash.slice(1)!==v) history.replaceState(null,'','#'+v); }catch(e){}
   vista=v;
-  document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
+  document.querySelectorAll('.nav-item,.tab-item').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
   document.getElementById('viewTitle').textContent=TITLES[v][0];
   document.getElementById('viewSub').textContent=TITLES[v][1];
   const faltaCartera = typeof DB!=='undefined' && DB.meta && DB.meta.carteraLista === false
                     && VISTAS_CON_CARTERA.includes(v);
-  ({inicio:renderInicio,asuntos:renderAsuntos,cotizador:renderCotizador,vender:renderVender,inventario:renderInventario,contratos:renderContratos,
-    clientes:renderClientes,aprobacion:renderAprobacion,cobranza:renderCobranza,
-    confirmacion:renderConfirmacion,comisiones:renderComisiones,reporteria:renderReporteria,
-    agenda:renderAgenda,recaudacion:renderRecaudacion,conciliacion:renderConciliacion,seguridad:renderSeguridad,expedientes:renderExpedientes,equipo:renderEquipo,automatizaciones:renderAutomatizaciones}[v])();
+  /* Por NOMBRE y resuelto al momento: vendedor.html y cliente.html no
+     cargan seguridad.js ni expedientes.js a propósito, y un objeto que
+     nombre `renderSeguridad` revienta al construirse aunque nadie vaya a
+     esa pantalla. Así reventaba TODA la navegación del portal de
+     vendedores. */
+  const RENDER_DE={inicio:'renderInicio',asuntos:'renderAsuntos',cotizador:'renderCotizador',vender:'renderVender',inventario:'renderInventario',contratos:'renderContratos',
+    clientes:'renderClientes',aprobacion:'renderAprobacion',cobranza:'renderCobranza',confirmacion:'renderConfirmacion',comisiones:'renderComisiones',reporteria:'renderReporteria',
+    agenda:'renderAgenda',recaudacion:'renderRecaudacion',conciliacion:'renderConciliacion',seguridad:'renderSeguridad',expedientes:'renderExpedientes',equipo:'renderEquipo',automatizaciones:'renderAutomatizaciones'};
+  const fn=window[RENDER_DE[v]];
+  if(typeof fn!=='function'){ C().innerHTML=`<div class="card"><div class="empty">Esta pantalla no está disponible en este portal.</div></div>`; return; }
+  fn();
 
   aplicarSoloLectura();
 
@@ -763,20 +770,27 @@ function panZoom(svg){
 
 /* ============================================================ VENDER */
 function renderVender(){
-  const mios=DB.contratos.filter(c=>ROLE!=='vendedor'||c.vendedor===(window.__user&&window.__user.name)||true);
-  let h=`<div class="card"><div class="card-b" style="text-align:center;padding:34px 24px">
-    <h2 style="color:var(--dark);font-size:20px;margin-bottom:6px">Registra una nueva venta</h2>
-    <p class="hint" style="margin-bottom:18px">Captura el lote y los datos del cliente. La venta se envía al comité de crédito.</p>
-    <button class="btn btn-primary" style="font-size:15px;padding:12px 26px" onclick="modalNuevoContrato()">＋ Ingresar venta</button>
-    </div></div>
-    <div class="card"><div class="card-h"><h2>Ventas ingresadas</h2></div><div class="card-b" style="padding:0">
-    <table class="data"><thead><tr><th>No.</th><th>Lote</th><th>Cliente</th><th>Fecha</th><th class="num">Valor</th><th>Estado</th></tr></thead><tbody>`;
-  if(!mios.length)h+=`<tr><td colspan="6" class="empty">Aún no hay ventas registradas</td></tr>`;
-  mios.slice().sort((a,b)=>b.no.localeCompare(a.no)).forEach(c=>{
-    h+=`<tr class="click" onclick="abrirContrato('${c.id}')"><td><b>${c.no}</b></td><td>${c.lote}</td>
-      <td>${esc(nombreCliente(c.clienteId))}</td><td>${fmtD(c.fecha)}</td>
-      <td class="num">${Qk(c.precio)}</td><td>${estadoBadge(c.estado)}</td></tr>`;});
-  h+=`</tbody></table></div></div>`;
+  const yo=(window.__user&&window.__user.name)||'';
+  const mios=DB.contratos.filter(c=>ROLE!=='vendedor'||c.vendedor===yo);
+  const ETQ={borrador:['Falta expediente','b-pend'],en_aprobacion:['En comité','b-info'],aprobado:['Aprobada','b-ok'],anulado:['Denegada / anulada','b-mora']};
+  let h=`<div class="card"><div class="card-b" style="text-align:center;padding:26px 20px">
+    <h2 style="color:var(--ink);font-size:19px;margin-bottom:6px">Registrá una venta</h2>
+    <p class="hint" style="margin-bottom:16px">Lote, comprador y pariente. Después el expediente, y se envía al comité.</p>
+    <button class="btn btn-primary btn-lg" onclick="modalNuevoContrato()">＋ Ingresar venta</button>
+    </div></div>`;
+  const grupos=[['borrador','Por completar'],['en_aprobacion','En el comité'],['aprobado','Aprobadas'],['anulado','Denegadas']];
+  grupos.forEach(([est,tit])=>{
+    const L=mios.filter(c=>c.estado===est).sort((a,b)=>b.no.localeCompare(a.no));
+    if(!L.length) return;
+    h+=`<div class="sect-t" style="margin:16px 0 8px">${tit} · ${L.length}</div><div class="tarjetas">`;
+    L.forEach(c=>{ const falta=(est==='borrador'&&typeof faltantesDe==='function')?faltantesDe(c).length:0;
+      h+=`<div class="tarjeta" onclick="abrirContrato('${c.id}','${est==='borrador'?'docs':'ficha'}')">
+        <div class="tarjeta-top"><b>${c.no}</b><span class="badge ${ETQ[est][1]}">${ETQ[est][0]}</span></div>
+        <div>${esc(nombreCliente(c.clienteId))}</div>
+        <div class="hint">Lote ${esc(c.lote)} · ${Qk(c.precio)} · ${fmtD(c.fecha)}${falta?` · <b style="color:#8A5F12">${falta} papel(es) por subir</b>`:''}</div>
+      </div>`;});
+    h+=`</div>`;});
+  if(!mios.length) h+=`<div class="card"><div class="empty">Todavía no tenés ventas. La primera se registra con el botón de arriba.</div></div>`;
   C().innerHTML=h;
 }
 
@@ -1977,6 +1991,12 @@ function renderAprobacion(){
     <div class="hint">Aprobar genera el plan de giros (Reserva + Cuota Inicial + Saldo Deudor) y marca el lote como vendido.</div>`;
   C().innerHTML=h;
 }
+async function doEnviarAprobacion(id){
+  const ok=await conBoton(()=>enviarAprobacion(id));
+  if(!ok) return;
+  toast('Enviada al comité de crédito ✓ · te avisamos cuando se apruebe', 6000);
+  pintarContrato(); if(typeof vista!=='undefined'&&vista==='vender') renderVender();
+}
 async function doAprobar(id){ if(await aprobarContrato(id)){toast('Contrato aprobado ✓');renderAprobacion();} }
 async function doRechazar(id){ if(await rechazarContrato(id)){toast('Contrato rechazado · lote liberado');renderAprobacion();} }
 
@@ -2888,6 +2908,20 @@ function pintarContrato(){
   }
 
   if(drawerTab==='docs'){
+    if(ct.estado==='borrador'||ct.estado==='en_aprobacion'){
+      const reqs=(DB.documentosRequeridos&&DB.documentosRequeridos.length?DB.documentosRequeridos.filter(r=>r.obligatorio):DOCS_REQ()).slice().sort((a,b)=>(a.orden||0)-(b.orden||0));
+      const ds=documentosDe(ct.id); const conArchivo=t=>ds.filter(d=>d.tipo===t&&d.bucket&&d.ruta).length;
+      const filas=reqs.map(r=>({...r, tiene:conArchivo(r.codigo), ok:conArchivo(r.codigo)>=(r.caras||1)}));
+      const completo=filas.every(f=>f.ok);
+      h+=`<div class="card" style="margin:0 0 14px;border-left:3px solid ${completo?'var(--green)':'var(--gold)'}"><div class="card-b">
+        <b>${ct.estado==='borrador'?(completo?'Expediente completo':'Expediente para enviar a aprobación'):'En el comité de crédito'}</b>
+        <div class="hint" style="margin:4px 0 10px">${ct.estado==='borrador'?'Sin estos papeles la venta no llega al comité. Subilos desde el celular: la cámara abre sola.':'Se aprueba o se deniega desde el portal interno.'}</div>
+        ${filas.map(f=>`<div class="check-row ${f.ok?'hecho':''}"><div class="check-ico">${f.ok?'✓':'○'}</div>
+          <div class="check-txt"><b>${esc(f.nombre)}</b><div class="hint">${f.caras>1?`${f.tiene} de ${f.caras} caras`:(f.ok?'subido':'falta')}</div></div>
+          <div class="check-acc">${f.ok?'':`<button class="btn btn-gold btn-sm" onclick="modalDocumentoTipo('${ct.id}','${f.codigo}')">Subir</button>`}</div></div>`).join('')}
+        ${ct.estado==='borrador'?`<div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" ${completo?'':'disabled title="Falta expediente"'} onclick="doEnviarAprobacion('${ct.id}')">Enviar a aprobación →</button></div>`:''}
+      </div></div>`;
+    }
     h+=`<div class="btn-row" style="margin-top:0"><button class="btn btn-primary btn-sm" onclick="modalDocumento('${ct.id}')">+ Subir respaldo</button></div>`;
 
     /* Lo que falta va arriba. Un expediente completo no necesita que
@@ -3170,6 +3204,10 @@ async function crearContrato(){
   saveDB();
 
   closeModal();
+  /* La venta nace en borrador: lo que sigue es el expediente. Se abre
+     ahí mismo, con la lista de lo que falta y el botón de enviar. */
+  toast('Venta guardada como borrador · ahora el expediente', 5000);
+  drawerTab='docs'; abrirContrato(ct.id,'docs'); return;
   toast('Contrato '+ct.no+' generado → Aprobación');
   if(carga&&carga.nivel==='riesgoso')
     setTimeout(()=>toast('Ojo: la cuota es el '+Math.round(carga.pct*100)+'% del ingreso declarado'),2800);
@@ -3220,6 +3258,7 @@ const DOCS_REQ = () => (typeof DB !== 'undefined' && DB.documentosRequeridos && 
   ? DB.documentosRequeridos
   : [{codigo:'dpi',        nombre:'DPI del titular',      caras:2, obligatorio:true},
      {codigo:'contrato',   nombre:'Contrato firmado',     caras:1, obligatorio:true},
+     {codigo:'dpi_pariente', nombre:'DPI del pariente o fiador', caras:2, obligatorio:true},
      {codigo:'plan_pagos', nombre:'Plan de pagos firmado',caras:1, obligatorio:true}];
 
 /* Boleta de un pago ya registrado (histórico o no). */
@@ -3392,7 +3431,7 @@ function toast(m,ms,esError){clearTimeout(tt);document.querySelector('.toast')?.
   tt=setTimeout(()=>t.remove(),ms||2600);}
 
 /* ---------- Init ---------- */
-document.querySelectorAll('.nav-item').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.view)));
+document.querySelectorAll('.nav-item,.tab-item').forEach(b=>b.addEventListener('click',()=>{setView(b.dataset.view);const sb=document.querySelector('.sidebar');if(sb)sb.classList.remove('abierta');}));
 document.getElementById('scrim').addEventListener('click',closeDrawer);
 document.getElementById('modalScrim').addEventListener('click',e=>{if(e.target.id==='modalScrim')closeModal();});
 window.addEventListener('keydown',e=>{if(e.key==='Escape'){closeDrawer();closeModal();cerrarBusqueda();}});
