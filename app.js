@@ -1921,13 +1921,25 @@ function pintarContrato(){
   }
 
   if(drawerTab==='docs'){
-    h+=`<div class="btn-row" style="margin-top:0"><button class="btn btn-primary btn-sm" onclick="modalDocumento('${ct.id}')">+ Agregar documento</button></div>`;
+    h+=`<div class="btn-row" style="margin-top:0"><button class="btn btn-primary btn-sm" onclick="modalDocumento('${ct.id}')">+ Subir respaldo</button></div>`;
+
+    /* Lo que falta va arriba. Un expediente completo no necesita que
+       nadie lo mire; lo accionable es el hueco. */
+    const falta=(typeof faltantesDe==='function'?faltantesDe(ct):[]).filter(f=>f.grave);
+    if(falta.length)
+      h+=`<div class="aviso-err" style="margin:10px 0">Falta respaldo: ${falta.map(f=>esc(f.que)).join(' · ')}</div>`;
+
     const ds=documentosDe(ct.id);
     if(!ds.length)h+=`<div class="empty">Expediente vacío</div>`;
-    ds.forEach(d=>{h+=`<div class="pay-item"><div class="pay-ico">🗎</div>
+    ds.forEach(d=>{
+      const hayArchivo=!!(d.bucket&&d.ruta);
+      const peso=d.bytes?` · ${(d.bytes/1048576).toFixed(1)} MB`:'';
+      const cara=d.cara?` · ${esc(d.cara)}`:'';
+      h+=`<div class="pay-item"><div class="pay-ico">${hayArchivo?'🗎':'⚠'}</div>
       <div class="pay-main"><div class="pay-title">${esc(d.nombre)}</div>
-      <div class="pay-sub">${esc(d.tipo)} · ${fmtD(d.fecha)}</div></div></div>`;});
-    h+=`<div class="hint">Plantillas del CRM: ${CATALOGOS.plantillas.join(' · ')}</div>`;
+      <div class="pay-sub">${esc(d.tipo)}${cara} · ${fmtD(d.fecha)}${peso}${
+        hayArchivo?'':' · <b>anotado, sin archivo</b>'}</div></div>
+      ${hayArchivo?`<button class="btn btn-ghost btn-sm" onclick="verDocumento('${d.id}')">Ver</button>`:''}</div>`;});
   }
   h+=`</div>`; openDrawer(h);
 }
@@ -2226,22 +2238,67 @@ async function guardarGestion(id){
   await conBoton(()=>registrarGestion(id,v('g-tipo'),v('g-res'),v('g-com')));
   closeModal(); toast('Gestión registrada ✓'); drawerTab='gestiones'; pintarContrato();
 }
+/* ---------- Subir el respaldo ----------
+   Antes esto pedía el NOMBRE del archivo y avisaba «en producción esto
+   sube el archivo al expediente digital». O sea: el expediente se daba
+   por completo con papeles que nadie había subido nunca.
+
+   Ahora sube el archivo de verdad, a un bucket privado, y la fila solo
+   cuenta como respaldo si el archivo llegó. Qué papeles se piden lo dice
+   el catálogo de la base, no esta lista. */
+const DOCS_REQ = () => (typeof DB !== 'undefined' && DB.documentosRequeridos && DB.documentosRequeridos.length)
+  ? DB.documentosRequeridos
+  : [{codigo:'dpi',        nombre:'DPI del titular',      caras:2, obligatorio:true},
+     {codigo:'contrato',   nombre:'Contrato firmado',     caras:1, obligatorio:true},
+     {codigo:'plan_pagos', nombre:'Plan de pagos firmado',caras:1, obligatorio:true}];
+
 function modalDocumento(id){
-  openModal(`<div class="modal-h"><h3>Agregar documento</h3><p>Expediente del contrato</p></div>
+  const reqs=DOCS_REQ();
+  openModal(`<div class="modal-h"><h3>Subir respaldo</h3><p>Expediente del contrato</p></div>
     <div class="modal-b"><div class="form-grid">
-      <div class="field"><label>Tipo</label><select id="d-tipo">
-        <option>DPI</option><option>Comprobante de pago</option><option>Contrato firmado</option>
-        ${CATALOGOS.plantillas.map(x=>`<option>${x}</option>`).join('')}</select></div>
-      <div class="field"><label>Nombre del archivo</label><input id="d-nom" placeholder="dpi_frente.pdf"></div>
-    </div><div class="hint">En producción esto sube el archivo al expediente digital.</div></div>
+      <div class="field"><label>¿Qué documento es?</label><select id="d-tipo" onchange="docCaras()">
+        ${reqs.map(r=>`<option value="${r.codigo}" data-caras="${r.caras}">${esc(r.nombre)}${r.obligatorio?' *':''}</option>`).join('')}
+      </select></div>
+      <div class="field" id="d-caraBox" hidden><label>¿Qué cara?</label>
+        <select id="d-cara"><option value="frente">Frente</option><option value="reverso">Reverso</option></select></div>
+      <div class="field full"><label>Archivo</label>
+        <input id="d-archivo" type="file" accept="image/jpeg,image/png,image/webp,application/pdf"></div>
+    </div>
+    <div class="hint">Foto o PDF. El DPI va por las dos caras — el reverso trae la dirección.
+      Queda en un expediente privado: no hay enlace público a un DPI.</div></div>
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="guardarDoc('${id}')">Agregar</button></div>`);
+      <button class="btn btn-primary" onclick="guardarDoc('${id}')">Subir</button></div>`);
+  docCaras();
+}
+function docCaras(){
+  const sel=document.getElementById('d-tipo'); if(!sel)return;
+  const op=sel.options[sel.selectedIndex];
+  const caja=document.getElementById('d-caraBox');
+  if(caja) caja.hidden = !(op && +op.dataset.caras > 1);
 }
 async function guardarDoc(id){
-  const n=v('d-nom')||v('d-tipo');
-  const r=await conBoton(()=>agregarDocumento(id,v('d-tipo'),n));
+  const codigo=v('d-tipo');
+  const entrada=document.getElementById('d-archivo');
+  const archivo=entrada&&entrada.files&&entrada.files[0];
+  if(!archivo){toast('Elige el archivo a subir');return;}
+  const caja=document.getElementById('d-caraBox');
+  const cara=(caja&&!caja.hidden)?v('d-cara'):null;
+
+  const r=await conBoton(()=>agregarDocumento(id,codigo,archivo,cara));
   if(!r) return;
-  closeModal(); toast('Documento agregado ✓'); drawerTab='docs'; pintarContrato();
+  closeModal(); toast('Documento subido ✓'); drawerTab='docs'; pintarContrato();
+}
+
+/* Abrir un documento es pedir una URL firmada que caduca a los dos
+   minutos. Nunca hay un enlace permanente a un DPI. */
+async function verDocumento(docId){
+  const d=(DB.documentos||[]).find(x=>String(x.id)===String(docId));
+  if(!d) return toast('No se encontró el documento');
+  if(!d.bucket||!d.ruta)
+    return toast('Ese documento se anotó pero nunca se subió el archivo',6000,true);
+  const r=await sbVerDocumento(d.bucket,d.ruta);
+  if(!r.ok) return toast(r.error,6000,true);
+  window.open(r.dato,'_blank','noopener');
 }
 function modalIntegrante(id){
   const cargos=['Titular','Cotitular','Fiador','Beneficiario','Representante'];

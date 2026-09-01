@@ -787,13 +787,24 @@ async function registrarGestion(contratoId, tipo, resultado, comentario) {
                       fecha: new Date().toISOString().slice(0, 16).replace('T', ' '), usuario: (window.__user ? window.__user.name : 'Sistema') });
   saveDB();
 }
-async function agregarDocumento(contratoId, tipo, nombre, url) {
+/**
+ * Agrega un documento al expediente.
+ * @param {*} archivo  un File del navegador — sube de verdad — o un
+ *                     texto, que es el camino viejo: solo anota el
+ *                     nombre y NO cuenta como respaldo.
+ */
+async function agregarDocumento(contratoId, tipo, archivo, cara) {
   if (typeof hayBase === 'function' && hayBase()) {
-    const r = await sbDocumento(contratoId, tipo, nombre, url);
+    const esArchivo = typeof File !== 'undefined' && archivo instanceof File;
+    const r = esArchivo
+      ? await sbSubirDocumento(contratoId, tipo, archivo, cara)
+      : await sbDocumento(contratoId, tipo, String(archivo || tipo));
     if (!r.ok) { avisar(r.error); return null; }
     return r.dato;
   }
-  DB.documentos.push({ id: uid(), contratoId, tipo, nombre, fecha: HOY_ISO });
+  DB.documentos.push({ id: uid(), contratoId, tipo,
+                       nombre: (archivo && archivo.name) || String(archivo || tipo),
+                       fecha: HOY_ISO });
   saveDB();
 }
 async function agregarIntegrante(contratoId, nombre, cargo) {

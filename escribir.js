@@ -406,6 +406,117 @@ async function sbDocumento(contrato_id, tipo, nombre, url) {
   });
 }
 
+/* ============================================================
+   SUBIR EL RESPALDO
+
+   El DPI, el contrato firmado y el plan de pagos firmado. Hasta
+   ahora el portal solo anotaba el nombre del archivo: la fila
+   decía «dpi_frente.pdf» y no había ningún dpi_frente.pdf en
+   ninguna parte. El expediente se daba por completo con papeles
+   que nadie había subido.
+
+   El archivo va a un bucket PRIVADO. La primera carpeta de la
+   ruta es el id del contrato, y de eso dependen las políticas de
+   Storage: un vendedor solo puede subir y ver los expedientes de
+   los contratos que él vendió.
+
+   Para mirarlo después se pide una URL firmada de vida corta.
+   Nunca hay un enlace permanente a un DPI.
+   ============================================================ */
+
+const MIMES_OK = ['image/jpeg','image/png','image/webp','application/pdf'];
+const EXT = { 'image/jpeg':'jpg', 'image/png':'png', 'image/webp':'webp', 'application/pdf':'pdf' };
+
+/** Lo que cabe en cada bucket, en bytes. Igual que en 04_storage.sql. */
+const TOPE = { expedientes: 10485760, contratos: 20971520, boletas: 5242880, facturas: 5242880 };
+
+/**
+ * Sube un archivo de respaldo y deja la fila que lo registra.
+ * @param {number} contrato_id
+ * @param {string} codigo     del catálogo: 'dpi', 'contrato', 'plan_pagos'…
+ * @param {File}   archivo
+ * @param {string} [cara]     'frente' o 'reverso', para el DPI
+ */
+async function sbSubirDocumento(contrato_id, codigo, archivo, cara) {
+  return escribir('subir el documento', async () => {
+    if (!archivo) throw new Error('No se eligió ningún archivo.');
+
+    const tipo = archivo.type || '';
+    if (!MIMES_OK.includes(tipo))
+      throw new Error('Solo se aceptan fotos (JPG, PNG, WEBP) o PDF. '
+                    + (tipo ? `Ese archivo es ${tipo}.` : 'Ese archivo no dice qué es.'));
+
+    // Qué papel es y a qué bucket va lo dice el catálogo, no el portal.
+    const reqs = oExplota(await SB.from('documento_requerido')
+      .select('codigo,nombre,bucket,caras').eq('codigo', codigo).maybeSingle());
+    if (!reqs) throw new Error(`«${codigo}» no está en el catálogo de documentos.`);
+
+    const tope = TOPE[reqs.bucket] || 10485760;
+    if (archivo.size > tope)
+      throw new Error(`El archivo pesa ${(archivo.size/1048576).toFixed(1)} MB y el máximo es `
+                    + `${Math.round(tope/1048576)} MB. Si es una foto, bájale la resolución.`);
+    if (archivo.size === 0) throw new Error('El archivo está vacío.');
+
+    /* La primera carpeta ES el permiso: `carpeta_id()` la lee y la
+       política de Storage decide con ella. Si esto deja de ser el id
+       del contrato, el vendedor pierde acceso a lo suyo. */
+    const sufijo = cara ? '-' + cara : '';
+    const marca = Date.now().toString(36);
+    const ruta = `${contrato_id}/${codigo}${sufijo}-${marca}.${EXT[tipo]}`;
+
+    const { error: eSubida } = await SB.storage.from(reqs.bucket)
+      .upload(ruta, archivo, { contentType: tipo, upsert: false });
+    if (eSubida) throw eSubida;
+
+    /* Si la fila falla, el archivo queda huérfano en el bucket y el
+       expediente diría que falta. Se limpia antes de propagar el error. */
+    try {
+      const fila = oExplota(await SB.from('documento').insert({
+        contrato_id, tipo: codigo,
+        nombre: archivo.name,
+        url: `${reqs.bucket}/${ruta}`,
+        bucket: reqs.bucket, ruta, mime: tipo, bytes: archivo.size,
+        cara: cara || null,
+        subido_por: yo()
+      }).select('id,contrato_id,tipo,nombre,bucket,ruta,mime,bytes,cara,created_at').single());
+
+      DB.documentos.push({ id: fila.id, contratoId: fila.contrato_id, tipo: fila.tipo,
+                           nombre: fila.nombre, bucket: fila.bucket, ruta: fila.ruta,
+                           mime: fila.mime, bytes: fila.bytes, cara: fila.cara,
+                           fecha: String(fila.created_at).slice(0, 10) });
+      return fila;
+    } catch (e) {
+      await SB.storage.from(reqs.bucket).remove([ruta]);
+      throw e;
+    }
+  });
+}
+
+/** Una URL para ver el archivo. Caduca; no se guarda ni se comparte. */
+async function sbVerDocumento(bucket, ruta, segundos = 120) {
+  return escribir('abrir el documento', async () => {
+    const { data, error } = await SB.storage.from(bucket).createSignedUrl(ruta, segundos);
+    if (error) throw error;
+    return data.signedUrl;
+  });
+}
+
+/** El visto bueno de quien revisó que el papel es el que dice ser. */
+async function sbVerificarDocumento(id) {
+  return escribir('verificar el documento', async () =>
+    oExplota(await SB.from('documento')
+      .update({ verificado_por: yo(), verificado_en: new Date().toISOString() })
+      .eq('id', id).select('id,verificado_en').single()));
+}
+
+/** Qué le falta al expediente de un contrato, según la base. */
+async function sbFaltantes(contrato_id) {
+  return escribir('consultar el expediente', async () =>
+    oExplota(await SB.from('v_expediente_documentos')
+      .select('codigo,nombre,obligatorio,caras,subidos,completo')
+      .eq('contrato_id', contrato_id).order('orden')));
+}
+
 async function sbIntegrante(contrato_id, nombre, cargo) {
   return escribir('agregar el integrante', async () =>
     oExplota(await SB.from('integrante_contrato')
@@ -562,6 +673,8 @@ Object.assign(window, {
   sbRegistrarPago, sbConfirmarPago, sbBorrarPago,
   sbMarcarCobrada, sbMarcarNoCobrada, sbDesmarcarCuota,
   sbGestion, sbDocumento, sbIntegrante,
+  sbSubirDocumento, sbVerDocumento, sbVerificarDocumento, sbFaltantes,
+  MIMES_OK,
   sbGuardarPersona, sbDesactivarPersona,
   sbImportarMovimientos, sbConciliar, sbActualizarConciliacion, sbDescartarConciliacion,
   huellaMovimiento,

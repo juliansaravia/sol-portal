@@ -28,17 +28,37 @@ let EXP_BUSCA  = '';
 function faltantesDe(ct) {
   const c = contactoDe(ct.no) || {};
   const docs = documentosDe(ct.id) || [];
-  const tiene = t => docs.some(d => d.tipo === t);
-  const f = [];
 
-  if (!c.tel)                         f.push({ que: 'teléfono',            grave: true });
-  if (!c.ocupacion)                   f.push({ que: 'ocupación',           grave: false });
-  if (!c.correo)                      f.push({ que: 'correo',              grave: false });
-  if (!tiene('dpi'))                  f.push({ que: 'DPI escaneado',       grave: true });
-  if (!tiene('contrato'))             f.push({ que: 'contrato escaneado',  grave: true });
-  if (!tiene('estado_cuenta'))        f.push({ que: 'estado de cuenta inicial firmado', grave: true });
-  if (ct.enganche_cancelado === false)f.push({ que: 'enganche cancelado',  grave: true });
-  if (ct.contrato_firmado === false)  f.push({ que: 'contrato firmado',    grave: true });
+  /* Un documento cuenta cuando hay ARCHIVO, no cuando hay fila. El
+     portal anotaba nombres (`pendiente:dpi_frente.pdf`) y el expediente
+     se daba por completo con papeles que nadie había subido. */
+  const conArchivo = t => docs.filter(d => d.tipo === t && d.bucket && d.ruta).length;
+
+  /* Qué se exige lo dice el catálogo de la base. La lista de aquí abajo
+     es el respaldo para cuando el portal corre sin conexión. */
+  const reqs = (typeof DB !== 'undefined' && DB.documentosRequeridos && DB.documentosRequeridos.length)
+    ? DB.documentosRequeridos.filter(r => r.obligatorio)
+    : [{ codigo:'dpi', nombre:'DPI del titular', caras:2 },
+       { codigo:'contrato', nombre:'Contrato firmado', caras:1 },
+       { codigo:'plan_pagos', nombre:'Plan de pagos firmado', caras:1 }];
+
+  const f = [];
+  if (!c.tel)                         f.push({ que: 'teléfono',   grave: true });
+  if (!c.ocupacion)                   f.push({ que: 'ocupación',  grave: false });
+  if (!c.correo)                      f.push({ que: 'correo',     grave: false });
+
+  for (const r of reqs) {
+    const hay = conArchivo(r.codigo), caras = r.caras || 1;
+    if (hay >= caras) continue;
+    f.push({
+      que: hay === 0 ? r.nombre.toLowerCase()
+                     : `${r.nombre.toLowerCase()} · falta ${caras - hay} de ${caras} caras`,
+      grave: true
+    });
+  }
+
+  if (ct.enganche_cancelado === false)f.push({ que: 'enganche cancelado', grave: true });
+  if (ct.contrato_firmado === false)  f.push({ que: 'contrato firmado',   grave: true });
   return f;
 }
 

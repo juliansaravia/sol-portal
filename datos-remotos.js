@@ -58,16 +58,17 @@ async function cargarDesdeSupabase() {
   try {
     // Se piden en paralelo: son consultas independientes y la más
     // lenta manda. En serie esto tardaba el triple.
-    const [lotes, contratos, clientes, pagos, giros, equipo, documentos, obligaciones, comisiones] = await Promise.all([
+    const [lotes, contratos, clientes, pagos, giros, equipo, documentos, obligaciones, comisiones, requeridos] = await Promise.all([
       todas('v_inventario', 'proyecto_id,proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado'),
       todas('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,banco,boleta,lote_id,cliente_id,persona_id'),
       todas('cliente', 'id,nombre,dpi,nit,telefono,email,direccion,ocupacion'),
       todas('pago', 'id,contrato_id,monto,fecha_pago,forma_pago,referencia,estado'),
       todas('giro', 'id,obligacion_id,numero,vencimiento,monto,estado,abonado'),
       todas('persona', 'id,nombre,codigo,rol,email,telefono,activo'),
-      todas('documento', 'id,contrato_id,cliente_id,tipo,nombre,created_at'),
+      todas('documento', 'id,contrato_id,cliente_id,tipo,nombre,created_at,bucket,ruta,mime,bytes,cara,verificado_en'),
       todas('obligacion', 'id,contrato_id,tipo,descripcion,monto_total,orden'),
-      todas('comision', 'id,contrato_id,persona_id,monto,base,estado,periodo')
+      todas('comision', 'id,contrato_id,persona_id,monto,base,estado,periodo'),
+      todas('documento_requerido', 'codigo,nombre,descripcion,bucket,caras,obligatorio,orden')
     ]);
 
     const porLote = new Map(lotes.map(l => [l.lote_id, l]));
@@ -98,8 +99,16 @@ async function cargarDesdeSupabase() {
        la pantalla marcaba TODOS los contratos como incompletos. */
     DB.documentos = documentos.map(d => ({
       id: d.id, contratoId: d.contrato_id, clienteId: d.cliente_id,
-      tipo: d.tipo, nombre: d.nombre, fecha: _fecha(d.created_at)
+      tipo: d.tipo, nombre: d.nombre, fecha: _fecha(d.created_at),
+      // Sin archivo no es respaldo, por más que la fila exista.
+      bucket: d.bucket, ruta: d.ruta, mime: d.mime, bytes: d.bytes, cara: d.cara,
+      verificado: !!d.verificado_en
     }));
+
+    /* Qué papeles lleva un expediente lo dice la base, no una lista
+       escrita en el portal. Si el abogado pide uno más, se inserta una
+       fila y la pantalla lo pide sola. */
+    DB.documentosRequeridos = (requeridos || []).sort((a, b) => a.orden - b.orden);
 
     DB.equipo = equipo.map(p => ({
       id: p.id, nombre: p.nombre, codigo: p.codigo,
