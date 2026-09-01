@@ -2411,19 +2411,16 @@ function renderReporteria(){
 
   let h = `<div class="card"><div class="card-b" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
       <div class="chips" style="padding:0;border:0;width:100%">
-        <button class="chip" onclick="repRango('mes')">Este mes</button>
-        <button class="chip" onclick="repRango('anterior')">Mes anterior</button>
-        <button class="chip" onclick="repRango('90')">Últimos 90 días</button>
-        <button class="chip" onclick="repRango('anio')">Este año</button>
+        <button class="chip" onclick="repRango(0)">Este mes</button>
+        <button class="chip" onclick="repRango(1)">Mes anterior</button>
+        <button class="chip" onclick="repRango(90)">Últimos 90 días</button>
+        <button class="chip" onclick="repRango(9)">Este año</button>
         <span class="hint" style="margin-left:auto">Período ${fmtD(n.desde)} – ${fmtD(n.hasta)} · datos al ${fmtD(HOY_ISO)}</span></div>
       <div class="field" style="margin:0"><label>Desde</label>
         <input type="date" id="rep-desde" value="${n.desde}" onchange="REP.desde=this.value;renderReporteria()"></div>
       <div class="field" style="margin:0"><label>Hasta</label>
         <input type="date" id="rep-hasta" value="${n.hasta}" onchange="REP.hasta=this.value;renderReporteria()"></div>
-      <div style="display:flex;gap:6px;margin-left:auto">
-        ${[['Este mes',0],['Mes pasado',1],['Este año',9]].map(([l,k])=>
-          `<button class="btn btn-ghost btn-sm" onclick="repRango(${k})">${l}</button>`).join('')}
-      </div></div></div>`;
+      </div></div>`;
 
   /* Lo del período arriba, porque es lo que se pregunta primero:
      cuánto entró y cuánto falta por entrar. */
@@ -2522,6 +2519,7 @@ function renderReporteria(){
 function repRango(k){
   const hoy = HOY_ISO, a = hoy.slice(0,4), m = +hoy.slice(5,7);
   if(k===9){ REP.desde = a+'-01-01'; REP.hasta = hoy; }
+  else if(k===90){ const d=new Date(hoy+'T00:00:00'); d.setDate(d.getDate()-90); REP.desde=d.toISOString().slice(0,10); REP.hasta=hoy; }
   else {
     const mm = m - k;
     const anio = mm > 0 ? +a : +a - 1;
