@@ -118,6 +118,21 @@ async function cargarDesdeSupabase() {
       estado: l.estado
     }));
 
+    /* La posición en el plano vive en assets/lotes-geo.js (438 lotes,
+       códigos únicos, manzanas A–W). Sólo initDB() —la demostración— la
+       pegaba; los lotes de la base llegaban sin x/y y el mapa decía
+       «438 sin ubicación» con el plano entero dibujado al lado. Se une
+       por clave si el archivo la trae, y si no por código. */
+    const geo = new Map();
+    (window.LOT_GEO || []).forEach(g => { geo.set(g.fase ? claveLote(g.fase, g.id) : g.id, g); });
+    let ubicados = 0;
+    for (const l of DB.lotes) {
+      const g = geo.get(l.clave) || geo.get(l.codigo);
+      if (g && g.x != null) { l.x = g.x; l.y = g.y; ubicados++; }
+    }
+    if (DB.lotes.length && !ubicados)
+      console.warn('[datos] ningún lote coincide con lotes-geo.js: revisá los códigos');
+
     DB.clientes = clientes.map(c => ({
       id: c.id, nombre: c.nombre, apellido: '',
       dpi: c.dpi, nit: c.nit, tel: c.telefono, correo: c.email,
