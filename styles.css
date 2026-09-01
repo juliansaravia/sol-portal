@@ -148,7 +148,12 @@ table.data tr.click:hover td{background:#e9f0ec}
 .pay-amt{font-weight:700;font-size:13px}
 
 /* Modal */
-.modal-scrim{position:fixed;inset:0;background:rgba(20,32,26,.45);z-index:60;display:flex;align-items:center;justify-content:center;padding:20px}
+/* 160, por encima de .login-screen (100). Estaba en 60: el modal del
+   segundo factor nacía DEBAJO de la pantalla de login y no había
+   forma de verlo ni de escribir el código. La contraseña entraba
+   bien, la base pedía el segundo factor, y desde afuera parecía que
+   el botón Entrar no hacía nada. */
+.modal-scrim{position:fixed;inset:0;background:rgba(20,32,26,.45);z-index:160;display:flex;align-items:center;justify-content:center;padding:20px}
 .modal{background:#fff;border-radius:14px;width:560px;max-width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
 .modal-h{padding:20px 24px;border-bottom:1px solid var(--line)}
 .modal-h h3{font-size:17px;color:var(--dark)}
@@ -157,7 +162,11 @@ table.data tr.click:hover td{background:#e9f0ec}
 .modal-f{padding:16px 24px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px}
 
 /* Toast */
-.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--dark);color:#fff;padding:12px 22px;border-radius:10px;font-size:13.5px;z-index:80;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+/* 180, por encima del login y de los modales. En 80 quedaba debajo de
+   .login-screen: TODOS los mensajes de error del login eran
+   invisibles. Se dibujaban detrás de la pantalla, así que un correo
+   mal escrito o una contraseña vencida no decían nada. */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--dark);color:#fff;padding:12px 22px;border-radius:10px;font-size:13.5px;z-index:180;box-shadow:0 8px 24px rgba(0,0,0,.25)}
 
 /* Steps (compra en línea) */
 .steps{display:flex;gap:0;margin-bottom:22px}
