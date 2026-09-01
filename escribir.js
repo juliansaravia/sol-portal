@@ -50,8 +50,19 @@ function traducirError(e, queHacia) {
     return `No tienes permiso para ${queHacia}. Si crees que sí deberías, avisa a administración.`;
   if (/modo consulta/i.test(m))
     return 'El sistema está en modo consulta: todavía no se registra nada.';
-  if (/duplicate key|already exists|unique constraint/i.test(m))
-    return 'Eso ya estaba registrado. Actualiza la pantalla antes de volver a intentarlo.';
+  if (/duplicate key|already exists|unique constraint/i.test(m)) {
+    /* Postgres dice qué chocó: «Key (email)=(x) already exists» en details,
+       o el nombre de la restricción (persona_email_key). Decirlo evita
+       adivinar: «ya estaba registrado» no decía qué. */
+    const det = String((e && e.details) || '') + ' ' + m;
+    const campo = (det.match(/Key \(([a-z_]+)\)/i) || det.match(/_([a-z]+)_key/i) || [])[1] || '';
+    const valor = (det.match(/=\(([^)]*)\)/) || [])[1] || '';
+    const NOMBRE = { email: 'ese correo', codigo: 'ese código', dpi: 'ese DPI', numero: 'ese número', nombre: 'ese nombre' };
+    if (campo in NOMBRE)
+      return `${NOMBRE[campo][0].toUpperCase()+NOMBRE[campo].slice(1)}${valor?` (${valor})`:''} ya lo tiene otro registro. `
+           + (campo === 'email' ? 'Buscalo en Equipo: si es la misma persona duplicada, quitale el correo a la otra fila o dala de baja y fusioná.' : 'Cambialo o corregí el otro.');
+    return 'Eso ya estaba registrado' + (campo ? ` (${campo})` : '') + '. Actualizá la pantalla antes de volver a intentarlo.';
+  }
   if (/violates foreign key/i.test(m))
     return 'Falta un dato relacionado. Puede que el contrato o el lote ya no exista.';
   if (/violates check constraint/i.test(m))
@@ -544,7 +555,9 @@ async function sbGuardarPersona(datos) {
       nota: datos.nota || null
     };
     if (datos.rol)    campos.rol = datos.rol === 'cobrador' ? 'cobranza' : datos.rol;
-    if (datos.email)  campos.email = datos.email;
+    /* Vacío de propósito = quitar el correo (libera un correo tomado por
+       una fila duplicada). undefined = no tocar. */
+    if (datos.email !== undefined) campos.email = String(datos.email || '').trim() || null;
     if (datos.activo !== undefined) campos.activo = !!datos.activo;
     if (datos.vendedorHasta !== undefined) campos.vendedor_hasta = datos.vendedorHasta || null;
     if (datos.externo !== undefined) {
