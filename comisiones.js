@@ -114,7 +114,7 @@ function comisionesPendientes() {
                  && !['liquidada','pagada','anulada'].includes(c.comisionEstado))
     .forEach(c => {
       const p = buscarPersona(c.vendedor);
-      if (!p || !rolComisiona(p.rol)) return;
+      if (!comisionaEn(p, c.fecha)) return;
       const e = (por[p.nombre] = por[p.nombre] ||
         { persona: p, contratos: [], retenidos: [], total: 0, totalRetenido: 0 });
       const com  = calcularComision(c);

@@ -96,6 +96,31 @@ const ROLES_EQUIPO = [
   { id:'confirmacion',label:'Confirmación de pagos',comisiona:false },
 ];
 const rolLabel = id => (ROLES_EQUIPO.find(r=>r.id===id)||{}).label || id;
+
+/* ¿Esta persona comisiona por una venta hecha en esa fecha?
+
+   Comisionar depende del rol que se TENÍA al vender, no del de hoy.
+   Gabriel Reyes vendió hasta el 31 de agosto de 2026 y el 1 de
+   septiembre pasó a Confirmación de pagos: sus 15 ventas siguen
+   siendo suyas y su comisión no desaparece por el cambio de puesto.
+   `vendedorHasta` guarda esa fecha; vacío significa «sin límite». */
+const comisionaEn = (p, fecha) => {
+  if (!p) return false;
+  if (rolComisiona(p.rol)) return true;
+  return !!(p.vendedorHasta && fecha && String(fecha).slice(0,10) <= p.vendedorHasta);
+};
+
+/* Las cuentas donde cae la cobranza. Estaban escritas a mano en dos
+   <select> de app.js, con el número de ALJIBE mal (…8560 por …8726) y
+   en uno de ellos con las etiquetas cruzadas. Como idDeCuenta() busca
+   la fila por número, el pago entraba sin cuenta. Una sola lista, con
+   los mismos números que 15_catalogo_base.sql. */
+const CUENTAS_COBRO = [
+  { numero: '3394008726', dueno: 'ALJIBE',         desde: '2026-08-01' },
+  { numero: '3445903856', dueno: 'SOL Desarrollos', hasta: '2026-07-31' }
+];
+const etiquetaCuenta = c => `Banrural ${c.numero} · ${c.dueno}`;
+const opcionesCuenta = () => CUENTAS_COBRO.map(c => `<option>${etiquetaCuenta(c)}</option>`).join('');
 const rolComisiona = id => !!(ROLES_EQUIPO.find(r=>r.id===id)||{}).comisiona;
 
 /* ---------- Utilidades ---------- */

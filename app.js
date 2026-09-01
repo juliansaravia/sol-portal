@@ -917,10 +917,14 @@ function mensajeRecordatorio(c){
   const nombre=String(c.n||'').split(' ')[0];
   const dif=diasEnt(HOY_ISO,c.f);
   const fecha=new Date(c.f+'T00:00:00').toLocaleDateString('es-GT',{day:'2-digit',month:'long'});
-  const pago='https://pago.recurrente.com/editorialsol';
-  if(dif>0) return `Hola ${nombre}, le saluda La Esperanza 🌿\n\nLe recordamos su cuota ${c.q}/${c.p} del lote ${c.l} por *${Q(c.m)}*, con fecha de pago el *${fecha}*.\n\nPuede pagar aquí: ${pago}\n\nGracias por su puntualidad.`;
+  /* El pago es por transferencia o depósito a la cuenta recaudadora,
+     no por Recurrente: ese enlace era de otra operación y mandaba al
+     cliente a pagar a otro lado. */
+  const cta=CUENTAS_COBRO[0];
+  const pago=`Puede pagar por transferencia o depósito en Banrural:\n*Cuenta monetaria ${cta.numero}*\nA nombre de *${cta.dueno} S.A.*\n\nDespués de pagar, envíenos la foto de la boleta por este medio.`;
+  if(dif>0) return `Hola ${nombre}, le saluda La Esperanza 🌿\n\nLe recordamos su cuota ${c.q}/${c.p} del lote ${c.l} por *${Q(c.m)}*, con fecha de pago el *${fecha}*.\n\n${pago}\n\nGracias por su puntualidad.`;
   if(dif===0) return `Hola ${nombre}, hoy vence su cuota ${c.q}/${c.p} del lote ${c.l} por *${Q(c.m)}*.\n\n${pago}`;
-  return `Hola ${nombre}, notamos que su cuota ${c.q}/${c.p} del lote ${c.l} por ${Q(c.m)} sigue pendiente.\n\nA partir del vencimiento corre una mora del 2% mensual.\n\nPuede regularizar aquí: ${pago}\n\nSi tiene alguna dificultad, escríbanos — buscamos la manera de ayudarle.`;
+  return `Hola ${nombre}, notamos que su cuota ${c.q}/${c.p} del lote ${c.l} por ${Q(c.m)} sigue pendiente.\n\nA partir del vencimiento corre una mora del 2% mensual.\n\n${pago}\n\nSi tiene alguna dificultad, escríbanos — buscamos la manera de ayudarle.`;
 }
 function copiarRecordatorio(contrato,fecha){
   const c=calendario().find(x=>x.c===contrato&&x.f===fecha); if(!c)return;
@@ -993,8 +997,7 @@ function vistaImportar(){
       <div class="hint">Pega aquí lo que descargues de la banca en línea</div></div>
     <div class="card-b">
       <div class="field"><label>Cuenta</label>
-        <select id="cnCuenta"><option>Banrural 3445903856 · ALJIBE</option>
-          <option>Banrural 3394008560 · SOL Desarrollos</option>
+        <select id="cnCuenta">${opcionesCuenta()}
           <option>Banco Industrial</option></select></div>
       <div class="field"><label>Pega el contenido (CSV, o copiado de Excel)</label>
         <textarea id="cnTexto" rows="9" placeholder="Fecha,Documento,Descripcion,Credito
@@ -1291,10 +1294,12 @@ function modalCobro(contrato,fecha){
         <select id="rcForma"><option>Depósito bancario</option><option>Transferencia</option>
           <option>Efectivo en sala de venta</option><option>Pago en línea</option></select></div>
       <div class="field"><label>Cuenta acreditada</label>
-        <select id="rcCuenta"><option>Banrural 3445903856 · SOL Desarrollos</option>
-          <option>Banrural 3394008560 · ALJIBE</option></select></div>
+        <select id="rcCuenta">${opcionesCuenta()}</select></div>
       <div class="field"><label>No. de boleta o referencia</label>
         <input id="rcRef" placeholder="Ej. 4429871"></div>
+      <div class="field"><label>Foto de la boleta *</label>
+        <input id="rcFoto" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment">
+        <div class="hint">JPG, PNG o PDF · máximo 5 MB. Sin la boleta el financiero no tiene contra qué confirmar.</div></div>
       <div class="field"><label>Nota (opcional)</label><input id="rcNota" placeholder=""></div>
       <div class="hint">Queda como <b>pago registrado</b>. Lo aplica a la cartera el financiero al confirmarlo — quien cobra no confirma su propio cobro.</div>
     </div>
@@ -1306,12 +1311,26 @@ async function guardarCobro(contrato,fecha){
   if(!(monto>0)){toast('El monto debe ser mayor que cero');return;}
   const ref=document.getElementById('rcRef').value.trim();
   if(!ref){toast('Anota el número de boleta o referencia');return;}
-  const r=await conBoton(()=>marcarCobrada(contrato,fecha,{monto,
-    forma:document.getElementById('rcForma').value,
-    cuenta:document.getElementById('rcCuenta').value,
-    referencia:ref, nota:document.getElementById('rcNota').value.trim()}));
+  const foto=(document.getElementById('rcFoto')||{}).files;
+  const archivo=foto&&foto[0];
+  if(!archivo){toast('Adjuntá la foto de la boleta: sin ella no se puede confirmar el pago',6000,true);return;}
+  const r=await conBoton(async()=>{
+    const reg=await marcarCobrada(contrato,fecha,{monto,
+      forma:document.getElementById('rcForma').value,
+      cuenta:document.getElementById('rcCuenta').value,
+      referencia:ref, nota:document.getElementById('rcNota').value.trim()});
+    if(!reg) return null;
+    /* La boleta cuelga del pago. Si la subida falla, el pago ya quedó
+       registrado y se dice: es mejor un pago sin foto que un cobro
+       hecho dos veces por reintentar. */
+    if(reg.pagoId && typeof hayBase==='function' && hayBase()){
+      const a=await sbAdjuntar('pago', reg.pagoId, archivo, 'Boleta '+ref);
+      if(!a.ok) toast('El cobro quedó registrado, pero la foto no subió: '+a.error+' · Subila desde el contrato.',9000,true);
+    }
+    return reg;
+  });
   if(!r) return;                      // el motivo ya se mostró
-  closeModal(); toast('Cobro registrado · pendiente de confirmar ✓'); renderRecaudacion();
+  closeModal(); toast('Cobro registrado con su boleta · pendiente de confirmar ✓'); renderRecaudacion();
 }
 
 /* --- Registrar que no se cobró --- */
@@ -1419,7 +1438,7 @@ function renderEquipo(){
   const fila=p=>{
     const cts=contratosDe(p.nombre);
     const val=cts.reduce((s,c)=>s+c.precio,0);
-    const com=rolComisiona(p.rol)?cts.reduce((s,c)=>s+calcularComision(c),0):0;
+    const com=cts.reduce((s,c)=>s+(comisionaEn(p,c.fecha)?calcularComision(c):0),0);
     return `<tr${p.activo?'':' style="opacity:.55"'}>
       <td><b>${esc(p.nombre)}</b>${p.nota?`<div class="ec-obl">${esc(p.nota)}</div>`:''}</td>
       <td><span class="pill">${esc(p.codigo||'—')}</span></td>
@@ -1467,13 +1486,18 @@ function renderEquipo(){
       </div></div>`;
   }
 
-  const raros = act.filter(p=>!rolComisiona(p.rol) && contratosDe(p.nombre).length);
+  /* Raro es tener ventas que no comisionan: ni por el rol de hoy ni por
+     haber sido vendedor cuando se hicieron (vendedorHasta). */
+  const sinComision = p => contratosDe(p.nombre).filter(c=>!comisionaEn(p,c.fecha));
+  const raros = act.filter(p=>sinComision(p).length);
   if(raros.length){
-    const totalCts = raros.reduce((s,p)=>s+contratosDe(p.nombre).length,0);
-    const perdida  = raros.reduce((s,p)=>s+contratosDe(p.nombre).reduce((t,c)=>t+calcularComision(c),0),0);
+    const totalCts = raros.reduce((s,p)=>s+sinComision(p).length,0);
+    const perdida  = raros.reduce((s,p)=>s+sinComision(p).reduce((t,c)=>t+calcularComision(c),0),0);
     h+=`<div class="aviso-err" style="margin-bottom:14px">
       <b>${totalCts} contrato(s)</b> están a nombre de alguien cuyo rol no genera comisión:
-      ${raros.map(p=>`${esc(p.nombre)} (${rolLabel(p.rol)}, ${contratosDe(p.nombre).length})`).join(' · ')}.
+      ${raros.map(p=>`${esc(p.nombre)} (${rolLabel(p.rol)}, ${sinComision(p).length})`).join(' · ')}.
+      <br><span class="hint">Si alguien vendió y después cambió de puesto, en Equipo se le anota
+      hasta qué fecha fue vendedor y sus ventas de antes vuelven a comisionar.</span>
       <br><span class="hint">Así como está, <b>${Q(perdida)}</b> de comisión no la cobra nadie.
       O esas ventas son de otra persona y hay que reasignarlas, o el rol está mal puesto.
       El Estado de Cartera traía ese nombre en la columna de vendedor; el sistema no lo inventó.</span></div>`;
@@ -1579,7 +1603,7 @@ async function invitarATodos(){
 function modalDarDeBaja(id){
   const p=DB.equipo.find(x=>mismoId(x.id,id)); if(!p) return;
   const cts=contratosDe(p.nombre);
-  const com=rolComisiona(p.rol)?cts.reduce((s,c)=>s+calcularComision(c),0):0;
+  const com=cts.reduce((s,c)=>s+(comisionaEn(p,c.fecha)?calcularComision(c):0),0);
 
   openModal(`<div class="modal-h"><h3>Dar de baja a ${esc(p.nombre)}</h3>
       <p>${rolLabel(p.rol)}${p.codigo?' · '+esc(p.codigo):''}</p></div>
