@@ -128,7 +128,24 @@ function avisar(mensaje) {
   if (typeof toast === 'function') toast(mensaje, 7000, true);
   else alert(mensaje);
 }
-const HOY_ISO = '2026-08-03';   // fecha de corte del sistema
+/* ------------------------------------------------------------
+   Hoy es hoy
+
+   Esto estaba clavado en '2026-08-03': la fecha en que se congeló la
+   foto de julio. Servía cuando los datos eran una foto — todo tenía
+   que mirarse desde el mismo día para que cuadrara con el Excel.
+
+   Con la base conectada es al revés: la mora corre, las cuotas vencen
+   y la agenda de cobranza tiene que abrir en la semana de hoy. Con la
+   fecha vieja, la agenda mostraba la semana del 3 de agosto para
+   siempre y la mora se quedaba quieta.
+
+   `window.FECHA_CORTE` sigue permitiendo fijarla, para pruebas o para
+   reproducir un cierre.
+   ------------------------------------------------------------ */
+const HOY_ISO = (typeof window !== 'undefined' && window.FECHA_CORTE)
+  ? window.FECHA_CORTE
+  : new Date().toISOString().slice(0, 10);
 const addMonths = (iso, m) => { const d = new Date(iso + 'T00:00:00'); d.setMonth(d.getMonth() + m); return d.toISOString().slice(0, 10); };
 
 /* ---------- Persistencia ---------- */
@@ -544,7 +561,43 @@ function estadoCuentaCrudo(ct) {
 }
 
 /* ---------- Accesores ---------- */
-const getLote = c => DB.lotes.find(l => l.codigo === c);
+/* ------------------------------------------------------------
+   Un lote se identifica por FASE + CÓDIGO, no por código
+
+   Hay 97 códigos que existen en dos fases a la vez: A-01 es un lote
+   de 90 m² en Fase 1 y uno de 606.5 m² en Agrolotes. Esto buscaba
+   solo por código y devolvía el primero que encontrara.
+
+   O sea que el cotizador mostraba el área de un lote con el precio
+   de otro —se veía en pantalla: «A-01 · 606.5 m²» arriba y «A-01 ·
+   90 m²» abajo— y, peor, una venta podía quedar registrada contra
+   el lote equivocado, en la fase equivocada.
+
+   `datos-remotos.js` ya arma la llave buena (`clave` = fase·código)
+   justo por esto. Faltaba usarla.
+   ------------------------------------------------------------ */
+function getLote(x) {
+  if (!x) return undefined;
+  const v = String(x);
+
+  // La llave completa: fase·código. Es la que manda.
+  const porClave = DB.lotes.find(l => l.clave === v);
+  if (porClave) return porClave;
+
+  const porCodigo = DB.lotes.filter(l => l.codigo === v);
+  if (porCodigo.length === 1) return porCodigo[0];
+  if (porCodigo.length > 1) {
+    /* Ambiguo. Se devuelve uno para no romper la pantalla, pero queda
+       dicho: quien llamó tenía que haber pasado la clave. */
+    console.warn(`[lote] «${v}» existe en ${porCodigo.length} fases `
+               + `(${porCodigo.map(l => l.fase).join(', ')}). Se usó ${porCodigo[0].fase}. `
+               + `Quien llamó debería pasar la clave, no el código.`);
+  }
+  return porCodigo[0];
+}
+
+/** La llave con la que se debe pedir un lote desde la interfaz. */
+const claveDe = l => (l && (l.clave || l.codigo)) || '';
 const getContrato = id => DB.contratos.find(c => mismoId(c.id, id));
 const contratoDeLote = codigo => DB.contratos.find(c => c.lote === codigo && c.estado !== 'anulado');
 const gestionesDe = id => DB.gestiones.filter(g => g.contratoId === id).sort((a, b) => b.fecha.localeCompare(a.fecha));
@@ -769,11 +822,53 @@ async function desmarcarCuota(contrato, fecha) {
   DB.recaudacion.splice(i, 1); saveDB();
 }
 
+/* ------------------------------------------------------------
+   El calendario de cuotas
+
+   `CALENDARIO` era un archivo de 290 KB con las cuotas de julio, y
+   dejó de desplegarse. Sin él la agenda de cobranza abre vacía: dice
+   «no hay cuotas programadas esta semana» aunque haya 148 contratos
+   pagando.
+
+   Los giros ya vienen de la base —`datos-remotos.js` los trae con su
+   vencimiento, monto y estado—, así que el calendario se arma con
+   ellos. Misma forma que el archivo viejo, para que las pantallas no
+   se enteren:
+
+     c  contrato · f  vence · m  monto · n  cliente
+     l  lote     · q  número de cuota · p  total de cuotas
+   ------------------------------------------------------------ */
+function calendarioDeCartera() {
+  const salida = [];
+  for (const ct of DB.contratos) {
+    if (ct.estado === 'anulado') continue;
+    const giros = (ct.obligaciones || []).flatMap(o => o.giros || []);
+    if (!giros.length) continue;
+    const total = giros.length;
+    giros.forEach((g, i) => {
+      if (g.estado === 'pagado') return;          // ya se cobró, no se agenda
+      salida.push({
+        c: ct.no, f: g.vence, m: g.monto,
+        n: nombreCliente(ct.clienteId), l: ct.lote,
+        q: i + 1, p: total
+      });
+    });
+  }
+  return salida.sort((a, b) => (a.f < b.f ? -1 : a.f > b.f ? 1 : 0));
+}
+
+/* La foto de julio si está; si no, lo que hay en la base. Se recalcula
+   cada vez porque los giros cambian al confirmarse un pago. */
+function calendario() {
+  if (typeof CALENDARIO !== 'undefined' && CALENDARIO && CALENDARIO.length) return CALENDARIO;
+  return calendarioDeCartera();
+}
+
 /** Estado de la semana: lo programado contra lo efectivamente gestionado. */
 function resumenRecaudacion(desde, hasta) {
   // OJO: CALENDARIO se declara con `const`, así que vive en el ámbito léxico
   // global y NO en window. Referenciarlo por window daría siempre vacío.
-  const cal = (typeof CALENDARIO !== 'undefined' ? CALENDARIO : []).filter(c => c.f >= desde && c.f <= hasta);
+  const cal = calendario().filter(c => c.f >= desde && c.f <= hasta);
   const filas = cal.map(c => {
     const r = buscarRecaudo(c.c, c.f);
     return { cuota: c, reg: r || null, estado: r ? r.estado : 'pendiente' };
@@ -848,12 +943,12 @@ async function aprobarContrato(id) {
        dispara la partida contable de la venta. */
     const r = await sbEstadoContrato(id, 'aprobado', 'vendido');
     if (!r.ok) { avisar(r.error); return false; }
-    const l = getLote(ct.lote); if (l) l.estado = 'vendido';
+    const l = getLote(ct.clave || ct.lote); if (l) l.estado = 'vendido';
     await registrarGestion(id, 'Bitácora Socios', 'Solucionado', 'Crédito aprobado por el comité');
     return true;
   }
   ct.estado = 'aprobado'; ct.fechaAprobacion = HOY_ISO;
-  const l = getLote(ct.lote); if (l) l.estado = 'vendido';
+  const l = getLote(ct.clave || ct.lote); if (l) l.estado = 'vendido';
   await registrarGestion(id, 'Bitácora Socios', 'Solucionado', 'Crédito aprobado por el comité');
   saveDB(); return true;
 }
@@ -862,12 +957,12 @@ async function rechazarContrato(id) {
   if (typeof hayBase === 'function' && hayBase()) {
     const r = await sbEstadoContrato(id, 'anulado', 'disponible');
     if (!r.ok) { avisar(r.error); return false; }
-    const l = getLote(ct.lote); if (l) l.estado = 'disponible';
+    const l = getLote(ct.clave || ct.lote); if (l) l.estado = 'disponible';
     await registrarGestion(id, 'Bitácora Socios', 'Solucionado', 'Solicitud rechazada — lote liberado');
     return true;
   }
   ct.estado = 'anulado';
-  const l = getLote(ct.lote); if (l) l.estado = 'disponible';
+  const l = getLote(ct.clave || ct.lote); if (l) l.estado = 'disponible';
   await registrarGestion(id, 'Bitácora Socios', 'Solucionado', 'Solicitud rechazada — lote liberado');
   saveDB(); return true;
 }

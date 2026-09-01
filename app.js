@@ -750,12 +750,13 @@ const isoMas = (base,n)=>{const d=new Date(base+'T00:00:00');d.setDate(d.getDate
 const diasEnt = (a,b)=>Math.round((new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/86400000);
 
 function renderAgenda(){
-  if(typeof CALENDARIO==='undefined'){
-    C().innerHTML=`<div class="card"><div class="empty">No se encontró el calendario de cobranza.</div></div>`;return;}
+  /* El calendario ya no es un archivo: sale de los giros de la base.
+     Si no hay ni una cuota es porque no hay contratos con plan, no
+     porque falte un archivo — y eso se dice abajo, en su lugar. */
   const desde=isoMas(HOY_ISO, agSemana*7);
   const hasta=isoMas(desde,6);
-  const sem=CALENDARIO.filter(c=>c.f>=desde&&c.f<=hasta);
-  const vencidas=CALENDARIO.filter(c=>c.f<HOY_ISO);
+  const sem=calendario().filter(c=>c.f>=desde&&c.f<=hasta);
+  const vencidas=calendario().filter(c=>c.f<HOY_ISO);
   const monto=sem.reduce((s,c)=>s+c.m,0);
 
   let h=`<div class="kpis">
@@ -1859,7 +1860,7 @@ function wizardBody(){
       </div><div class="btn-row"><button class="btn btn-ghost" onclick="onlineBack()">← Atrás</button>
       <button class="btn btn-primary" onclick="onlineNext(2)">Continuar →</button></div>`;
   } else if(s.paso===3){
-    const l=getLote(s.lote);
+    const l=getLote(s.clave || s.lote);
     h+=`<div class="fgrid"><div><div class="f-lbl">Lote</div><div class="f-val">${l.codigo} · ${Qk(l.precio)}</div></div></div>
       <div class="form-grid" style="margin-top:14px">
       <div class="field"><label>Reserva (Q)</label><input id="ol-res" type="number" value="${s.reserva}"></div>
@@ -1868,7 +1869,7 @@ function wizardBody(){
       <div class="btn-row"><button class="btn btn-ghost" onclick="onlineBack()">← Atrás</button>
       <button class="btn btn-primary" onclick="onlineNext(3)">Continuar →</button></div>`;
   } else if(s.paso===4){
-    const l=getLote(s.lote), ini=Math.round(l.precio*0.10), sal=l.precio-s.reserva-ini;
+    const l=getLote(s.clave || s.lote), ini=Math.round(l.precio*0.10), sal=l.precio-s.reserva-ini;
     h+=`<div class="sect-t">Resumen de tu compra</div>
       <div class="money-row"><span>Lote ${l.codigo} (${l.area} m²)</span><span>${Q(l.precio)}</span></div>
       <div class="money-row"><span>Reserva</span><span>${Q(s.reserva)}</span></div>
@@ -2175,7 +2176,7 @@ function modalNuevoContrato(loteSel,pre){
     <div class="modal-b">
       <div class="sect-t">El lote</div>
       <div class="form-grid">
-        <div class="field"><label>Lote *</label><select id="n-lote" onchange="prevPlan()">${disp.map(l=>`<option value="${l.codigo}" ${l.codigo===loteSel?'selected':''}>${l.codigo} · ${l.area} m² · ${Qk(l.precio)}</option>`).join('')}</select></div>
+        <div class="field"><label>Lote *</label><select id="n-lote" onchange="prevPlan()">${disp.map(l=>`<option value="${esc(claveDe(l))}" ${claveDe(l)===loteSel||l.codigo===loteSel?'selected':''}>${l.codigo}${l.fase?` · ${l.fase}`:''} · ${l.area} m² · ${Qk(l.precio)}</option>`).join('')}</select></div>
         <div class="field"><label>Vendedor</label><select id="n-vend">${vendedores().map(x=>`<option>${esc(x.nombre)}</option>`).join('')}</select></div>
         <div class="field"><label>Enganche (Q)</label><input id="n-res" type="number" value="${pre.enganche||ENGANCHE_MIN}" oninput="prevPlan()"></div>
         <div class="field"><label>Plazo (meses)</label><select id="n-plz" onchange="prevPlan()">

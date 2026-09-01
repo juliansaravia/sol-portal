@@ -184,6 +184,16 @@ async function cargarDesdeSupabase() {
     for (const ct of DB.contratos) {
       ct.obligaciones.sort((a, b) => a.orden - b.orden);
       ct.obligaciones.forEach(o => o.giros.sort((a, b) => a.n - b.n));
+
+      /* El plan de pago, que media docena de pantallas dan por hecho.
+         El modo demostración lo arma en crearObligaciones(); acá no lo
+         armaba nadie, así que `ct.plan` era undefined y las pantallas
+         mostraban «Plazo: 0 meses», «Cuota Q 0.00» y «Enganche Q 0.00»
+         encima de contratos que sí tienen plan.
+
+         Es el mismo cálculo verificado contra el contrato J-05. */
+      if (typeof planFinanciamiento === 'function')
+        ct.plan = planFinanciamiento(ct.precio, ct.enganche, ct.plazo, ct.tasa);
     }
 
     /* La comisión la dice la base, no un 2 % recalculado en el navegador.

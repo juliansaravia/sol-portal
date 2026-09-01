@@ -59,7 +59,7 @@ function fechaEnLetras(iso){
 async function generarContrato(id){
   const ct=getContrato(id); if(!ct){toast('Contrato no encontrado');return;}
   const cli=getCliente(ct.clienteId)||{};
-  const l=getLote(ct.lote)||{};
+  const l=getLote(ct.clave || ct.lote)||{};
   const plan=ct.plan||planFinanciamiento(ct.precio,ENGANCHE_MIN,60);
   const E=EMPRESA;
   const nombre=`${cli.nombre||''} ${cli.apellido||''}`.trim().toUpperCase();
