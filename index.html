@@ -3,40 +3,15 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Sol Inmobiliaria · Suite Comercial</title>
-<link rel="stylesheet" href="styles.css" />
+<title>Suite Sol Inmobiliaria</title>
+<!-- No hay menú de portales: cada uno vive en su propia dirección.
+       app.desarrollosol.com    → admin.html    (portal interno)
+       vender.desarrollosol.com → vendedor.html (vendedores)
+     En el dominio de Vercel, la raíz es el portal interno. Decisión
+     del dueño (1 sept 2026): sin opciones que elegir. -->
+<meta http-equiv="refresh" content="0; url=admin.html" />
+<script>location.replace('admin.html' + location.hash);</script>
+<style>body{margin:0;font-family:-apple-system,Arial,sans-serif;background:#14342B;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh}</style>
 </head>
-<body>
-<div class="login-screen">
-  <div class="login-box" style="max-width:700px">
-    <div class="login-brand">Sol Inmobiliaria</div>
-    <div class="login-sub">Suite Comercial · La Esperanza</div>
-    <p class="login-hint">Cada portal vive en su propia dirección</p>
-
-    <div style="text-align:left;margin-bottom:10px;font-size:11px;letter-spacing:1.5px;color:#6B7A72;text-transform:uppercase;font-weight:700">Público — sin login</div>
-    <div class="portal-cards" style="grid-template-columns:1fr;margin-bottom:22px">
-      <a class="portal-card gold" href="comprar.html" style="text-decoration:none">
-        <div class="pc-ico">★</div><div class="pc-t">Embudo de ventas</div>
-        <div class="pc-d">El link para pautar en Facebook, Instagram y TikTok · <b>comprar.html</b></div></a>
-    </div>
-
-    <div style="text-align:left;margin-bottom:10px;font-size:11px;letter-spacing:1.5px;color:#6B7A72;text-transform:uppercase;font-weight:700">Con usuario, contraseña y 2FA</div>
-    <div class="portal-cards">
-      <a class="portal-card" href="admin.html" style="text-decoration:none">
-        <div class="pc-ico">◆</div><div class="pc-t">Portal Interno</div>
-        <div class="pc-d">Administración y Cobranza · admin.html</div></a>
-      <a class="portal-card" href="vendedor.html" style="text-decoration:none">
-        <div class="pc-ico">◫</div><div class="pc-t">Portal de Vendedores</div>
-        <div class="pc-d">Solo ingresar ventas · vendedor.html</div></a>
-      <a class="portal-card" href="cliente.html" style="text-decoration:none">
-        <div class="pc-ico">☺</div><div class="pc-t">Portal de Clientes</div>
-        <div class="pc-d">Estado de cuenta de clientes existentes · cliente.html</div></a>
-      <div class="portal-card" style="opacity:.6;cursor:default">
-        <div class="pc-ico">⚡</div><div class="pc-t">API / Integraciones</div>
-        <div class="pc-d">KOMMO · sistemasenlaza · WhatsApp (por conectar)</div></div>
-    </div>
-    <div class="login-foot">En producción: app. / vender. / mi. / comprar.desarrollosol.com</div>
-  </div>
-</div>
-</body>
+<body><a href="admin.html" style="color:#fff">Entrando al portal interno…</a></body>
 </html>

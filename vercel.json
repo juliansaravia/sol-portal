@@ -1,0 +1,14 @@
+{
+  "cleanUrls": false,
+  "rewrites": [
+    { "source": "/", "has": [{ "type": "host", "value": "vender.desarrollosol.com" }], "destination": "/vendedor.html" },
+    { "source": "/", "has": [{ "type": "host", "value": "app.desarrollosol.com" }],    "destination": "/admin.html" }
+  ],
+  "headers": [
+    { "source": "/(.*)", "headers": [
+      { "key": "X-Frame-Options", "value": "DENY" },
+      { "key": "X-Content-Type-Options", "value": "nosniff" },
+      { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+    ] }
+  ]
+}
