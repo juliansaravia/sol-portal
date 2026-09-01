@@ -104,6 +104,12 @@ const REQUISITOS = [
     },
     siNo: 'La función no está desplegada. Se despliega junto con invitar: npx supabase functions deploy --project-ref wdykbczkihveccgujqfc' },
 
+  { que: 'Correos de invitación que llegan', archivo: 'Supabase → Authentication → Emails → SMTP Settings', pendiente: 'Configurar',
+    prueba: async () => !!(localStorage.getItem('smtp_propio_confirmado')),
+    siNo: 'El remitente incluido de Supabase solo entrega a miembros del dashboard y 2–4 correos por hora: '
+        + 'las invitaciones al equipo no llegan. Configurá un SMTP propio (Google Workspace o Resend) y marcá esta fila como hecha '
+        + 'con: localStorage.setItem(\'smtp_propio_confirmado\',\'1\') · o pedile a Claude que la marque.' },
+
   { que: 'Invitar al equipo desde el portal', archivo: 'supabase functions deploy invitar',
     prueba: async () => {
       const { data: { session } } = await SB.auth.getSession();

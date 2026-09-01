@@ -1808,7 +1808,7 @@ async function invitarA(id){
   if(d.fallaron?.length) return toast(d.fallaron[0].error, 8000, true);
   if(!d.invitados?.length) return toast(d.nota || 'Esa persona ya entra al portal', 6000);
   anotar('equipo.invitar', p.nombre+' · '+p.email);
-  toast(`Invitación enviada a ${p.email}. Si no le llega, que revise no deseados.`, 7000);
+  toast(`Invitación creada para ${p.email}. Si no le llega en 10 minutos, revisá no deseados y el SMTP propio en Supabase (Authentication → Emails): el remitente incluido solo entrega a miembros del dashboard.`, 12000);
   renderEquipo();
 }
 
