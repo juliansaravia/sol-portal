@@ -162,11 +162,21 @@ async function entrar(){
 async function pintarEstado2FA(){
   const caja=document.getElementById('footUser');
   if(!caja || typeof tengoSegundoFactor!=='function' || !hayRemoto()) return;
+
+  /* Escribe SIEMPRE en el mismo hueco, en vez de agregar uno nuevo cada
+     vez. Así se puede volver a pintar después de activarlo — que es lo
+     que hay que hacer: si el botón sigue ahí cuando ya está activo, la
+     pantalla está diciendo algo falso. */
+  let hueco=document.getElementById('foot2FA');
+  if(!hueco){
+    caja.insertAdjacentHTML('beforeend','<div id="foot2FA" style="margin-top:6px"></div>');
+    hueco=document.getElementById('foot2FA');
+  }
   const ya = await tengoSegundoFactor();
-  caja.insertAdjacentHTML('beforeend', ya
-    ? `<div style="margin-top:6px;font-size:11px;opacity:.75">Segundo factor activo</div>`
-    : `<div style="margin-top:6px"><button class="btn btn-ghost btn-sm" style="width:100%"
-         onclick="modalEnrolar2FA()">Activar segundo factor</button></div>`);
+  hueco.innerHTML = ya
+    ? `<div style="font-size:11px;opacity:.75">Segundo factor activo</div>`
+    : `<button class="btn btn-ghost btn-sm" style="width:100%"
+         onclick="modalEnrolar2FA()">Activar segundo factor</button>`;
 }
 
 /* ---------- El código de seis dígitos ---------- */
@@ -234,6 +244,7 @@ async function confirmar2FA(factorId){
   closeModal();
   toast('Segundo factor activado ✓ · desde ahora te va a pedir el código al entrar', 6000);
   anotar('seguridad.2fa', 'Activó el segundo factor');
+  pintarEstado2FA();      // el botón se va y queda dicho que ya está
 }
 
 /* Al recargar la página no hay que volver a escribir la contraseña:
