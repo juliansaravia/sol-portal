@@ -70,9 +70,16 @@
 <div class="drawer" id="drawer" hidden></div>
 <div class="modal-scrim" id="modalScrim" hidden><div class="modal" id="modal"></div></div>
 
+<!-- El portal del cliente carga SOLO lo suyo.
+
+     Antes cargaba los mismos 19 archivos que el portal interno: el
+     motor de comisiones, el módulo de conciliación bancaria, el de
+     seguridad y 75 KB de geometría del plano. No es solo peso — es
+     que cualquier cliente con el inspector abierto podía leer cómo
+     se calculan las comisiones del equipo.
+
+     _pruebas/probar-paginas.mjs comprueba que siga siendo así. -->
 <script>window.PORTAL='cliente';</script>
-<script src="assets/lotes-geo.js"></script>
-<script src="assets/lotes-shape.js"></script>
 <script src="assets/marca.js"></script>
 <script src="data.js"></script>
 <script src="datos-julio.js"></script>
@@ -83,13 +90,7 @@
 <script src="datos-remotos.js"></script>
 <script src="escribir.js"></script>
 <script src="store.js"></script>
-<script src="conciliacion.js"></script>
-<script src="comisiones.js"></script>
-<script src="contrato.js"></script>
 <script src="cotizacion.js"></script>
-<script src="desistimiento.js"></script>
-<script src="expedientes.js"></script>
-<script src="seguridad.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

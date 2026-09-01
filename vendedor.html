@@ -70,6 +70,11 @@
 <div class="drawer" id="drawer" hidden></div>
 <div class="modal-scrim" id="modalScrim" hidden><div class="modal" id="modal"></div></div>
 
+<!-- El vendedor cotiza, ingresa ventas y ve sus propias comisiones.
+     No concilia el banco, no administra permisos y no registra
+     desistimientos: esos módulos no viajan a su navegador.
+     _pruebas/probar-paginas.mjs dibuja sus seis pantallas para
+     comprobar que el recorte no le quitó nada que sí use. -->
 <script>window.PORTAL='vendedor';</script>
 <script src="assets/lotes-geo.js"></script>
 <script src="assets/lotes-shape.js"></script>
@@ -83,13 +88,9 @@
 <script src="datos-remotos.js"></script>
 <script src="escribir.js"></script>
 <script src="store.js"></script>
-<script src="conciliacion.js"></script>
 <script src="comisiones.js"></script>
 <script src="contrato.js"></script>
 <script src="cotizacion.js"></script>
-<script src="desistimiento.js"></script>
-<script src="expedientes.js"></script>
-<script src="seguridad.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
