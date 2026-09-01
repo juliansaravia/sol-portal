@@ -2048,6 +2048,36 @@ function renderReporteria(){
       los acentos se rompen. <b>La cartera y la antigüedad salen al corte de hoy</b>; los
       cobros y las ventas, del período de arriba.</div></div></div>`;
 
+  /* El cuadre contra el modelo financiero. Va antes que las gráficas
+     porque es la pregunta que de verdad se hace en un cierre: ¿el
+     sistema dice lo mismo que el Excel que la gerencia da por bueno? */
+  const cu = cuadreConModelo();
+  const malas = cu.filas.filter(x=>!x.cuadra && !x.nota).length;
+  h+=`<div class="card"><div class="card-h"><h2>Cuadre con el modelo financiero</h2>
+      <span class="hint">${esc(MODELO.archivo)} · al ${fmtD(cu.corte)}</span></div>
+    <div class="card-b" style="padding:0"><table class="data"><thead><tr>
+      <th>Indicador</th><th class="num">Modelo</th><th class="num">Sistema</th>
+      <th class="num">Diferencia</th><th></th></tr></thead><tbody>`;
+  cu.filas.forEach(x=>{
+    const esDinero = x.modelo > 1000;
+    const fmt = v => esDinero ? Qk(v) : String(v);
+    h+=`<tr>
+      <td><b>${esc(x.que)}</b>${x.nota?`<div class="ec-obl">${esc(x.nota)}</div>`:''}</td>
+      <td class="num">${fmt(x.modelo)}</td>
+      <td class="num">${fmt(x.sistema)}</td>
+      <td class="num" style="${x.cuadra?'':'color:#B0562F;font-weight:600'}">${x.dif?fmt(x.dif):'—'}</td>
+      <td style="width:90px">${x.cuadra
+        ? '<span class="badge b-ok">Cuadra</span>'
+        : (x.nota ? '<span class="badge b-apar">Explicado</span>'
+                  : '<span class="badge b-mora">Revisar</span>')}</td></tr>`;
+  });
+  h+=`</tbody></table></div>
+    <div class="card-b"><div class="hint">
+      ${malas===0
+        ? 'Todo lo que se compara directo cuadra, y lo que difiere tiene su explicación escrita.'
+        : `<b style="color:#B0562F">${malas} indicador(es) no cuadran y no hay explicación.</b> Eso hay que resolverlo antes de cerrar.`}
+      El régimen de ISR del modelo es <b>${esc(MODELO.regimenISR)}</b>.</div></div></div>`;
+
   /* Lo de siempre, que sirve para mirar de un vistazo. */
   const mz={}; DB.lotes.forEach(l=>{mz[l.manzana]=mz[l.manzana]||{t:0,v:0};mz[l.manzana].t++;if(l.estado==='vendido')mz[l.manzana].v++;});
   const maxV=Math.max(1,...Object.values(mz).map(m=>m.v));

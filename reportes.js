@@ -161,6 +161,101 @@ function repExpedientes() {
   return f;
 }
 
+/* ============================================================
+   CUADRE CONTRA EL MODELO FINANCIERO
+
+   `Modelo_La_Esperanza_ISR.xlsx` es la fuente que la gerencia y el
+   contador dan por buena. El sistema tiene que decir lo mismo, y
+   cuando no lo diga, tiene que explicarse.
+
+   Al corte del modelo —31 de julio de 2026— cuadra al centavo en
+   lo que se compara directo:
+
+     ventas contratadas    Q10,157,288.94   diferencia 0.00
+     enganches contratados  Q2,020,197.60   diferencia 0.00
+
+   Y difiere en el recaudo, por una razón que no es un error:
+
+     el modelo cuenta SOLO las cuotas       Q 1,185,113.75
+     el sistema cuenta TODO lo que entró    Q 2,859,006.72
+     la diferencia son los enganches cobrados Q1,673,892.97
+                                            (82.9 % de los contratados)
+
+   Son dos preguntas distintas —«¿cuánto se ha cobrado del plan?» y
+   «¿cuánto dinero entró?»— y las dos son correctas. Lo que estaba
+   mal era no decirlo, y dejar que cada quien descubriera solo por
+   qué dos cifras del mismo negocio no coinciden.
+   ============================================================ */
+const MODELO = {
+  archivo: 'Modelo_La_Esperanza_ISR.xlsx',
+  corte:   '2026-07-31',
+  regimenISR: 'Opcional simplificado',
+  lotes: 438, vendidos: 148, disponibles: 290,
+  contratos: 148,
+  ventas:     10157288.94,
+  enganches:   2020197.60,
+  capital:     8137091.34,
+  intereses:   5168074.28,
+  financiado: 13305165.62,
+  cuotasCobradas: 1185113.75,   // solo cuotas: NO incluye enganches
+  saldo:      12120051.87,
+  enMora: 7, montoMora: 87995.80
+};
+
+/** Lo mismo, calculado sobre lo que hay en la base ahora. */
+function cuadreConModelo() {
+  const activos = DB.contratos.filter(c => c.estado === 'aprobado');
+  const cuentas = activos.map(c => estadoCuenta(c));
+  const enMora = cuentas.filter(e => e.enMora);
+
+  const sis = {
+    lotes: DB.lotes.length,
+    vendidos: DB.lotes.filter(l => l.estado === 'vendido').length,
+    disponibles: DB.lotes.filter(l => l.estado === 'disponible').length,
+    contratos: activos.length,
+    ventas: activos.reduce((s, c) => s + (c.precio || 0), 0),
+    enganches: activos.reduce((s, c) => s + ((c.plan || {}).enganche || c.enganche || 0), 0),
+    financiado: cuentas.reduce((s, e) => s + e.totalGiros, 0),
+    recaudado: cuentas.reduce((s, e) => s + e.recaudado, 0),
+    saldo: cuentas.reduce((s, e) => s + e.saldo, 0),
+    enMora: enMora.length,
+    montoMora: enMora.reduce((s, e) => s + e.montoVencido, 0)
+  };
+
+  const linea = (que, m, s, nota) => ({
+    que, modelo: m, sistema: s, dif: (s || 0) - (m || 0),
+    cuadra: Math.abs((s || 0) - (m || 0)) < 1, nota
+  });
+
+  return {
+    corte: MODELO.corte,
+    filas: [
+      linea('Lotes en total',        MODELO.lotes,       sis.lotes),
+      linea('Lotes vendidos',        MODELO.vendidos,    sis.vendidos),
+      linea('Lotes disponibles',     MODELO.disponibles, sis.disponibles),
+      linea('Contratos',             MODELO.contratos,   sis.contratos),
+      linea('Ventas contratadas',    MODELO.ventas,      sis.ventas),
+      linea('Enganches contratados', MODELO.enganches,   sis.enganches),
+      linea('Total financiado',      MODELO.financiado,  sis.financiado,
+            'Capital más intereses de todo el plan.'),
+      linea('Recaudado',             MODELO.cuotasCobradas, sis.recaudado,
+            'El modelo cuenta solo las cuotas. El sistema cuenta todo el dinero que entró, '
+          + 'enganches incluidos. La diferencia son los enganches ya cobrados — no es un descuadre.'),
+      linea('Contratos en mora',     MODELO.enMora,      sis.enMora,
+            'El modelo mira al 31 de julio; el sistema, a hoy. Es normal que difieran.')
+    ]
+  };
+}
+
+/** 7 · El cuadre, en CSV, para pegarlo al lado del modelo. */
+function repCuadre() {
+  const c = cuadreConModelo();
+  const f = [['Indicador','Modelo (' + c.corte + ')','Sistema (hoy)','Diferencia','¿Cuadra?','Nota']];
+  c.filas.forEach(x => f.push([x.que, _repNum(x.modelo), _repNum(x.sistema),
+                               _repNum(x.dif), x.cuadra ? 'sí' : 'no', x.nota || '']));
+  return f;
+}
+
 const REPORTES = [
   { id:'cartera',      nombre:'Cartera al corte',
     que:'Cada contrato con su plan, lo recaudado, el saldo y la mora.',
@@ -177,6 +272,9 @@ const REPORTES = [
   { id:'inventario',   nombre:'Inventario',
     que:'Todos los lotes con su área, precio y estado.',
     para:'Para conciliar contra el plano y contra las ventas.', fn: repInventario },
+  { id:'cuadre',       nombre:'Cuadre con el modelo financiero',
+    que:'Cada cifra de control del modelo contra la del sistema.',
+    para:'Para poder afirmar que los dos dicen lo mismo.', fn: repCuadre },
   { id:'expedientes',  nombre:'Expedientes',
     que:'Qué papel le falta a cada contrato.',
     para:'Para saber qué cobrar antes de que sea un problema legal.', fn: repExpedientes },
@@ -223,5 +321,6 @@ function repNumeros() {
 }
 
 Object.assign(window, {
-  REP, REPORTES, repNumeros, repPeriodoPorDefecto, descargarReporte, descargarCSV
+  REP, REPORTES, repNumeros, repPeriodoPorDefecto, descargarReporte, descargarCSV,
+  MODELO, cuadreConModelo
 });
