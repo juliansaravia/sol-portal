@@ -2177,7 +2177,9 @@ function renderReporteria(){
       <td><b>${esc(r.nombre)}</b><div class="ec-obl">${esc(r.que)}</div></td>
       <td style="font-size:12px;color:var(--muted);max-width:230px">${esc(r.para)}</td>
       <td style="width:120px;text-align:right">
-        <button class="btn btn-ghost btn-sm" onclick="descargarReporte('${r.id}')">Descargar</button></td>
+        ${typeof descargarReporte==='function'
+            ? `<button class="btn btn-ghost btn-sm" onclick="descargarReporte('${r.id}')">Descargar</button>`
+            : `<span class="hint">reportes.js no cargado</span>`}</td>
     </tr>`;
   });
   h += `</tbody></table></div>
@@ -2541,7 +2543,9 @@ function pintarContrato(){
       <div><div class="f-lbl">Teléfono</div><div class="f-val">${esc(cli&&cli.telefono)||'—'}</div></div>
       <div class="f-full"><div class="f-lbl">Correo</div><div class="f-val">${esc(cli&&cli.email)||'—'}</div></div>
     </div>
-    <div class="btn-row"><button class="btn btn-gold btn-sm" onclick="generarContrato('${ct.id}')">📄 Generar contrato</button>
+    <div class="btn-row">${typeof generarContrato==='function'
+        ? `<button class="btn btn-gold btn-sm" onclick="generarContrato('${ct.id}')">📄 Generar contrato</button>`
+        : ''}
       <button class="btn btn-ghost btn-sm" onclick="abrirCliente('${ct.clienteId}')">Ver ficha del cliente</button></div>
     <div class="sect-t">Integrantes del contrato</div>`;
     const ints=ct.integrantes||[];
