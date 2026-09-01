@@ -281,6 +281,23 @@ async function pedirContrasenaNueva(email) {
   return { ok: true };
 }
 
+/* ¿Se llegó desde el enlace del correo (invitación o «olvidé mi
+   contraseña»)? Supabase pone los tokens en el #hash con type=invite o
+   type=recovery; supabase-js abre la sesión sola. Sin esto, la persona
+   entraba con sesión y sin contraseña propia. Se lee UNA vez, antes de
+   que setView() pise el hash. */
+const LLEGO_POR_CORREO = /[#&]type=(invite|recovery|signup|magiclink)/.test(location.hash);
+
+async function definirContrasena(nueva) {
+  if (!SB) return { ok: false, error: 'El portal no está conectado a la base' };
+  const c = String(nueva || '');
+  if (c.length < 10) return { ok: false, error: 'Mínimo 10 caracteres' };
+  if (!/[a-z]/i.test(c) || !/\d/.test(c)) return { ok: false, error: 'Mezclá letras y números' };
+  const { error } = await SB.auth.updateUser({ password: c });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 async function cerrarSesion() {
   if (SB) await SB.auth.signOut();
   SESION.persona = SESION.rol = SESION.email = null;
@@ -296,6 +313,8 @@ window.SB = SB;
 window.SESION = SESION;
 window.iniciarSesion = iniciarSesion;
 window.cargarSesion = cargarSesion;
+window.definirContrasena = definirContrasena;
+window.LLEGO_POR_CORREO = LLEGO_POR_CORREO;
 window.cerrarSesion = cerrarSesion;
 window.pedirContrasenaNueva = pedirContrasenaNueva;
 window.hayRemoto = hayRemoto;

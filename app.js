@@ -206,6 +206,39 @@ async function pintarEstado2FA(){
          onclick="modalEnrolar2FA()">Activar segundo factor</button>`;
 }
 
+/* ---------- Elegir contraseña al llegar por el correo ---------- */
+function pantallaNuevaContrasena(nombre){
+  SCREEN='login';
+  const L=document.getElementById('login'); L.style.display='flex';
+  L.innerHTML=`<div class="login-box" style="max-width:420px">
+    <div class="login-marca"><span class="brand-mark"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 30l16-14 16 14"/><path d="M12 26v12h24V26"/><path d="M24 6v4M9 11l2.8 2.8M39 11l-2.8 2.8M4 24h4M40 24h4"/></svg></span>
+      <span><span class="brand-name">SOL</span><span class="brand-sub">Inmobiliaria</span></span></div>
+    <div class="login-sub">Bienvenido${nombre?', '+esc(String(nombre).split(' ')[0]):''}</div>
+    <p class="login-hint">Elegí tu contraseña. Es tuya: nadie más la ve.</p>
+    <div class="field" style="text-align:left;margin-bottom:12px"><label>Contraseña nueva</label>
+      <input id="np-1" type="password" autocomplete="new-password" onkeydown="if(event.key==='Enter')guardarNuevaContrasena()"></div>
+    <div class="field" style="text-align:left;margin-bottom:6px"><label>Repetila</label>
+      <input id="np-2" type="password" autocomplete="new-password" onkeydown="if(event.key==='Enter')guardarNuevaContrasena()"></div>
+    <div class="hint" style="text-align:left;margin-bottom:14px">Mínimo 10 caracteres, con letras y números.</div>
+    <button id="np-btn" class="btn btn-primary" style="width:100%" onclick="guardarNuevaContrasena()">Guardar y entrar</button>
+    <div id="np-err" class="err" style="min-height:18px;margin-top:8px;color:#C0492B;font-weight:600"></div>
+  </div>`;
+  setTimeout(()=>{ const i=document.getElementById('np-1'); if(i&&i.focus) i.focus(); }, 60);
+}
+async function guardarNuevaContrasena(){
+  const a=(document.getElementById('np-1')||{}).value||'', b=(document.getElementById('np-2')||{}).value||'';
+  const err=document.getElementById('np-err');
+  if(a!==b){ err.textContent='No coinciden'; return; }
+  const r=await conBoton(()=>definirContrasena(a));
+  if(!r) return;
+  if(!r.ok){ err.textContent=r.error; return; }
+  window.__contrasenaDefinida=true;
+  try{ history.replaceState(null,'',location.pathname); }catch(e){}
+  toast('Contraseña guardada ✓', 4000);
+  const ok=await reanudarSesion();
+  if(ok===false) renderAuth();
+}
+
 /* ---------- El código de seis dígitos ---------- */
 function pedirCodigo2FA(){
   /* Traza: desde dónde se pidió el código y qué había en pantalla. Se
@@ -296,6 +329,13 @@ async function reanudarSesion(){
   if(!hayRemoto()) return false;
   const r = await cargarSesion();
   if(!r.ok) return false;
+
+  /* Llegó por el enlace del correo: primero elige contraseña. Hasta que
+     no la ponga, no hay aplicación. */
+  if(window.LLEGO_POR_CORREO && !window.__contrasenaDefinida){
+    pantallaNuevaContrasena(r.persona && r.persona.nombre);
+    return 'contrasena';
+  }
 
   /* El mismo portón que entrar(). Sin esto el segundo factor se pedía
      al escribir la contraseña y nunca más: con una sesión aal1 viva,
