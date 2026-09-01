@@ -57,8 +57,9 @@ const TITLES={
 const C = ()=>document.getElementById('content');
 
 /* ============================================================ AUTENTICACIÓN */
-function renderAuth(){
+function renderAuth(reanudando){
   SCREEN='login';
+  window.__reanudando=!!reanudando;
   const p=window.PORTAL||'admin', cfg=PORTAL_CFG[p];
   document.querySelector('.app').hidden=true;
   document.getElementById('portalCliente').hidden=true;
@@ -77,7 +78,7 @@ function renderAuth(){
       <div class="field" style="text-align:left;margin-bottom:18px"><label>Contraseña</label>
         <input id="au-pass" type="password" autocomplete="current-password"
                onkeydown="if(event.key==='Enter')entrar()"></div>
-      <button id="au-entrar" class="btn btn-primary" style="width:100%" onclick="entrar()">Entrar</button>
+      <button id="au-entrar" class="btn btn-primary" style="width:100%" onclick="entrar()" ${reanudando?'disabled':''}>${reanudando?'Reanudando tu sesión…':'Entrar'}</button>
       <div class="login-foot">
         <a href="#" onclick="olvideContrasena();return false;">No recuerdo mi contraseña</a>
         <br>Si el correo no te llega, pídele a administración que te reenvíe la invitación.</div></div>`;
@@ -130,6 +131,12 @@ function submit2FA(){
    sale de la tabla persona, que es la misma que consultan las políticas
    de la base. Así la pantalla y la base no pueden contradecirse. */
 async function entrar(){
+  /* Carrera: al abrir con sesión viva, el formulario se pinta y
+     reanudarSesion() corre en paralelo. Si en esos segundos el gestor
+     de contraseñas rellena y se da Enter, este login nuevo reemplaza la
+     sesión aal2 por una aal1; reanudar termina y arranca la app; y esto
+     sigue, ve aal1 y pide el código — sobre la app ya abierta. */
+  if(SCREEN==='app' || window.__reanudando){ toast('Ya estás entrando…'); return; }
   const email=(document.getElementById('au-email')||{}).value||'';
   const pass =(document.getElementById('au-pass') ||{}).value||'';
   const btn = document.getElementById('au-entrar');
@@ -292,7 +299,7 @@ async function reanudarSesion(){
      mantiene, y el modal ahora se dibuja encima de ella. */
   if(typeof faltaSegundoFactor==='function' && await faltaSegundoFactor()){
     pedirCodigo2FA();
-    return false;
+    return 'codigo';
   }
 
   const carga = await cargarDesdeSupabase();
@@ -3116,8 +3123,12 @@ document.addEventListener('click',e=>{if(!e.target.closest('.search-wrap'))cerra
    Y si la sesión de Supabase sigue viva de la visita anterior, se entra
    directo sin volver a pedir la contraseña. */
 if(hayRemoto()){
-  renderAuth();
-  reanudarSesion().catch(e=>console.warn('[sesión]', e.message));
+  /* Bloqueado hasta saber si hay sesión: si la hay, se entra; si pide
+     código, el modal va encima; si no hay, se habilita el formulario. */
+  renderAuth(true);
+  reanudarSesion()
+    .catch(e=>{ console.warn('[sesión]', e.message); return false; })
+    .then(r=>{ window.__reanudando=false; if(r===false) renderAuth(); });
 }else{
   initDB();
   renderAuth();
