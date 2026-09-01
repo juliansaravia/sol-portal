@@ -9,8 +9,8 @@
        vender.desarrollosol.com → vendedor.html (vendedores)
      En el dominio de Vercel, la raíz es el portal interno. Decisión
      del dueño (1 sept 2026): sin opciones que elegir. -->
-<meta http-equiv="refresh" content="0; url=admin.html" />
-<script>location.replace('admin.html' + location.hash);</script>
+<!-- Se conservan #hash y ?query: ahí vienen los tokens del correo de invitación. Un meta-refresh los perdía. -->
+<script>location.replace('admin.html' + location.search + location.hash);</script>
 <style>body{margin:0;font-family:-apple-system,Arial,sans-serif;background:#14342B;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh}</style>
 </head>
 <body><a href="admin.html" style="color:#fff">Entrando al portal interno…</a></body>

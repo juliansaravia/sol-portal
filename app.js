@@ -219,7 +219,7 @@ function pantallaNuevaContrasena(nombre){
       <input id="np-1" type="password" autocomplete="new-password" onkeydown="if(event.key==='Enter')guardarNuevaContrasena()"></div>
     <div class="field" style="text-align:left;margin-bottom:6px"><label>Repetila</label>
       <input id="np-2" type="password" autocomplete="new-password" onkeydown="if(event.key==='Enter')guardarNuevaContrasena()"></div>
-    <div class="hint" style="text-align:left;margin-bottom:14px">Mínimo 10 caracteres, con letras y números.</div>
+    <div class="hint" style="text-align:left;margin-bottom:14px">12 caracteres o más, con mayúscula, minúscula, número y símbolo. Sin tu nombre ni tu correo.</div>
     <button id="np-btn" class="btn btn-primary" style="width:100%" onclick="guardarNuevaContrasena()">Guardar y entrar</button>
     <div id="np-err" class="err" style="min-height:18px;margin-top:8px;color:#C0492B;font-weight:600"></div>
   </div>`;
@@ -1824,7 +1824,7 @@ function modalContrasena(id){
       <p class="hint" style="margin-bottom:8px">Le llega un correo con un enlace. ${p.entra?'La actual sigue sirviendo hasta que la cambie.':'Necesita tener cuenta: usá «Invitar» primero.'}</p>
       <button class="btn btn-ghost" ${p.entra?'':'disabled'} onclick="closeModal();restablecerContrasenaDe('${p.id}')">Mandar enlace</button>
       <div class="sect-t" style="margin-top:18px">Opción 2 · asignarle una ahora</div>
-      <p class="hint" style="margin-bottom:8px">${p.entra?'Reemplaza la actual de inmediato.':'Le crea la cuenta ya confirmada — no espera ningún correo.'} Mínimo 10 caracteres, letras y números.</p>
+      <p class="hint" style="margin-bottom:8px">${p.entra?'Reemplaza la actual de inmediato.':'Le crea la cuenta ya confirmada — no espera ningún correo.'} 12+ caracteres con mayúscula, minúscula, número y símbolo.</p>
       <div class="form-grid">
         <div class="field"><label>Contraseña nueva</label><input id="pw-1" type="password" autocomplete="new-password"></div>
         <div class="field"><label>Repetila</label><input id="pw-2" type="password" autocomplete="new-password"></div>
@@ -1837,8 +1837,8 @@ function modalContrasena(id){
 async function asignarContrasena(id){
   const p=DB.equipo.find(x=>mismoId(x.id,id)); if(!p) return;
   const a=v('pw-1'), b=v('pw-2');
-  if(a.length<10) return toast('Mínimo 10 caracteres', 5000, true);
-  if(!/[a-z]/i.test(a)||!/\d/.test(a)) return toast('Mezclá letras y números', 5000, true);
+  const vf=validarContrasenaFuerte(a,[p.email,p.nombre]);
+  if(!vf.ok) return toast('Falta: '+vf.faltan.join(' · '), 7000, true);
   if(a!==b) return toast('No coinciden', 5000, true);
   const r=await conBoton(()=>sbContrasena(p.id, a));
   if(!r||!r.ok) return;

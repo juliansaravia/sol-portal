@@ -286,13 +286,36 @@ async function pedirContrasenaNueva(email) {
    type=recovery; supabase-js abre la sesión sola. Sin esto, la persona
    entraba con sesión y sin contraseña propia. Se lee UNA vez, antes de
    que setView() pise el hash. */
-const LLEGO_POR_CORREO = /[#&]type=(invite|recovery|signup|magiclink)/.test(location.hash);
+const LLEGO_POR_CORREO = /[#&?]type=(invite|recovery|signup|magiclink)/.test(location.hash + location.search)
+                      || /[?&]code=[A-Za-z0-9-]/.test(location.search);   // flujo PKCE
+
+/* Política de contraseña (ciberseguridad, decisión del dueño 1 sept 2026):
+   12+ caracteres, mayúscula, minúscula, número y símbolo, sin el correo
+   ni el nombre adentro, y sin las obvias. La misma regla vive en la
+   función de servidor `contrasena`. */
+function validarContrasenaFuerte(c, pistas) {
+  c = String(c || '');
+  const faltan = [];
+  if (c.length < 12) faltan.push('12 caracteres o más');
+  if (!/[A-ZÁÉÍÓÚÑ]/.test(c)) faltan.push('una mayúscula');
+  if (!/[a-záéíóúñ]/.test(c)) faltan.push('una minúscula');
+  if (!/\d/.test(c)) faltan.push('un número');
+  if (!/[^A-Za-z0-9ÁÉÍÓÚÑáéíóúñ]/.test(c)) faltan.push('un símbolo (. , - _ ! @ # …)');
+  if (/(.)\1{3,}/.test(c)) faltan.push('sin el mismo carácter cuatro veces seguidas');
+  // Las obvias, completas: «Sol.Esperanza2026!» empieza con «sol» y es válida.
+  if (/^(password|contrasena|contraseña|123456\d*|qwerty\w*|admin\d*|solinmobiliaria\d*)[!.]?$/i.test(c)) faltan.push('nada obvio');
+  for (const p of (pistas || [])) {
+    const t = String(p || '').split('@')[0].toLowerCase();
+    if (t.length >= 4 && c.toLowerCase().includes(t)) { faltan.push('no puede contener tu nombre o correo'); break; }
+  }
+  return { ok: faltan.length === 0, faltan };
+}
 
 async function definirContrasena(nueva) {
   if (!SB) return { ok: false, error: 'El portal no está conectado a la base' };
   const c = String(nueva || '');
-  if (c.length < 10) return { ok: false, error: 'Mínimo 10 caracteres' };
-  if (!/[a-z]/i.test(c) || !/\d/.test(c)) return { ok: false, error: 'Mezclá letras y números' };
+  const v = validarContrasenaFuerte(c, [SESION.email, SESION.persona && SESION.persona.nombre]);
+  if (!v.ok) return { ok: false, error: 'Falta: ' + v.faltan.join(' · ') };
   const { error } = await SB.auth.updateUser({ password: c });
   if (error) return { ok: false, error: error.message };
   return { ok: true };
@@ -314,6 +337,7 @@ window.SESION = SESION;
 window.iniciarSesion = iniciarSesion;
 window.cargarSesion = cargarSesion;
 window.definirContrasena = definirContrasena;
+window.validarContrasenaFuerte = validarContrasenaFuerte;
 window.LLEGO_POR_CORREO = LLEGO_POR_CORREO;
 window.cerrarSesion = cerrarSesion;
 window.pedirContrasenaNueva = pedirContrasenaNueva;
