@@ -381,7 +381,11 @@ function calcularMora(ct, hasta) {
   return { total: r2(total), detalle };
 }
 /* Comisión del vendedor: 2 % del valor del lote */
-const calcularComision = ct => r2((ct.precio || 0) * COMISION_PCT);
+/* La comisión que dice la base manda sobre la que calcularía el portal.
+   Son el mismo 2 %, pero si algún contrato tiene una comisión pactada
+   distinta —pasa— la buena es la que está registrada, no la fórmula. */
+const calcularComision = ct =>
+  (ct && ct.comisionMonto != null) ? r2(ct.comisionMonto) : r2((ct.precio || 0) * COMISION_PCT);
 
 /* ---------- Cálculos de cartera ---------- */
 const pagosDe = ct => DB.pagos.filter(p => p.contratoId === ct.id);
@@ -404,16 +408,41 @@ const enMoraOficial = ct => !!moraOficialDe(ct);
 
 /** Los números de cartera que se muestran, tomados de la fuente buena. */
 function resumenMora() {
-  const of = (typeof MORA_OFICIAL !== 'undefined') ? MORA_OFICIAL : {};
+  const of = (typeof MORA_OFICIAL !== 'undefined' && MORA_OFICIAL) ? MORA_OFICIAL : {};
   const lista = Object.entries(of).map(([no, m]) => ({ no, ...m }));
-  return {
+
+  // Con el modelo cargado manda el modelo. Es lo que estaba y se respeta.
+  if (lista.length) return {
     enMora: lista.length,
-    vigentes: (typeof MORA_RESUMEN !== 'undefined' ? MORA_RESUMEN.vigentes : null),
-    saldoVencido: Math.round(lista.reduce((s, m) => s + (m.saldoVenc || 0), 0) * 100) / 100,
+    vigentes: DB.contratos.filter(c => c.estado === 'aprobado').length - lista.length,
+    saldoVencido: r2(lista.reduce((s, m) => s + (m.saldoVenc || 0), 0)),
     cuotasAtraso: lista.reduce((s, m) => s + (m.atraso || 0), 0),
     nuncaPagaron: lista.filter(m => !m.cuotasPag),
     lista,
     fuente: 'Modelo Financiero'
+  };
+
+  /* Sin modelo, se calcula sobre lo que hay. Antes devolvía ceros y un
+     `vigentes` undefined que salía impreso tal cual en la pantalla. */
+  const activos = DB.contratos.filter(c => c.estado === 'aprobado');
+  const conEstado = activos.map(c => ({ c, ec: estadoCuenta(c) }));
+  const conMora = conEstado.filter(x => x.ec.enMora);
+
+  /* Todas las filas salen con la misma forma que las del modelo
+     —{no, lote, atraso, saldoVenc, cuotasPag}— porque las pantallas
+     las leen así. Devolver el contrato crudo imprimía «Q NaN». */
+  const fila = x => ({ no: x.c.no, lote: x.c.lote,
+                       atraso: x.ec.vencidas, saldoVenc: x.ec.montoVencido,
+                       cuotasPag: x.ec.pagadas });
+
+  return {
+    enMora: conMora.length,
+    vigentes: activos.length - conMora.length,
+    saldoVencido: r2(conMora.reduce((s, x) => s + (x.ec.montoVencido || 0), 0)),
+    cuotasAtraso: conMora.reduce((s, x) => s + (x.ec.vencidas || 0), 0),
+    nuncaPagaron: conEstado.filter(x => recaudadoDe(x.c) <= 0).map(fila),
+    lista: conMora.map(fila),
+    fuente: 'giros de la base'
   };
 }
 
@@ -448,17 +477,40 @@ function estadoCuenta(ct) {
   const prox = giros.find(g => g.estado === 'pendiente' || g.estado === 'vencido' || g.estado === 'parcial');
   const pct = totalGiros ? Math.min(100, Math.round(rec / totalGiros * 100)) : 0;
   const of = moraOficialDe(ct);
+
+  /* ── De dónde sale la mora ──
+
+     Esto decía `enMora: !!of`, o sea: un contrato está en mora si
+     aparece en MORA_OFICIAL, la foto de julio. Cuando esos archivos
+     dejaron de desplegarse, `of` pasó a ser siempre undefined y el
+     portal empezó a decir que NINGUNO de los 148 contratos está en
+     mora. Cobranza abría su pantalla y no veía nada que cobrar.
+
+     Ahora hay dos fuentes y un orden claro:
+
+       1. El modelo financiero, si está cargado. Sigue mandando: es
+          la cifra que el CRM y la gerencia dan por buena.
+       2. Si no está, el cálculo propio sobre los giros. Con la base
+          conectada esto ya no es una aproximación del navegador:
+          los estados de los giros los pone `recalcular_contrato()`
+          en Postgres, con las reglas del contrato.
+
+     `fuenteMora` dice cuál se usó, y la pantalla lo muestra. Una
+     cifra sin su procedencia no sirve para cobrar. */
+  const hayModelo = typeof MORA_OFICIAL !== 'undefined'
+                    && MORA_OFICIAL && Object.keys(MORA_OFICIAL).length > 0;
+
   return {
     giros, totalGiros, pagadas, totalGirosN: giros.length,
-    // Lo que el portal calcula por su cuenta — se conserva para poder comparar
+    // El cálculo propio se conserva siempre, para poder contrastar
     vencidasCalculadas: vencidos.length,
     montoVencidoCalculado: montoVencido,
-    // Lo que manda: el modelo financiero
-    vencidas: of ? (of.atraso || 0) : 0,
-    montoVencido: of ? (of.saldoVenc || 0) : 0,
-    enMora: !!of,
+
+    vencidas:     hayModelo ? (of ? (of.atraso || 0) : 0)    : vencidos.length,
+    montoVencido: hayModelo ? (of ? (of.saldoVenc || 0) : 0) : montoVencido,
+    enMora:       hayModelo ? !!of : vencidos.length > 0,
     cuotasPagadasModelo: of ? of.cuotasPag : null,
-    fuenteMora: of ? 'Modelo Financiero' : (typeof MORA_OFICIAL !== 'undefined' ? 'Modelo Financiero · vigente' : 'cálculo propio'),
+    fuenteMora: hayModelo ? 'Modelo Financiero' : 'giros de la base',
     recaudado: rec, saldo, prox, pct
   };
 }
@@ -760,9 +812,10 @@ async function agregarIntegrante(contratoId, nombre, cargo) {
 async function aprobarContrato(id) {
   const ct = getContrato(id); if (!ct) return false;
   if (typeof hayBase === 'function' && hayBase()) {
-    // 'activo' es el estado que la base entiende; es también el que
-    // dispara la partida contable de la venta.
-    const r = await sbEstadoContrato(id, 'activo', 'vendido');
+    /* Se dice 'aprobado' —el idioma del portal— y `sbEstadoContrato()`
+       lo traduce a 'activo', que es lo que entiende la base y lo que
+       dispara la partida contable de la venta. */
+    const r = await sbEstadoContrato(id, 'aprobado', 'vendido');
     if (!r.ok) { avisar(r.error); return false; }
     const l = getLote(ct.lote); if (l) l.estado = 'vendido';
     await registrarGestion(id, 'Bitácora Socios', 'Solucionado', 'Crédito aprobado por el comité');

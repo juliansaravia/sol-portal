@@ -197,7 +197,14 @@ async function sbCrearContrato({ lote, cliente_id, persona_id, enganche, plazo, 
   });
 }
 
+/* Del vocabulario del portal al de la base. Es el camino de vuelta de
+   `estadoDePortal()`: el portal dice «aprobado», la base entiende
+   «activo», y quien decide es la base. */
+const ESTADO_BASE = { aprobado: 'activo' };
+const estadoDeBase = e => ESTADO_BASE[e] || e;
+
 async function sbEstadoContrato(contrato_id, estado, estadoLote) {
+  estado = estadoDeBase(estado);
   return escribir('cambiar el estado del contrato', async () => {
     const fila = oExplota(await SB.from('contrato')
       .update({ estado, updated_at: new Date().toISOString() })
@@ -207,7 +214,7 @@ async function sbEstadoContrato(contrato_id, estado, estadoLote) {
       oExplota(await SB.from('lote').update({ estado: estadoLote }).eq('id', fila.lote_id).select('id'));
 
     const ct = DB.contratos.find(c => c.id === contrato_id);
-    if (ct) ct.estado = fila.estado;
+    if (ct) { ct.estado = estadoDePortal(fila.estado); ct.estadoBase = fila.estado; }
     return fila;
   });
 }

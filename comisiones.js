@@ -106,7 +106,12 @@ function comisionesPendientes() {
   const ya = liquidados();
   const por = {};
   DB.contratos
-    .filter(c => c.estado === 'aprobado' && !ya.has(c.no))
+    /* Dos filtros de «ya se liquidó»: el del portal, por número de
+       contrato, y el de la base, que es el que manda cuando hay base —
+       una comisión 'liquidada' o 'pagada' ya está en otra liquidación y
+       el índice único de 05_liquidacion.sql no dejaría meterla en dos. */
+    .filter(c => c.estado === 'aprobado' && !ya.has(c.no)
+                 && !['liquidada','pagada','anulada'].includes(c.comisionEstado))
     .forEach(c => {
       const p = buscarPersona(c.vendedor);
       if (!p || !rolComisiona(p.rol)) return;
@@ -114,7 +119,8 @@ function comisionesPendientes() {
         { persona: p, contratos: [], retenidos: [], total: 0, totalRetenido: 0 });
       const com  = calcularComision(c);
       const fila = { no: c.no, lote: c.lote, precio: c.precio,
-                     comision: com, fecha: c.fecha || HOY_ISO };
+                     comision: com, fecha: c.fecha || HOY_ISO,
+                     comisionId: c.comisionId || null };
       const falta = retencionDe(c);
       if (falta) {
         e.retenidos.push(Object.assign({ falta }, fila));
@@ -161,15 +167,29 @@ async function crearLiquidacion(nombreVendedor, periodo) {
      quedan amarradas a ella: una comisión no puede estar en dos. Ese
      candado lo pone el índice único de 05_liquidacion.sql, no el portal. */
   if (typeof hayBase === 'function' && hayBase()) {
-    const q = periodoDe(HOY_ISO);
+    /* El período va del contrato más viejo al más nuevo de los que entran
+       en esta liquidación. Antes ponía la fecha de hoy en los dos extremos,
+       que cumple el CHECK y no dice nada. */
+    const fechas = pend.contratos.map(c => c.fecha).filter(Boolean).sort();
+    const ids = pend.contratos.map(c => c.comisionId).filter(Boolean);
+    if (!ids.length) {
+      avisar('Ninguna de esas comisiones está registrada en la base todavía. '
+           + 'Recarga la página; si sigue igual, avisa a administración.');
+      return null;
+    }
     const r = await sbCrearLiquidacion({
       persona_id: pend.persona.id,
-      periodo: periodo || q,
-      desde: pend.desde || HOY_ISO, hasta: pend.hasta || HOY_ISO,
+      periodo: periodo || periodoDe(HOY_ISO),
+      desde: fechas[0] || HOY_ISO, hasta: fechas[fechas.length - 1] || HOY_ISO,
       total: pend.total,
-      comisiones: (pend.contratos || []).map(c => c.comisionId).filter(Boolean)
+      comisiones: ids
     });
     if (!r.ok) { avisar(r.error); return null; }
+    // Que la pantalla no siga ofreciendo lo que ya quedó amarrado.
+    pend.contratos.forEach(c => {
+      const ct = DB.contratos.find(x => x.no === c.no);
+      if (ct) ct.comisionEstado = 'liquidada';
+    });
     l.id = r.dato.id;
     l.numero = r.dato.numero;
   }

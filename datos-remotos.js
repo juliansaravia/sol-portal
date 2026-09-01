@@ -22,6 +22,28 @@
    (fase, código), y el portal la maneja como una sola cadena. */
 const claveLote = (fase, codigo) => `${fase}·${codigo}`;
 
+/* ------------------------------------------------------------
+   El vocabulario de los estados
+
+   La base dice `activo`; el portal, desde antes de que existiera la
+   base, dice `aprobado`. Nadie traducía, así que con Supabase
+   conectado catorce filtros del portal —comisiones pendientes,
+   contratos activos del inicio, desistimientos— comparaban contra
+   una palabra que ya no llegaba nunca y salían vacíos.
+
+   Se traduce acá, en la frontera, igual que `rolDePortal()` hace con
+   los roles. Un solo sitio, no catorce.
+
+   `estadoBase` conserva el valor original: 'caido' y 'liquidado' no
+   tienen equivalente en el portal y no se puede perder cuál era.
+   ------------------------------------------------------------ */
+const ESTADO_PORTAL = {
+  activo:    'aprobado',    // vendido y vigente
+  caido:     'anulado',     // se cayó · el portal solo distingue dentro/fuera
+  liquidado: 'aprobado'     // terminó de pagar · sigue siendo una venta
+};
+const estadoDePortal = e => ESTADO_PORTAL[e] || e;
+
 const _num = v => (v === null || v === undefined ? 0 : Number(v));
 const _fecha = v => (v ? String(v).slice(0, 10) : null);
 
@@ -36,7 +58,7 @@ async function cargarDesdeSupabase() {
   try {
     // Se piden en paralelo: son consultas independientes y la más
     // lenta manda. En serie esto tardaba el triple.
-    const [lotes, contratos, clientes, pagos, giros, equipo, documentos, obligaciones] = await Promise.all([
+    const [lotes, contratos, clientes, pagos, giros, equipo, documentos, obligaciones, comisiones] = await Promise.all([
       todas('v_inventario', 'proyecto_id,proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado'),
       todas('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,banco,boleta,lote_id,cliente_id,persona_id'),
       todas('cliente', 'id,nombre,dpi,nit,telefono,email,direccion,ocupacion'),
@@ -44,7 +66,8 @@ async function cargarDesdeSupabase() {
       todas('giro', 'id,obligacion_id,numero,vencimiento,monto,estado,abonado'),
       todas('persona', 'id,nombre,codigo,rol,email,telefono,activo'),
       todas('documento', 'id,contrato_id,cliente_id,tipo,nombre,created_at'),
-      todas('obligacion', 'id,contrato_id,tipo,descripcion,monto_total,orden')
+      todas('obligacion', 'id,contrato_id,tipo,descripcion,monto_total,orden'),
+      todas('comision', 'id,contrato_id,persona_id,monto,base,estado,periodo')
     ]);
 
     const porLote = new Map(lotes.map(l => [l.lote_id, l]));
@@ -103,7 +126,8 @@ async function cargarDesdeSupabase() {
         enganche: _num(c.enganche),
         plazo: c.plazo_meses,
         tasa: _num(c.tasa_mensual),
-        estado: c.estado,
+        estado: estadoDePortal(c.estado),
+        estadoBase: c.estado,
         banco: c.banco || '',
         boleta: c.boleta || '',
         obligaciones: []
@@ -143,6 +167,19 @@ async function cargarDesdeSupabase() {
       ct.obligaciones.forEach(o => o.giros.sort((a, b) => a.n - b.n));
     }
 
+    /* La comisión la dice la base, no un 2 % recalculado en el navegador.
+       Sin esto el portal mostraba su propia cuenta y la liquidación se
+       creaba sin amarrar ninguna fila de `comision`: quedaban en
+       'pendiente' para siempre y se podían liquidar dos veces. */
+    for (const cm of comisiones) {
+      const ct = porContrato.get(cm.contrato_id);
+      if (!ct) continue;
+      ct.comisionId     = cm.id;
+      ct.comisionMonto  = _num(cm.monto);
+      ct.comisionEstado = cm.estado;
+      ct.comisionPeriodo = _fecha(cm.periodo);
+    }
+
     DB.meta = DB.meta || {};
     DB.meta.origen = 'supabase';
     DB.meta.cargadoEn = new Date().toISOString();
@@ -151,7 +188,7 @@ async function cargarDesdeSupabase() {
       lotes: DB.lotes.length, contratos: DB.contratos.length,
       clientes: DB.clientes.length, pagos: DB.pagos.length,
       documentos: DB.documentos.length,
-      giros: giros.length, equipo: DB.equipo.length,
+      giros: giros.length, equipo: DB.equipo.length, comisiones: comisiones.length,
       ms: Date.now() - t0
     };
     console.log('[datos] de Supabase:', resumen);
@@ -197,3 +234,4 @@ async function todas(tabla, columnas, tam = 1000) {
 
 window.cargarDesdeSupabase = cargarDesdeSupabase;
 window.claveLote = claveLote;
+window.estadoDePortal = estadoDePortal;
