@@ -1543,6 +1543,13 @@ function modalPersona(id){
       <div class="field"><label>Teléfono</label><input id="e-tel" value="${esc(p?p.telefono:'')}"></div>
       <div class="field"><label>Correo</label><input id="e-mail" value="${esc(p?p.email:'')}"></div>
       <div class="field full"><label>Nota</label><input id="e-nota" value="${esc(p?(p.nota||''):'')}" placeholder="Ej. ya no labora en la empresa"></div>
+      <div class="field"><label>¿Es externo?</label><select id="e-ext" onchange="document.getElementById('e-extBox').hidden=this.value!=='1'">
+        <option value="0" ${!p||!p.externo?'selected':''}>No · es del equipo</option>
+        <option value="1" ${p&&p.externo?'selected':''}>Sí · proveedor o consultor</option></select></div>
+      <div class="field" id="e-extBox" ${p&&p.externo?'':'hidden'}><label>Organización · acceso hasta *</label>
+        <div style="display:flex;gap:8px"><input id="e-org" value="${esc(p?(p.organizacion||''):'')}" placeholder="Ej. Manus, NUO" style="flex:1">
+        <input id="e-hasta" type="date" value="${esc(p&&p.accesoHasta?p.accesoHasta:'')}"></div>
+        <div class="hint">Un externo siempre vence: ese día deja de poder entrar, solo. Para revisar UX/UI alcanza «Solo lectura».</div></div>
       <div class="field full"><label>Vendió hasta</label>
         <input id="e-vhasta" type="date" value="${esc(p&&p.vendedorHasta?p.vendedorHasta:'')}">
         <div class="hint">Solo si vendió y después cambió de puesto: sus ventas con fecha hasta ese día
@@ -1553,10 +1560,12 @@ function modalPersona(id){
 }
 async function guardarEquipo(id){
   const nom=v('e-nom').trim(); if(!nom){toast('El nombre es obligatorio');return;}
+  if(v('e-ext')==='1'&&!v('e-hasta')){toast('Un externo necesita fecha de vencimiento: es lo que apaga su acceso solo',6000,true);return;}
   const antes=id?(DB.equipo.find(x=>mismoId(x.id,id))||{}).nombre:null;
   const r=await conBoton(()=>guardarPersona({id:id||undefined,nombre:nom,codigo:v('e-cod').trim().toUpperCase(),
     rol:v('e-rol'),activo:v('e-act')==='1',telefono:v('e-tel'),email:v('e-mail'),nota:v('e-nota').trim(),
-    vendedorHasta:v('e-vhasta')||null}));
+    vendedorHasta:v('e-vhasta')||null,
+    externo:v('e-ext')==='1', organizacion:v('e-org').trim()||null, accesoHasta:v('e-hasta')||null}));
   if(!r) return;
   if(antes&&antes!==nom) await reasignarContratos(antes,nom);   // mantiene el historial ligado
   closeModal(); toast('Equipo actualizado ✓'); renderEquipo();

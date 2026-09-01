@@ -94,6 +94,7 @@ const ROLES_EQUIPO = [
   { id:'cobranza',   label:'Cobranza',             comisiona:false },
   { id:'financiero', label:'Financiero',           comisiona:false },
   { id:'confirmacion',label:'Confirmación de pagos',comisiona:false },
+  { id:'consulta',   label:'Solo lectura',         comisiona:false },
 ];
 const rolLabel = id => (ROLES_EQUIPO.find(r=>r.id===id)||{}).label || id;
 
