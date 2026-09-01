@@ -717,8 +717,28 @@ function doWhatsAppCot(){
 
 function renderCotizador(){
   const disp=DB.lotes.filter(l=>l.estado==='disponible'&&l.precio>0)
-                     .sort((a,b)=>a.codigo.localeCompare(b.codigo));
-  if(!cot.lote&&disp.length){cot.lote=disp[0].codigo;cot.precio=disp[0].precio;}
+                     .sort((a,b)=>claveDe(a).localeCompare(claveDe(b)));
+
+  /* El cotizador identificaba el lote por su CÓDIGO, y 97 códigos
+     existen en dos fases. La lista mostraba el precio del lote de
+     verdad, pero al elegirlo getLote() recibía «A-01» a secas,
+     encontraba dos y devolvía el primero: la etiqueta decía Q70,051 y
+     el precio saltaba a Q55,000, el del A-01 de la otra fase. Quien
+     cotizaba se llevaba el número equivocado, y «Convertir en venta»
+     lo arrastraba al contrato.
+
+     La clave (fase·código) es la que manda, igual que en la pantalla
+     de nueva venta. Y la fase va en la etiqueta: con dos A-01 en la
+     lista, quien elige también tiene que poder distinguirlos. */
+  const claves = new Set(disp.map(claveDe));
+  if(cot.lote!=='__libre' && !claves.has(cot.lote)){
+    /* O es la primera vez, o el lote que estaba elegido ya se vendió y
+       salió de la lista. En ese caso el <select> mostraba la primera
+       opción como si fuera la elegida mientras cot.precio seguía
+       apuntando al lote viejo. */
+    if(disp.length){ cot.lote=claveDe(disp[0]); cot.precio=disp[0].precio; }
+    else { cot.lote=null; }
+  }
   let h=`<div class="cot">
     <div class="cot-form card">
       <div class="card-h"><h2>Datos de la cotización</h2></div>
@@ -727,7 +747,7 @@ function renderCotizador(){
           <input id="ct-cli" value="${esc(cot.cliente)}" placeholder="Nombre del prospecto" oninput="cot.cliente=this.value"></div>
         <div class="field" style="margin-bottom:12px"><label>Lote</label>
           <select id="ct-lote" onchange="cotLote(this.value)">
-            ${disp.map(l=>`<option value="${l.codigo}" ${l.codigo===cot.lote?'selected':''}>${l.codigo} · ${l.area} m² · ${Qk(l.precio)}</option>`).join('')}
+            ${disp.map(l=>`<option value="${esc(claveDe(l))}" ${claveDe(l)===cot.lote?'selected':''}>${l.codigo}${l.fase?` · ${l.fase}`:''} · ${l.area} m² · ${Qk(l.precio)}</option>`).join('')}
             <option value="__libre" ${cot.lote==='__libre'?'selected':''}>— Precio libre —</option>
           </select></div>
         <div class="field" style="margin-bottom:12px"><label>Precio de venta (Q)</label>
@@ -2354,7 +2374,7 @@ function wizardBody(){
   if(s.paso===1){
     const disp=DB.lotes.filter(l=>l.estado==='disponible'&&l.precio>0);
     h+=`<div class="field full"><label>Elige tu lote disponible</label>
-      <select id="ol-lote">${disp.map(l=>`<option value="${l.codigo}">${l.codigo} · ${l.area} m² · ${Qk(l.precio)}</option>`).join('')}</select></div>
+      <select id="ol-lote">${disp.map(l=>`<option value="${esc(claveDe(l))}">${l.codigo}${l.fase?` · ${l.fase}`:''} · ${l.area} m² · ${Qk(l.precio)}</option>`).join('')}</select></div>
       <div class="hint">${disp.length} lotes disponibles en La Esperanza.</div>
       <div class="btn-row"><button class="btn btn-primary" onclick="onlineNext(1)">Continuar →</button></div>`;
   } else if(s.paso===2){
