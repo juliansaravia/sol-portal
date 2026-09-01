@@ -572,7 +572,8 @@ async function sbGuardarPersona(datos) {
     };
     for (let i = 0; i < 3 && r.error; i++) {
       const e = r.error, msg = String(e.message || '');
-      const m = msg.match(/column ["']?([a-z_]+)["']?/i) || msg.match(/find the ['"]([a-z_]+)['"] column/i);
+      // PostgREST: «Could not find the 'x' column …» · Postgres: «column "x" of relation …»
+      const m = msg.match(/find the ['"]([a-z_]+)['"] column/i) || msg.match(/column "([a-z_]+)"/i);
       const col = m && m[1];
       const faltaCol = (e.code === '42703' || e.code === 'PGRST204') && col && col in campos;
       if (!faltaCol) break;
