@@ -2014,8 +2014,10 @@ const FILTROS_COB={todos:'Todos',mora:'En mora',aldia:'Al día',nunca:'Nunca pag
 let cobBusca='', cobFiltro='mora', cobOrden={k:'vencido',asc:false};
 function cobOrdenar(k){ cobOrden = cobOrden.k===k ? {k,asc:!cobOrden.asc} : {k,asc:k==='cliente'}; renderCobranza(); }
 function diasAtraso(ec){
-  const g=(ec.giros||[]).filter(x=>x.estado!=='pagado'&&x.vence&&x.vence<HOY_ISO).sort((a,b)=>a.vence<b.vence?-1:1)[0];
-  return g?diasEnt(g.vence,HOY_ISO):0;
+  // estadoCuenta() entrega los giros con `venc`; la cartera de la base, con `vence`.
+  const f=x=>x.vence||x.venc;
+  const g=(ec.giros||[]).filter(x=>x.estado!=='pagado'&&f(x)&&f(x)<HOY_ISO).sort((a,b)=>f(a)<f(b)?-1:1)[0];
+  return g?diasEnt(f(g),HOY_ISO):0;
 }
 function cartaCartera(){
   const F=(VISTA_FILTRO.cobranza&&VISTA_FILTRO.cobranza.f)||cobFiltro; cobFiltro=F;

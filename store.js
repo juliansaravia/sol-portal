@@ -974,10 +974,13 @@ function calendarioDeCartera() {
     const total = giros.length;
     giros.forEach((g, i) => {
       if (g.estado === 'pagado') return;          // ya se cobró, no se agenda
+      /* La base dice `vence`; la semilla de demostración, `venc`. Con una
+         sola de las dos, la agenda salía vacía en la otra. */
+      const vence = g.vence || g.venc; if (!vence) return;
       salida.push({
-        c: ct.no, f: g.vence, m: g.monto,
+        c: ct.no, f: vence, m: g.monto,
         n: nombreCliente(ct.clienteId), l: ct.lote,
-        d: diaSemana(g.vence),
+        d: diaSemana(vence),
         q: i + 1, p: total
       });
     });
