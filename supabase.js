@@ -106,9 +106,32 @@ async function iniciarSesion(email, contrasena) {
   } catch (e) {
     return { ok: false, error: e.message };
   }
-  // Supabase no dice si falló el correo o la contraseña, y está bien:
-  // decirlo permitiría averiguar qué correos existen.
-  if (error) return { ok: false, error: 'Correo o contraseña incorrectos' };
+  /* Que el correo y la contraseña se confundan en un solo mensaje es
+     deliberado: distinguirlos permitiría averiguar qué correos existen.
+
+     Pero eso vale SOLO para las credenciales. Aquí se estaba diciendo
+     «correo o contraseña incorrectos» también cuando el correo estaba
+     sin confirmar, cuando el servidor había cortado por intentos y
+     cuando la red se caía — errores que no delatan a nadie y que quien
+     entra sí puede arreglar. Se los mandaba a probar contraseñas que
+     nunca iban a funcionar. */
+  if (error) {
+    const cod = String(error.code || error.name || '').toLowerCase();
+    const msg = String(error.message || '');
+    if (cod === 'email_not_confirmed' || /email not confirmed/i.test(msg))
+      return { ok: false, error: 'Tu correo todavía no está confirmado. '
+        + 'Abrí el correo de invitación y seguí el enlace antes de entrar.' };
+    if (cod === 'over_request_rate_limit' || error.status === 429)
+      return { ok: false, error: 'Demasiados intentos seguidos. '
+        + 'Esperá un minuto y volvé a probar.' };
+    if (cod === 'user_banned')
+      return { ok: false, error: 'Tu usuario está suspendido. Hablá con administración.' };
+    /* Sin `status` no hubo respuesta del servidor: es la red, no la clave. */
+    if (!error.status)
+      return { ok: false, error: 'No se pudo hablar con el servidor: ' + msg };
+    console.warn('[login] auth respondió', error.status, cod || msg);
+    return { ok: false, error: 'Correo o contraseña incorrectos' };
+  }
 
   /* `signInWithPassword` ya devolvió el usuario. Volver a pedirlo con
      getUser() era un viaje entero al servidor para saber algo que ya
@@ -157,7 +180,26 @@ async function cargarSesion(usuarioYaConocido) {
     error: 'Tu usuario existe pero no está enlazado a una persona del equipo. ' +
            'Que administración corra el UPDATE de persona.auth_uid.'
   };
-  console.warn('[sesión] mi_sesion() no está · falta correr 16_login.sql');
+  /* Hasta aquí solo se llega con `rapida.error`. Antes se asumía que
+     la causa era siempre la misma —la migración sin correr— y se
+     seguía al camino largo. Eso tapaba el error de verdad: un permiso
+     revocado, una columna que no existe, el servidor caído. El síntoma
+     era un login que fallaba sin decir por qué.
+
+     Solo «la función no existe» justifica el camino largo. Cualquier
+     otra cosa se reporta tal cual, que para eso el servidor la mandó. */
+  {
+    const cod = String(rapida.error.code || '');
+    const falta = cod === 'PGRST202' || cod === '42883'
+      || /could not find the function|does not exist/i.test(String(rapida.error.message || ''));
+    if (!falta) {
+      console.error('[sesión] mi_sesion() falló', cod, rapida.error.message);
+      return { ok: false, error: cod === '42501'
+        ? 'La base le negó el permiso a mi_sesion(). Falta correr 18_permisos_funciones.sql.'
+        : 'No se pudo leer tu sesión: ' + (rapida.error.message || cod) };
+    }
+    console.warn('[sesión] mi_sesion() no está · falta correr 16_login.sql');
+  }
 
   /* Quién soy lo decide la BASE, no el portal.
 
