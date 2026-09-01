@@ -97,9 +97,9 @@ const hayRemoto = () => SB !== null;
 async function iniciarSesion(email, contrasena) {
   if (!SB) return { ok: false, error: 'El portal no está conectado a la base' };
 
-  let error;
+  let error, datos;
   try {
-    ({ error } = await conLimite(SB.auth.signInWithPassword({
+    ({ data: datos, error } = await conLimite(SB.auth.signInWithPassword({
       email: String(email || '').trim().toLowerCase(),
       password: contrasena || ''
     }), 20, 'Al iniciar sesión'));
@@ -110,7 +110,10 @@ async function iniciarSesion(email, contrasena) {
   // decirlo permitiría averiguar qué correos existen.
   if (error) return { ok: false, error: 'Correo o contraseña incorrectos' };
 
-  const r = await cargarSesion();
+  /* `signInWithPassword` ya devolvió el usuario. Volver a pedirlo con
+     getUser() era un viaje entero al servidor para saber algo que ya
+     estaba en la mano. */
+  const r = await cargarSesion(datos && datos.user);
   if (!r.ok) await SB.auth.signOut();
   return r;
 }
@@ -119,16 +122,42 @@ async function iniciarSesion(email, contrasena) {
  * Lee de la base quién es el usuario que ya inició sesión.
  * Se llama al entrar y al recargar la página.
  */
-async function cargarSesion() {
+async function cargarSesion(usuarioYaConocido) {
   if (!SB) return { ok: false, error: 'sin conexión' };
 
-  let user;
-  try {
-    ({ data: { user } } = await conLimite(SB.auth.getUser(), 20, 'Al leer la sesión'));
-  } catch (e) {
-    return { ok: false, error: e.message };
+  /* Al entrar, el usuario viene del propio signIn. Al recargar la página
+     no hay de dónde sacarlo y sí hay que preguntarlo. */
+  let user = usuarioYaConocido || null;
+  if (!user) {
+    try {
+      ({ data: { user } } = await conLimite(SB.auth.getUser(), 20, 'Al leer la sesión'));
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
   }
   if (!user) return { ok: false, error: 'sin sesión' };
+
+  /* Un solo viaje: quién soy y si puedo escribir.
+     Si `mi_sesion()` todavía no existe —falta correr 16_login.sql— se
+     cae al camino largo. Un despliegue del portal no puede dejar a
+     nadie afuera por una migración sin pegar. */
+  const rapida = await SB.rpc('mi_sesion').maybeSingle();
+  if (!rapida.error && rapida.data) {
+    const p = rapida.data;
+    if (!p.activo) return { ok: false, error: 'Tu usuario está desactivado' };
+    SESION.persona = { id: p.persona_id, nombre: p.nombre, rol: p.rol,
+                       email: p.email, activo: p.activo };
+    SESION.rol = p.rol;
+    SESION.email = user.email;
+    SESION.modoConsulta = p.modo_consulta !== false;
+    return { ok: true, persona: SESION.persona };
+  }
+  if (!rapida.error && !rapida.data) return {
+    ok: false,
+    error: 'Tu usuario existe pero no está enlazado a una persona del equipo. ' +
+           'Que administración corra el UPDATE de persona.auth_uid.'
+  };
+  console.warn('[sesión] mi_sesion() no está · falta correr 16_login.sql');
 
   /* Quién soy lo decide la BASE, no el portal.
 

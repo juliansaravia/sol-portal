@@ -138,6 +138,15 @@ async function entrar(){
   if(btn){ btn.disabled=false; btn.textContent='Entrar'; }
   if(!r.ok){ toast(r.error); return; }
 
+  /* La contraseña sola no alcanza si esta persona ya enroló su
+     teléfono. El token que Supabase acaba de dar es aal1; hasta que no
+     suba a aal2, las políticas de la base le niegan los expedientes y
+     los libros. */
+  if(typeof faltaSegundoFactor==='function' && await faltaSegundoFactor()){
+    pedirCodigo2FA();
+    return;
+  }
+
   const carga = await cargarDesdeSupabase();
   if(!carga.ok){ toast('Entraste, pero no se pudieron cargar los datos: '+carga.error); return; }
 
@@ -145,6 +154,86 @@ async function entrar(){
   anotar('sesion.entrar', SESION.persona.nombre+' · '+SESION.rol);
   startApp(window.__user.role);
   if(SESION.modoConsulta) avisoModoConsulta();
+}
+
+/* El estado del segundo factor, donde todos lo ven: debajo del nombre.
+   Si no está activado se ofrece, y si ya está se dice — sin botón, para
+   que nadie lo apague por curiosidad. Quitarlo pasa por administración. */
+async function pintarEstado2FA(){
+  const caja=document.getElementById('footUser');
+  if(!caja || typeof tengoSegundoFactor!=='function' || !hayRemoto()) return;
+  const ya = await tengoSegundoFactor();
+  caja.insertAdjacentHTML('beforeend', ya
+    ? `<div style="margin-top:6px;font-size:11px;opacity:.75">Segundo factor activo</div>`
+    : `<div style="margin-top:6px"><button class="btn btn-ghost btn-sm" style="width:100%"
+         onclick="modalEnrolar2FA()">Activar segundo factor</button></div>`);
+}
+
+/* ---------- El código de seis dígitos ---------- */
+function pedirCodigo2FA(){
+  openModal(`<div class="modal-h"><h3>Código de tu teléfono</h3>
+      <p>Abrí Microsoft Authenticator y escribí el código de seis dígitos</p></div>
+    <div class="modal-b">
+      <div class="field"><label>Código</label>
+        <input id="mfa-cod" inputmode="numeric" autocomplete="one-time-code" maxlength="6"
+               placeholder="000000" style="font-size:22px;letter-spacing:6px;text-align:center"
+               onkeydown="if(event.key==='Enter')entrarCon2FA()"></div>
+      <div class="hint">Cambia cada 30 segundos. Si te lo rechaza estando bien,
+        revisá que la hora del teléfono esté en automático.</div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="cancelar2FA()">Cancelar</button>
+      <button class="btn btn-primary" onclick="entrarCon2FA()">Entrar</button></div>`);
+  setTimeout(()=>{ const i=document.getElementById('mfa-cod'); if(i&&i.focus) i.focus(); }, 60);
+}
+async function cancelar2FA(){ closeModal(); await cerrarSesion(); }
+async function entrarCon2FA(){
+  const r = await conBoton(async()=>{
+    const v = await verificarSegundoFactor(document.getElementById('mfa-cod').value);
+    if(!v.ok){ toast(v.error, 7000, true); return null; }
+    return v;
+  });
+  if(!r) return;
+  closeModal();
+  const carga = await cargarDesdeSupabase();
+  if(!carga.ok){ toast('Entraste, pero no se pudieron cargar los datos: '+carga.error, 7000, true); return; }
+  window.__user = { name: SESION.persona.nombre, role: rolDePortal(SESION.rol) };
+  anotar('sesion.entrar', SESION.persona.nombre+' · '+SESION.rol+' · con segundo factor');
+  startApp(window.__user.role);
+  if(SESION.modoConsulta) avisoModoConsulta();
+}
+
+/* ---------- Enrolar el teléfono ---------- */
+async function modalEnrolar2FA(){
+  const r = await enrolarSegundoFactor();
+  if(!r.ok) return toast(r.error, 8000, true);
+  openModal(`<div class="modal-h"><h3>Activar el segundo factor</h3>
+      <p>Con Microsoft Authenticator, Google Authenticator o 1Password</p></div>
+    <div class="modal-b">
+      <div style="text-align:center;margin:4px 0 14px">
+        <img src="${r.qr}" alt="Código para escanear" style="width:196px;height:196px">
+      </div>
+      <div class="hint" style="margin-bottom:12px">Abrí la app, tocá <b>+</b> →
+        <b>Cuenta de trabajo o escuela</b> → <b>Escanear código QR</b>.<br>
+        Si el teléfono no puede escanear, escribí esta clave a mano:
+        <code style="user-select:all">${esc(r.secreto)}</code></div>
+      <div class="field"><label>Escribí el código que aparece</label>
+        <input id="mfa-nuevo" inputmode="numeric" maxlength="6" placeholder="000000"
+               style="font-size:22px;letter-spacing:6px;text-align:center"
+               onkeydown="if(event.key==='Enter')confirmar2FA('${r.factorId}')"></div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Después</button>
+      <button class="btn btn-primary" onclick="confirmar2FA('${r.factorId}')">Activar</button></div>`);
+}
+async function confirmar2FA(factorId){
+  const r = await conBoton(async()=>{
+    const v = await confirmarSegundoFactor(factorId, document.getElementById('mfa-nuevo').value);
+    if(!v.ok){ toast(v.error, 7000, true); return null; }
+    return v;
+  });
+  if(!r) return;
+  closeModal();
+  toast('Segundo factor activado ✓ · desde ahora te va a pedir el código al entrar', 6000);
+  anotar('seguridad.2fa', 'Activó el segundo factor');
 }
 
 /* Al recargar la página no hay que volver a escribir la contraseña:
@@ -184,6 +273,7 @@ function startApp(role){
   });
   document.getElementById('brandRole').textContent=ROLES[role].label;
   document.getElementById('footUser').innerHTML=`<b style="color:#fff">${esc(window.__user.name)}</b><br>${ROLES[role].label}`;
+  pintarEstado2FA();
   const destino=(location.hash||'').slice(1);
   setView(ROLES[role].views.includes(destino) ? destino : ROLES[role].home);
 }
