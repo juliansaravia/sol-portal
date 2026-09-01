@@ -1938,126 +1938,151 @@ function comPorVendedor(){
 
 /* ============================================================ REPORTERÍA */
 function renderReporteria(){
-  const vend=DB.lotes.filter(l=>l.estado==='vendido').length;
-  const disp=DB.lotes.filter(l=>l.estado==='disponible').length;
+  const n = repNumeros();
+  const Qk_ = typeof Qk==='function' ? Qk : (x=>x);
+
+  let h = `<div class="card"><div class="card-b" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+      <div class="field" style="margin:0"><label>Desde</label>
+        <input type="date" id="rep-desde" value="${n.desde}" onchange="REP.desde=this.value;renderReporteria()"></div>
+      <div class="field" style="margin:0"><label>Hasta</label>
+        <input type="date" id="rep-hasta" value="${n.hasta}" onchange="REP.hasta=this.value;renderReporteria()"></div>
+      <div style="display:flex;gap:6px;margin-left:auto">
+        ${[['Este mes',0],['Mes pasado',1],['Este año',9]].map(([l,k])=>
+          `<button class="btn btn-ghost btn-sm" onclick="repRango(${k})">${l}</button>`).join('')}
+      </div></div></div>`;
+
+  /* Lo del período arriba, porque es lo que se pregunta primero:
+     cuánto entró y cuánto falta por entrar. */
+  h += `<div class="kpis">
+    <div class="kpi accent"><div class="kpi-label">Cobrado en el período</div>
+      <div class="kpi-value sm">${Qk_(n.cobrado)}</div>
+      <div class="kpi-sub">${n.cobros} pago(s) confirmado(s)</div></div>
+    <div class="kpi ${n.nPorConfirmar?'warn':''}"><div class="kpi-label">Esperando confirmación</div>
+      <div class="kpi-value sm">${Qk_(n.porConfirmar)}</div>
+      <div class="kpi-sub">${n.nPorConfirmar} boleta(s) sin verificar</div></div>
+    <div class="kpi"><div class="kpi-label">Ventas del período</div>
+      <div class="kpi-value">${n.ventas}</div>
+      <div class="kpi-sub">${Qk_(n.valorVentas)} en valor</div></div>
+    <div class="kpi warn"><div class="kpi-label">En mora</div>
+      <div class="kpi-value">${n.enMora}</div>
+      <div class="kpi-sub">${Qk_(n.montoMora)} vencido</div></div>
+  </div>`;
+
+  const pct = n.cartera ? Math.round(n.recaudado/n.cartera*100) : 0;
+  h += `<div class="card"><div class="card-h"><h2>La cartera completa</h2>
+      <span class="hint">${n.activos} contratos activos · mora según ${esc(n.fuenteMora)}</span></div>
+    <div class="card-b">
+      <div class="bar-row"><div class="bar-lbl">Recaudado</div>
+        <div class="bar"><div class="bar-fill" style="width:${pct}%"></div></div>
+        <div class="bar-val">${Qk_(n.recaudado)}</div></div>
+      <div class="bar-row"><div class="bar-lbl">Por cobrar</div>
+        <div class="bar"><div class="bar-fill apar" style="width:${100-pct}%"></div></div>
+        <div class="bar-val">${Qk_(n.saldo)}</div></div>
+      <div class="hint" style="margin-top:8px">${pct}% recaudado de una cartera de ${Qk_(n.cartera)}.</div>
+    </div></div>`;
+
+  /* Y abajo lo que de verdad se lleva uno al cierre. */
+  h += `<div class="card"><div class="card-h"><h2>Descargar para el cierre</h2>
+      <span class="hint">CSV listo para Excel · del ${fmtD(n.desde)} al ${fmtD(n.hasta)}</span></div>
+    <div class="card-b" style="padding:0"><table class="data"><tbody>`;
+  REPORTES.forEach(r=>{
+    h += `<tr>
+      <td><b>${esc(r.nombre)}</b><div class="ec-obl">${esc(r.que)}</div></td>
+      <td style="font-size:12px;color:var(--muted);max-width:230px">${esc(r.para)}</td>
+      <td style="width:120px;text-align:right">
+        <button class="btn btn-ghost btn-sm" onclick="descargarReporte('${r.id}')">Descargar</button></td>
+    </tr>`;
+  });
+  h += `</tbody></table></div>
+    <div class="card-b"><div class="hint">
+      Los archivos salen con punto y coma y con BOM, que es lo que abre bien el Excel
+      configurado en español: con coma, los montos se parten en columnas equivocadas y
+      los acentos se rompen. <b>La cartera y la antigüedad salen al corte de hoy</b>; los
+      cobros y las ventas, del período de arriba.</div></div></div>`;
+
+  /* Lo de siempre, que sirve para mirar de un vistazo. */
   const mz={}; DB.lotes.forEach(l=>{mz[l.manzana]=mz[l.manzana]||{t:0,v:0};mz[l.manzana].t++;if(l.estado==='vendido')mz[l.manzana].v++;});
   const maxV=Math.max(1,...Object.values(mz).map(m=>m.v));
-  let h=`<div class="grid2"><div class="card"><div class="card-h"><h2>Lotes vendidos por manzana</h2></div><div class="card-b">`;
+  h+=`<div class="card"><div class="card-h"><h2>Lotes vendidos por manzana</h2></div><div class="card-b">`;
   Object.keys(mz).sort().forEach(m=>{h+=`<div class="bar-row"><div class="bar-lbl">Mz ${m}</div>
-    <div class="bar-track"><div class="bar-fill" style="width:${mz[m].v/maxV*100}%"></div></div>
+    <div class="bar"><div class="bar-fill" style="width:${mz[m].v/maxV*100}%"></div></div>
     <div class="bar-val">${mz[m].v} vendidos</div></div>`;});
-  h+=`</div></div><div>`;
-  const A=DB.contratos.filter(c=>c.estado==='aprobado');
-  const K=A.reduce((a,c)=>{const ec=estadoCuenta(c);a.cart+=ec.totalGiros;a.rec+=ec.recaudado;a.sal+=ec.saldo;return a;},{cart:0,rec:0,sal:0});
-  h+=`<div class="card"><div class="card-h"><h2>Estado de cartera</h2></div><div class="card-b">
-    <div class="bar-row"><div class="bar-lbl">Recaudado</div><div class="bar-track">
-      <div class="bar-fill" style="width:${K.cart?K.rec/K.cart*100:0}%"></div></div>
-      <div class="bar-val">${Qk(K.rec)}</div></div>
-    <div class="bar-row"><div class="bar-lbl">Por cobrar</div><div class="bar-track">
-      <div class="bar-fill" style="width:100%;background:var(--gold)"></div></div>
-      <div class="bar-val">${Qk(K.sal)}</div></div>
-    <div class="hint">${K.cart?Math.round(K.rec/K.cart*100):0}% recaudado de una cartera de ${Qk(K.cart)}.</div></div></div>`;
-  // plazos
-  const pl={}; A.forEach(c=>{const p=(c.plan&&c.plan.plazo)||0;pl[p]=(pl[p]||0)+1;});
-  const maxP=Math.max(1,...Object.values(pl));
-  h+=`<div class="card"><div class="card-h"><h2>Contratos por plazo</h2></div><div class="card-b">`;
-  Object.keys(pl).map(Number).sort((a,b)=>a-b).forEach(p=>{
-    h+=`<div class="bar-row"><div class="bar-lbl">${p===1?'Contado':p+' meses'}</div>
-      <div class="bar-track"><div class="bar-fill" style="width:${pl[p]/maxP*100}%"></div></div>
-      <div class="bar-val">${pl[p]} contrato(s)</div></div>`;});
   h+=`</div></div>`;
-  h+=`<div class="card"><div class="card-h"><h2>Inventario</h2></div><div class="card-b">
-    <div class="bar-row"><div class="bar-lbl">Total</div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="bar-val">${DB.lotes.length}</div></div>
-    <div class="bar-row"><div class="bar-lbl">Vendidos</div><div class="bar-track"><div class="bar-fill" style="width:${vend/DB.lotes.length*100}%;background:var(--vend)"></div></div><div class="bar-val">${vend}</div></div>
-    <div class="bar-row"><div class="bar-lbl">Disponibles</div><div class="bar-track"><div class="bar-fill" style="width:${disp/DB.lotes.length*100}%"></div></div><div class="bar-val">${disp}</div></div>
-    </div></div></div></div>`;
+
   C().innerHTML=h;
+}
+
+/* Atajos de período. 9 es el año corriente. */
+function repRango(k){
+  const hoy = HOY_ISO, a = hoy.slice(0,4), m = +hoy.slice(5,7);
+  if(k===9){ REP.desde = a+'-01-01'; REP.hasta = hoy; }
+  else {
+    const mm = m - k;
+    const anio = mm > 0 ? +a : +a - 1;
+    const mes  = mm > 0 ? mm : 12 + mm;
+    const p = `${anio}-${String(mes).padStart(2,'0')}`;
+    REP.desde = p + '-01';
+    REP.hasta = k === 0 ? hoy : new Date(anio, mes, 0).toISOString().slice(0,10);
+  }
+  renderReporteria();
 }
 
 /* ============================================================ AUTOMATIZACIONES
 
-   Esta pantalla quedó de otra época. Decía que el CRM era KOMMO y que
-   la cobranza por WhatsApp la hacía un bot propio, y ninguna de las
-   dos cosas es cierta.
+   Este suite es el ERP CENTRAL: inventario, cartera, contratos,
+   expedientes y contabilidad. Es la fuente de la verdad.
 
-   Cómo es hoy:
+   NUO es el CRM y el cobrador por WhatsApp con IA — conversa, recuerda
+   la cuota, manda el enlace de pago. La inteligencia es suya.
 
-     Este suite es el ERP CENTRAL. Aquí viven el inventario, la
-     cartera, los contratos, los expedientes y la contabilidad. Es la
-     fuente de la verdad: lo que diga el suite es lo que hay.
+   WABI es el canal: NUO no habla WhatsApp directo, pasa por Wabi.
 
-     NUO es el CRM y el cobrador por WhatsApp con IA. Conversa con el
-     cliente, le recuerda su cuota, le manda el enlace de pago y
-     atiende al prospecto. Tiene su propia inteligencia — no la
-     ponemos nosotros.
+   Y la regla que ordena todo: NUO conversa, nosotros sabemos. NUO no
+   puede saber por su cuenta qué lote se vendió hace diez minutos ni si
+   un pago ya entró. Por eso la integración va en los dos sentidos, y
+   sin el segundo NUO ofrece lotes vendidos y cobra cuotas pagadas.
 
-     WABI es el canal. NUO no habla WhatsApp directo: pasa por Wabi.
-
-   Y la regla que ordena todo: **NUO conversa, nosotros sabemos.**
-   NUO no puede saber por su cuenta qué lote quedó vendido hace diez
-   minutos, cuánto debe alguien hoy, o si un pago ya entró. Eso lo
-   sabe el suite, y por eso la integración va en dos direcciones:
-
-     NUO → suite   consulta   ¿qué hay libre? ¿cuánto debe? ¿cuánto sale?
-     suite → NUO   avisa      se vendió un lote, entró un pago, cayó en mora
-
-   Sin el segundo sentido, NUO ofrece lotes ya vendidos y cobra cuotas
-   ya pagadas.
+   Se retiraron, con su motivo escrito para que nadie los reproponga:
+   KOMMO (era el CRM), el bot propio de WhatsApp (NUO trae el suyo) y
+   la sincronía con sistemasenlaza (ya se importó la cartera).
    ============================================================ */
 const AUTOS=[
   {ic:'◆',t:'Este suite · ERP central',cad:'La fuente de la verdad',st:'ok',
    pasos:['Inventario, cartera, contratos, expedientes y contabilidad.',
           'Lo que diga el suite es lo que hay: NUO y el equipo leen de aquí.'],
    esc:'Nada se eleva: es la base de todo lo demás.'},
-
   {ic:'⇄',t:'NUO consulta al suite',cad:'Tiempo real · 18 endpoints',st:'pend',
    pasos:['Qué lotes hay libres y a qué precio.',
           'Cuánto debe un cliente, su próxima cuota y su mora.',
           'Cuánto sale un lote a cada plazo.'],
    esc:'Falta generar la llave de NUO y pasársela · node tools/llave-nuo.js'},
-
   {ic:'↗',t:'El suite le avisa a NUO',cad:'Por evento',st:'pend',
    pasos:['Se vendió un lote — que deje de ofrecerlo.',
           'Entró un pago — que deje de cobrarlo.',
           'Un contrato cayó en mora — que empiece a recordarlo.'],
    esc:'Falta lo que solo Wabi puede dar: la URL, cómo se autentica y qué forma espera el cuerpo. Mientras tanto los eventos solo se registran.'},
-
   {ic:'✆',t:'NUO · cobrador por WhatsApp con IA',cad:'De NUO, por el canal de Wabi',st:'ext',
    pasos:['Conversa con el cliente y le recuerda su cuota.',
           'Manda el enlace de pago y el estado de cuenta.',
           'Atiende al prospecto y cotiza con nuestros números.'],
    esc:'La inteligencia es de NUO. Nosotros le damos las cifras y le avisamos lo que cambia.'},
-
   {ic:'❒',t:'Cobro confirmado → partida contable',cad:'Por evento',st:'ok',
    pasos:['Al confirmarse un pago se asienta solo, en las dos sociedades.',
           'Si falta una cuenta por mapear, el asiento se encola en vez de tumbar el cobro.'],
    esc:'Se enciende cuando el catálogo esté mapeado · select * from v_catalogo_pendiente;'},
-
   {ic:'⇄',t:'Cuadre bancario',cad:'Al subir el estado de cuenta',st:'ok',
    pasos:['Cruza cada depósito de Banrural contra la cuota que le toca.',
           'Lo que casa por referencia y monto queda listo para aplicar.'],
    esc:'Lo ambiguo, parcial o huérfano espera a que alguien decida. Y quien concilia no confirma.'},
-
   {ic:'%',t:'Comisiones quincenales',cad:'Día 15 y fin de mes',st:'design',
    pasos:['Calcula sobre el cobro efectivo del período.',
           'Arma la liquidación por vendedor y amarra sus comisiones.'],
    esc:'Retiene la comisión mientras el expediente esté incompleto.'},
-
   {ic:'✉',t:'Recordatorios de cobranza del hub',cad:'Todos los días a las 9:00',st:'pend',
    pasos:['Arma la lista de a quién le vence hoy y quién ya venció.',
           'Con MODO_SIMULACION dice a quién le escribiría, sin escribirle.'],
    esc:'Falta desplegar el hub (sol-hub) en Vercel. No hace falta para que el equipo trabaje.'},
 ];
-
-/* Lo que se retiró y por qué, para que nadie lo vuelva a proponer:
-
-     KOMMO            era el CRM. Ahora es NUO.
-     Bot propio de    estaba programado y se retiró: NUO trae su propia
-     WhatsApp         IA. Lo que se conservó son los textos que dependen
-                      de la cartera —monto, fecha y mora—, porque esos
-                      salen de los números, no de la conversación.
-     sistemasenlaza   el CRM viejo del que se importó la cartera. Ya se
-                      importó; no hay sincronía que mantener. */
 
 function renderAutomatizaciones(){
   const badge=s=>({
