@@ -3844,7 +3844,7 @@ function modalCargaDocumentos(){
   openModal(`<div class="modal-h"><h3>Cargar documentos en masa</h3><p>Carpetas enteras · cada archivo va al contrato que le corresponde</p></div>
     <div class="modal-b">
       <div class="field"><label>¿De qué fase o proyecto son estos expedientes?</label>
-        <select id="cd-fase"><option value="">Cualquiera (identifica por número de contrato o lote único)</option>${[...new Set(DB.lotes.map(l=>l.fase).filter(Boolean))].sort().map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('')}</select>
+        <select id="cd-fase" onchange="if(window.__masa&&window.__masa.length)pintarMasa()"><option value="">Cualquiera (identifica por número de contrato o lote único)</option>${[...new Set(DB.lotes.map(l=>l.fase).filter(Boolean))].sort().map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('')}</select>
         <div class="hint">Elegí la fase cuando los archivos vienen sólo por lote (D-03, H-06…): el mismo código existe en más de una fase y así no hay confusión.</div></div>
       <div class="form-grid">
         <div class="field"><label>Carpeta (con subcarpetas)</label><input id="cd-carpeta" type="file" webkitdirectory directory multiple></div>
@@ -3884,13 +3884,28 @@ function pintarMasa(){
       <td title="${esc(x.ruta)}">${esc(x.ruta.split('/').slice(-2).join(' / '))}</td>
       <td>${x.ct?`<b>${x.ct.no}</b> · ${esc(x.ct.lote)} <span class="hint">${esc(x.por)}</span>`
            :(x.lotes&&x.lotes.length)?x.lotes.map(l=>`<button class="btn btn-gold btn-sm" style="margin:2px 4px 2px 0" onclick="masaCrear(${i},'${esc(claveDe(l))}')">Crear contrato ${esc(l.codigo)}</button>`).join('')+`<div class="hint">el lote existe · sin contrato</div>`
-           :`<input class="chip" style="min-width:110px" placeholder="SD-000 o lote" onchange="masaContrato(${i},this.value)">`}</td>
+           :`<input class="chip" list="cd-lista" style="min-width:190px" placeholder="Lote o SD-… · escribí y elegí" autocomplete="off" onchange="masaContrato(${i},this.value)">`}</td>
       <td><select class="chip" onchange="window.__masa[${i}].tipo=this.value;pintarMasa()">${TIPOS_MASA.map(([v,t])=>`<option value="${v}" ${x.tipo===v?'selected':''}>${t}</option>`).join('')}</select></td>
       <td>${x.estado||''}</td></tr>${x.crear?`<tr><td colspan="4" style="background:var(--tint)">${formContratoMasa(i)}</td></tr>`:''}`).join('')}</tbody></table></div>`;
+  out.insertAdjacentHTML('beforeend', `<datalist id="cd-lista">${sugerenciasMasa(v('cd-fase')).map(s=>`<option value="${esc(s)}">`).join('')}</datalist>`);
   document.getElementById('cd-subir').textContent=`Subir ${listos}`;
   const foco=document.getElementById('cm-nombre'); if(foco&&!foco.dataset.visto){ foco.dataset.visto='1'; foco.scrollIntoView({block:'center'}); }
 }
-function masaContrato(i,valor){ const m=contratoDeArchivo(valor,'',v('cd-fase')); const x=window.__masa[i];
+/* Lo que se sugiere al escribir: los contratos de la fase (número · lote ·
+   cliente) y los lotes de la fase que aún no tienen contrato. Se escribe
+   «i-06» o «salazar» y se elige de la lista. */
+function sugerenciasMasa(fase){
+  const enFase=x=>!fase||_normTxt(x.fase||'')===_normTxt(fase);
+  const cts=DB.contratos.filter(c=>c.estado!=='anulado'&&enFase(c))
+    .sort((a,b)=>String(a.lote).localeCompare(String(b.lote),undefined,{numeric:true}))
+    .map(c=>`${c.no} · ${c.lote}${!fase&&c.fase?' · '+c.fase:''} · ${nombreCliente(c.clienteId)}`);
+  const ocupados=new Set(DB.contratos.filter(c=>c.estado!=='anulado').map(c=>_normTxt(c.fase||'')+'|'+_normLote(c.lote)));
+  const libres=DB.lotes.filter(l=>enFase(l)&&!ocupados.has(_normTxt(l.fase||'')+'|'+_normLote(l.codigo)))
+    .sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo),undefined,{numeric:true}))
+    .map(l=>`${l.codigo}${!fase&&l.fase?' · '+l.fase:''} · lote sin contrato`);
+  return [...cts,...libres];
+}
+function masaContrato(i,valor){ valor=String(valor||'').split('·')[0].trim(); if(!valor) return; const m=contratoDeArchivo(valor,'',v('cd-fase')); const x=window.__masa[i];
   if(m){ x.ct=m.ct; x.por='a mano'; x.lotes=[]; }
   else { x.lotes=lotesSinContratoDe(valor,v('cd-fase')); toast(x.lotes.length?'Ese lote existe pero no tiene contrato · podés crearlo aquí':'No encontré ese contrato',4000,!x.lotes.length); }
   pintarMasa(); }
