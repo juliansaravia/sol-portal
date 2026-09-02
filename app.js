@@ -3564,6 +3564,13 @@ async function reciboPDF(d,numero){
   doc.setFontSize(8); doc.setTextColor(120); doc.text(`${d.emisor} · Cuenta monetaria Banrural ${d.cuenta?d.cuenta.numero:''} · Generado por Suite Sol Inmobiliaria`,W/2,760,{align:'center'});
   return doc.output('blob');
 }
+/* Nombre del archivo: contrato, cuota y número. «Recibo SD-131 cuota
+   01de03 No 00000001.pdf» se entiende en cualquier chat o carpeta. */
+function nombreRecibo(d, numero){
+  const limpio = x => String(x||'').replace(/[^\w.-]+/g,'-').replace(/^-+|-+$/g,'');
+  const cuota = d.cuota && d.cuota !== '—' ? ' cuota ' + limpio(String(d.cuota).replace('/','de')) : '';
+  return `Recibo ${limpio(d.contrato.no||'')}${cuota} No ${String(numero).padStart(8,'0')}.pdf`;
+}
 /* Emite (o recupera) el recibo de un pago, genera el PDF, lo guarda como
    adjunto del pago y lo ofrece para compartir. */
 async function emitirYCompartirRecibo(pagoId, silencioso){
@@ -3577,7 +3584,7 @@ async function emitirYCompartirRecibo(pagoId, silencioso){
     if(!adj){
       pdfBlob=await reciboPDF(d,numero);
       if(pdfBlob){
-        const archivo=new File([pdfBlob],`recibo-${String(numero).padStart(8,'0')}.pdf`,{type:'application/pdf'});
+        const archivo=new File([pdfBlob],nombreRecibo(d,numero),{type:'application/pdf'});
         const s=await sbAdjuntar('pago',pagoId,archivo,`Recibo ${numero} · ${d.contrato.no||''}`);
         if(s.ok){ adj={id:s.dato.id,entidad:'pago',entidadId:Number(pagoId),bucket:s.dato.bucket,ruta:s.dato.ruta,nombre:archivo.name,mime:'application/pdf',bytes:archivo.size,descripcion:`Recibo ${numero}`,fecha:HOY_ISO};
                   (DB.adjuntos=DB.adjuntos||[]).push(adj); if(reciboId) sbReciboAdjunto(reciboId,adj.id); }
@@ -3592,7 +3599,7 @@ async function emitirYCompartirRecibo(pagoId, silencioso){
 }
 function modalRecibo(pagoId,numero,pdfBlob,adj){
   const d=datosRecibo(pagoId); if(!d) return;
-  window.__reciboBlob=pdfBlob||null; window.__reciboNombre=`recibo-${String(numero).padStart(8,'0')}.pdf`;
+  window.__reciboBlob=pdfBlob||null; window.__reciboNombre=nombreRecibo(d,numero);
   const tel=String((d.cliente&&d.cliente.telefono)||d.contrato.tel||'').replace(/\D/g,'');
   const texto=`Hola ${String(d.nombre||'').split(' ')[0]}, le confirmamos su pago de ${Q(d.pago.monto)} (cuota ${d.cuota}, lote ${d.lote}) con boleta ${d.pago.referencia||''}. Adjuntamos su recibo No ${String(numero).padStart(8,'0')}. ¡Gracias!`;
   const wa=tel?`https://wa.me/${tel.length===8?'502'+tel:tel}?text=${encodeURIComponent(texto)}`:'';
