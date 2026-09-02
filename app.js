@@ -1591,11 +1591,23 @@ function renderRecaudacion(){
     <div class="hint" style="margin-top:8px">${R.cobradas.length} cobrada(s) · ${R.noCobradas.length} no cobrada(s) · ${R.pendientes.length} sin gestionar</div>
   </div></div>`;
 
-  const filas=R.filas.filter(f=>recFiltro==='todas'||f.estado===recFiltro)
-                     .sort((a,b)=>a.cuota.f<b.cuota.f?-1:1);
+  /* Buscar por contrato, lote o cliente: si hay texto, se muestran TODAS
+     las cuotas pendientes que coincidan, de cualquier semana, con los
+     mismos botones. Así se cobra SD-111 sin ir a buscar su semana. */
+  const q=(window.__recBusca||'').trim().toLowerCase();
+  let filas;
+  if(q){
+    filas=calendario().filter(c=>[c.c,c.l,c.n].some(x=>String(x||'').toLowerCase().includes(q)))
+      .map(c=>{ const r=buscarRecaudo(c.c,c.f); return {cuota:c, reg:r, estado:r?r.estado:'pendiente'}; })
+      .sort((a,b)=>a.cuota.f<b.cuota.f?-1:1).slice(0,60);
+  } else {
+    filas=R.filas.filter(f=>recFiltro==='todas'||f.estado===recFiltro).sort((a,b)=>a.cuota.f<b.cuota.f?-1:1);
+  }
 
-  h+=`<div class="card"><div class="card-h"><h2>Cuotas de la semana</h2>
-      <div class="hint">Marca lo que ocurrió con cada una</div></div>
+  h+=`<div class="card"><div class="card-h" style="flex-wrap:wrap;gap:10px"><h2>${q?`Cuotas de «${esc(window.__recBusca.trim())}» · ${filas.length}`:'Cuotas de la semana'}</h2>
+      <input class="chip" style="min-width:240px" placeholder="Buscar contrato, lote o cliente…" value="${esc(window.__recBusca||'')}"
+             oninput="window.__recBusca=this.value;renderRecaudacion();const i=document.querySelector('.card-h input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}">
+      ${q?`<button class="btn btn-ghost btn-sm" onclick="window.__recBusca='';renderRecaudacion()">Volver a la semana</button>`:'<div class="hint">Marca lo que ocurrió con cada una</div>'}</div>
     <div class="card-b" style="padding:0"><table class="data"><thead><tr>
     <th>Vence</th><th>Contrato</th><th>Cliente</th><th>Lote</th><th>Cuota</th>
     <th class="num">Monto</th><th>Estado</th><th>Acción</th></tr></thead><tbody>`;
@@ -3026,6 +3038,11 @@ function pintarContrato(){
   h+=`<div class="tabs">`+[['ficha','Ficha'],['cuenta','Estado de cuenta'],['gestiones','Gestiones'],['docs','Documentos']]
     .map(([k,l])=>`<button class="tab ${drawerTab===k?'active':''}" onclick="drawerTab='${k}';pintarContrato()">${l}</button>`).join('')+`</div>`;
   h+=`<div class="drawer-b">`;
+  /* Lo que se hace con un contrato, a mano en cualquier pestaña: aplicar
+     un pago (con su boleta) y anotar una gestión. */
+  if(ct.estado==='aprobado')
+    h+=`<div class="btn-row drawer-acciones" style="margin:0 0 14px"><button class="btn btn-primary btn-sm" onclick="modalPago('${ct.id}')">＋ Aplicar pago</button>
+      <button class="btn btn-ghost btn-sm" onclick="modalGestion('${ct.id}')">＋ Registrar gestión</button></div>`;
 
   if(drawerTab==='ficha'){
     h+=`<div class="sect-t">Datos del contrato</div><div class="fgrid">
@@ -3087,7 +3104,6 @@ function pintarContrato(){
   }
 
   if(drawerTab==='gestiones'){
-    h+=`<div class="btn-row" style="margin-top:0"><button class="btn btn-primary btn-sm" onclick="modalGestion('${ct.id}')">+ Registrar gestión</button></div>`;
     const gs=gestionesDe(ct.id);
     if(!gs.length)h+=`<div class="empty">Sin gestiones registradas</div>`;
     gs.forEach(g=>{h+=`<div class="pay-item"><div class="pay-ico">✎</div>
@@ -3408,18 +3424,34 @@ function modalPago(id){
     <div class="modal-b"><div class="form-grid">
       <div class="field"><label>Monto (Q) *</label><input id="p-monto" type="number" value="${ec.prox?ec.prox.monto:''}"></div>
       <div class="field"><label>Forma de pago</label><select id="p-forma">${CATALOGOS.formasPago.map(f=>`<option>${f}</option>`).join('')}</select></div>
-      <div class="field"><label>Cuenta acreditada</label><select id="p-cta">${CATALOGOS.cuentas.map(f=>`<option>${f}</option>`).join('')}</select></div>
-      <div class="field"><label>No. boleta / referencia</label><input id="p-ref"></div>
-    </div><div class="hint">Queda como <b>registrado</b> y pasa a Confirmación de pagos.</div></div>
+      <div class="field"><label>Cuenta acreditada</label><select id="p-cta">${opcionesCuenta()}</select></div>
+      <div class="field"><label>No. boleta / referencia *</label><input id="p-ref" placeholder="Ej. 71302104"></div>
+      <div class="field full"><label>Foto de la boleta *</label>
+        <input id="p-foto" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment">
+        <div class="hint">JPG, PNG o PDF · máximo 5 MB. Al guardar se emite el recibo.</div></div>
+    </div><div class="hint">Queda como <b>registrado</b> y pasa a Confirmación de pagos; el recibo sale ahora.</div></div>
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="guardarPago('${id}')">Guardar boleta</button></div>`);
+      <button class="btn btn-primary" onclick="guardarPago('${id}')">Aplicar pago</button></div>`);
 }
 async function guardarPago(id){
   const monto=+v('p-monto'); if(!monto||monto<=0){toast('Ingresa un monto válido');return;}
-  const p=await conBoton(()=>registrarPago(id,{monto,forma:v('p-forma'),cuenta:v('p-cta'),referencia:v('p-ref')}));
+  const ref=v('p-ref').trim(); if(!ref){toast('Anotá el número de boleta o referencia',5000,true);return;}
+  const foto=(document.getElementById('p-foto')||{}).files; const archivo=foto&&foto[0];
+  if(!archivo){toast('Adjuntá la foto de la boleta: sin ella no se puede confirmar el pago',6000,true);return;}
+  const p=await conBoton(async()=>{
+    const pago=await registrarPago(id,{monto,forma:v('p-forma'),cuenta:v('p-cta'),referencia:ref});
+    if(!pago) return null;
+    if(typeof hayBase==='function'&&hayBase()){
+      const a=await sbAdjuntar('pago', pago.id, archivo, 'Boleta '+ref);
+      if(!a.ok) toast('El pago quedó registrado, pero la foto no subió: '+a.error+' · Subila desde Cuenta.',9000,true);
+      else (DB.adjuntos=DB.adjuntos||[]).push({id:a.dato.id,entidad:'pago',entidadId:Number(pago.id),bucket:a.dato.bucket,ruta:a.dato.ruta,nombre:archivo.name,mime:archivo.type,bytes:archivo.size,descripcion:'Boleta '+ref,fecha:HOY_ISO});
+    }
+    return pago;
+  });
   if(!p) return;
-  await registrarGestion(id,'Cobranza','Cobranza Satisfactória','Boleta registrada por '+Q(monto));
-  closeModal(); toast('Pago registrado · pendiente de confirmar'); pintarContrato();
+  await registrarGestion(id,'Cobranza','Cobranza Satisfactória','Boleta '+ref+' por '+Q(monto));
+  closeModal(); toast('Pago aplicado con su boleta ✓ · emitiendo el recibo…'); drawerTab='cuenta'; pintarContrato();
+  emitirYCompartirRecibo(p.id);
 }
 function modalGestion(id){
   openModal(`<div class="modal-h"><h3>Registrar gestión</h3><p>Bitácora de seguimiento</p></div>
