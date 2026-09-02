@@ -669,3 +669,5 @@ select.chip{appearance:auto;padding:6px 10px}
 .hoja-tabla tr.hoy td{background:#faf1ea;font-weight:700}
 @media print{.hoja-tabla{font-size:10px}.hoja-tabla td{padding:2px 6px}}
 @media(max-width:640px){.hoja-tres{grid-template-columns:1fr}.hoja-tres .hoja-caja{border-right:0;border-bottom:1px solid #e6d9cf}}
+
+.leido{border-color:var(--green) !important;background:var(--green-soft)}

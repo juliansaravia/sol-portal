@@ -1657,11 +1657,12 @@ function modalCobro(contrato,fecha){
           <option>Efectivo en sala de venta</option><option>Pago en línea</option></select></div>
       <div class="field"><label>Cuenta acreditada</label>
         <select id="rcCuenta">${opcionesCuenta()}</select></div>
-      <div class="field"><label>No. de boleta o referencia</label>
-        <input id="rcRef" placeholder="Ej. 4429871"></div>
       <div class="field"><label>Foto de la boleta *</label>
-        <input id="rcFoto" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment">
-        <div class="hint">JPG, PNG o PDF · máximo 5 MB. Sin la boleta el financiero no tiene contra qué confirmar.</div></div>
+        <input id="rcFoto" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment"
+               onchange="if(typeof leerBoletaEn==='function')leerBoletaEn(this,{ref:'rcRef',monto:'rcMonto',aviso:'rcLeido'})">
+        <div class="hint" id="rcLeido">JPG, PNG o PDF · máximo 5 MB. Al elegir la foto, la referencia se lee sola.</div></div>
+      <div class="field"><label>No. de boleta o referencia *</label>
+        <input id="rcRef" placeholder="Se llena con la foto · o escribilo"></div>
       <div class="field"><label>Nota (opcional)</label><input id="rcNota" placeholder=""></div>
       <div class="hint">Queda como <b>pago registrado</b>. Lo aplica a la cartera el financiero al confirmarlo — quien cobra no confirma su propio cobro.</div>
     </div>
@@ -3425,10 +3426,11 @@ function modalPago(id){
       <div class="field"><label>Monto (Q) *</label><input id="p-monto" type="number" value="${ec.prox?ec.prox.monto:''}"></div>
       <div class="field"><label>Forma de pago</label><select id="p-forma">${CATALOGOS.formasPago.map(f=>`<option>${f}</option>`).join('')}</select></div>
       <div class="field"><label>Cuenta acreditada</label><select id="p-cta">${opcionesCuenta()}</select></div>
-      <div class="field"><label>No. boleta / referencia *</label><input id="p-ref" placeholder="Ej. 71302104"></div>
       <div class="field full"><label>Foto de la boleta *</label>
-        <input id="p-foto" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment">
-        <div class="hint">JPG, PNG o PDF · máximo 5 MB. Al guardar se emite el recibo.</div></div>
+        <input id="p-foto" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment"
+               onchange="if(typeof leerBoletaEn==='function')leerBoletaEn(this,{ref:'p-ref',monto:'p-monto',aviso:'p-leido'})">
+        <div class="hint" id="p-leido">JPG, PNG o PDF · máximo 5 MB. Al elegir la foto, la referencia y el monto se leen solos.</div></div>
+      <div class="field"><label>No. boleta / referencia *</label><input id="p-ref" placeholder="Se llena con la foto · o escribilo"></div>
     </div><div class="hint">Queda como <b>registrado</b> y pasa a Confirmación de pagos; el recibo sale ahora.</div></div>
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarPago('${id}')">Aplicar pago</button></div>`);
@@ -3614,8 +3616,9 @@ function modalBoleta(pagoId){
   const ct=getContrato(p.contratoId);
   openModal(`<div class="modal-h"><h3>Boleta del pago</h3><p>${ct?ct.no+' · ':''}${Q(p.monto)} · ${fmtD(p.fecha)}${p.referencia?' · ref. '+esc(p.referencia):''}</p></div>
     <div class="modal-b"><div class="field"><label>Foto o PDF de la boleta *</label>
-      <input id="b-archivo" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment">
-      <div class="hint">JPG, PNG o PDF · máximo 5 MB. Queda colgada del pago como respaldo de lo cobrado.</div></div></div>
+      <input id="b-archivo" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment"
+             onchange="if(typeof leerBoletaEn==='function')leerBoletaEn(this,{aviso:'b-leido'})">
+      <div class="hint" id="b-leido">JPG, PNG o PDF · máximo 5 MB. Queda colgada del pago como respaldo de lo cobrado.</div></div></div>
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarBoleta('${p.id}')">Subir boleta</button></div>`);
 }
