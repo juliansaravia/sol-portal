@@ -3884,10 +3884,9 @@ function pintarMasa(){
       <td title="${esc(x.ruta)}">${esc(x.ruta.split('/').slice(-2).join(' / '))}</td>
       <td>${x.ct?`<b>${x.ct.no}</b> · ${esc(x.ct.lote)} <span class="hint">${esc(x.por)}</span>`
            :(x.lotes&&x.lotes.length)?x.lotes.map(l=>`<button class="btn btn-gold btn-sm" style="margin:2px 4px 2px 0" onclick="masaCrear(${i},'${esc(claveDe(l))}')">Crear contrato ${esc(l.codigo)}</button>`).join('')+`<div class="hint">el lote existe · sin contrato</div>`
-           :`<input class="chip" list="cd-lista" style="min-width:190px" placeholder="Lote o SD-… · escribí y elegí" autocomplete="off" onchange="masaContrato(${i},this.value)">`}</td>
+           :`<input class="chip" style="min-width:190px" placeholder="Lote, SD-… o cliente" autocomplete="off" oninput="sugerir(${i},this)" onfocus="sugerir(${i},this)" onkeydown="sugTecla(event,${i},this)" onblur="setTimeout(cerrarSugerencias,150)">`}</td>
       <td><select class="chip" onchange="window.__masa[${i}].tipo=this.value;pintarMasa()">${TIPOS_MASA.map(([v,t])=>`<option value="${v}" ${x.tipo===v?'selected':''}>${t}</option>`).join('')}</select></td>
       <td>${x.estado||''}</td></tr>${x.crear?`<tr><td colspan="4" style="background:var(--tint)">${formContratoMasa(i)}</td></tr>`:''}`).join('')}</tbody></table></div>`;
-  out.insertAdjacentHTML('beforeend', `<datalist id="cd-lista">${sugerenciasMasa(v('cd-fase')).map(s=>`<option value="${esc(s)}">`).join('')}</datalist>`);
   document.getElementById('cd-subir').textContent=`Subir ${listos}`;
   const foco=document.getElementById('cm-nombre'); if(foco&&!foco.dataset.visto){ foco.dataset.visto='1'; foco.scrollIntoView({block:'center'}); }
 }
@@ -3904,6 +3903,28 @@ function sugerenciasMasa(fase){
     .sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo),undefined,{numeric:true}))
     .map(l=>`${l.codigo}${!fase&&l.fase?' · '+l.fase:''} · lote sin contrato`);
   return [...cts,...libres];
+}
+/* La lista bajo el campo: se filtra con cada letra, se elige con clic o
+   con flechas + Enter. Va en posición fija para que el contenedor con
+   scroll de la tabla no la recorte. */
+function sugerir(i,input){
+  const q=_normTxt(input.value).split(/\s+/).filter(Boolean);
+  const todas=sugerenciasMasa(v('cd-fase'));
+  const lista=(q.length?todas.filter(s=>{ const n=_normTxt(s); return q.every(w=>n.includes(w)); }):todas).slice(0,8);
+  let caja=document.getElementById('sug-lista'); if(!caja){ caja=document.createElement('div'); caja.id='sug-lista'; caja.className='sug-lista'; document.body.appendChild(caja); }
+  const r=input.getBoundingClientRect(); caja.style.left=r.left+'px'; caja.style.top=(r.bottom+2)+'px'; caja.style.width=Math.max(r.width,300)+'px';
+  caja.dataset.fila=i; caja.innerHTML=lista.length?lista.map((s,k)=>`<div class="sug-item${k===0?' act':''}" onmousedown="event.preventDefault();elegirSugerencia(${i},this.textContent)">${esc(s)}</div>`).join(''):`<div class="sug-item vacio">Nada con eso · probá el lote, el número o el apellido</div>`;
+  caja.hidden=false;
+}
+function cerrarSugerencias(){ const c=document.getElementById('sug-lista'); if(c) c.hidden=true; }
+function elegirSugerencia(i,valor){ cerrarSugerencias(); masaContrato(i,valor); }
+function sugTecla(e,i,input){
+  const c=document.getElementById('sug-lista'); const items=c&&!c.hidden?[...c.querySelectorAll('.sug-item:not(.vacio)')]:[];
+  if(e.key==='Escape'){ cerrarSugerencias(); return; }
+  if(e.key==='Enter'){ e.preventDefault(); const act=items.find(x=>x.classList.contains('act')); if(act) elegirSugerencia(i,act.textContent); else masaContrato(i,input.value); return; }
+  if(e.key!=='ArrowDown'&&e.key!=='ArrowUp'||!items.length) return;
+  e.preventDefault(); let k=items.findIndex(x=>x.classList.contains('act')); k=(k+(e.key==='ArrowDown'?1:-1)+items.length)%items.length;
+  items.forEach((x,j)=>x.classList.toggle('act',j===k)); items[k].scrollIntoView({block:'nearest'});
 }
 function masaContrato(i,valor){ valor=String(valor||'').split('·')[0].trim(); if(!valor) return; const m=contratoDeArchivo(valor,'',v('cd-fase')); const x=window.__masa[i];
   if(m){ x.ct=m.ct; x.por='a mano'; x.lotes=[]; }

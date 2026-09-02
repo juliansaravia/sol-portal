@@ -105,6 +105,11 @@ table.data tr.click:hover td{background:#e9f0ec}
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
 .chip{background:#fff;border:1px solid var(--line);border-radius:20px;padding:6px 14px;font-size:12.5px;cursor:pointer;color:var(--ink)}
 .chip.active{background:var(--dark);color:#fff;border-color:var(--dark)}
+/* Sugerencias bajo un campo (carga masiva: lote, contrato o cliente) */
+.sug-lista{position:fixed;z-index:230;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:240px;overflow:auto;padding:4px}
+.sug-item{padding:9px 12px;font-size:13px;color:var(--ink);border-radius:7px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sug-item.act,.sug-item:hover{background:var(--tint)}
+.sug-item.vacio{color:var(--muted);cursor:default;white-space:normal}
 
 /* Buttons */
 .btn{border:0;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font)}
