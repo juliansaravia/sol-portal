@@ -207,14 +207,20 @@ async function pintarEstado2FA(){
 }
 
 /* ---------- Elegir contraseña al llegar por el correo ---------- */
-function pantallaNuevaContrasena(nombre){
+async function pantallaNuevaContrasena(nombre){
   SCREEN='login';
   const L=document.getElementById('login'); L.style.display='flex';
+  /* Con segundo factor activo, Supabase exige aal2 para cambiar la
+     contraseña: se pide el código en esta misma pantalla, antes. */
+  const pideCodigo = (typeof faltaSegundoFactor==='function') ? await faltaSegundoFactor() : false;
   L.innerHTML=`<div class="login-box" style="max-width:420px">
     <div class="login-marca"><span class="brand-mark"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 30l16-14 16 14"/><path d="M12 26v12h24V26"/><path d="M24 6v4M9 11l2.8 2.8M39 11l-2.8 2.8M4 24h4M40 24h4"/></svg></span>
       <span><span class="brand-name">SOL</span><span class="brand-sub">Inmobiliaria</span></span></div>
     <div class="login-sub">Bienvenido${nombre?', '+esc(String(nombre).split(' ')[0]):''}</div>
     <p class="login-hint">Elegí tu contraseña. Es tuya: nadie más la ve.</p>
+    ${pideCodigo?`<div class="field" style="text-align:left;margin-bottom:12px"><label>Código de Microsoft Authenticator</label>
+      <input id="np-cod" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" style="letter-spacing:6px;text-align:center">
+      <div class="hint">Tu cuenta tiene segundo factor: hace falta para cambiar la contraseña.</div></div>`:''}
     <div class="field" style="text-align:left;margin-bottom:12px"><label>Contraseña nueva</label>
       <input id="np-1" type="password" autocomplete="new-password" onkeydown="if(event.key==='Enter')guardarNuevaContrasena()"></div>
     <div class="field" style="text-align:left;margin-bottom:6px"><label>Repetila</label>
@@ -229,9 +235,19 @@ async function guardarNuevaContrasena(){
   const a=(document.getElementById('np-1')||{}).value||'', b=(document.getElementById('np-2')||{}).value||'';
   const err=document.getElementById('np-err');
   if(a!==b){ err.textContent='No coinciden'; return; }
+  const cod=document.getElementById('np-cod');
+  if(cod){
+    if(!/^\d{6}$/.test(cod.value.trim())){ err.textContent='Escribí el código de seis dígitos'; return; }
+    const v2=await conBoton(()=>verificarSegundoFactor(cod.value.trim()));
+    if(!v2||!v2.ok){ err.textContent=(v2&&v2.error)||'Código rechazado'; return; }
+  }
   const r=await conBoton(()=>definirContrasena(a));
   if(!r) return;
-  if(!r.ok){ err.textContent=r.error; return; }
+  if(!r.ok){
+    /* Si el segundo factor está pero no se pidió (o caducó), se pide ahora. */
+    if(/AAL2|MFA/i.test(r.error)){ pantallaNuevaContrasena(SESION.persona&&SESION.persona.nombre); return; }
+    err.textContent=r.error; return;
+  }
   window.__contrasenaDefinida=true;
   try{ history.replaceState(null,'',location.pathname); }catch(e){}
   toast('Contraseña guardada ✓', 4000);
