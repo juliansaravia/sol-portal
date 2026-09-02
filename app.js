@@ -1674,7 +1674,7 @@ function modalCobro(contrato,fecha){
       <p>${esc(c.n)} · lote ${c.l} · cuota ${c.q}/${c.p}</p></div>
     <div class="modal-b">
       <div class="field"><label>Monto recibido</label>
-        <input id="rcMonto" type="number" step="0.01" value="${(Math.round(c.m*100)/100)}"></div>
+        <input id="rcMonto" type="number" step="0.01" value="${(Math.round(c.m*100)/100)}" oninput="totalBoleta('rc')"></div>
       <div class="field"><label>Forma de pago</label>
         <input id="rcForma" value="Transferencia bancaria" readonly style="background:var(--tint)">
         <div class="hint">Solo se reciben transferencias a la cuenta recaudadora. Decisión del dueño.</div></div>
@@ -1687,6 +1687,7 @@ function modalCobro(contrato,fecha){
       <div class="field"><label>No. de boleta o referencia *</label>
         <input id="rcRef" placeholder="Se llena con la foto · o escribilo"></div>
       <div class="field"><label>Nota (opcional)</label><input id="rcNota" placeholder=""></div>
+      ${bloqueBoletaCompartida('rc')}
       <div class="hint">Queda como <b>pago registrado</b>. Lo aplica a la cartera el financiero al confirmarlo — quien cobra no confirma su propio cobro.</div>
     </div>
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -1714,10 +1715,11 @@ async function guardarCobro(contrato,fecha){
       if(!a.ok) toast('El cobro quedó registrado, pero la foto no subió: '+a.error+' · Subila desde el contrato.',9000,true);
       else (DB.adjuntos=DB.adjuntos||[]).push({id:a.dato.id,entidad:'pago',entidadId:Number(reg.pagoId),bucket:a.dato.bucket,ruta:a.dato.ruta,nombre:archivo.name,mime:archivo.type,bytes:archivo.size,descripcion:'Boleta '+ref,fecha:HOY_ISO});
     }
+    const extras=filasBoleta('rc'); if(extras.length) reg.extras=await cobrarExtras(extras,{forma:document.getElementById('rcForma').value,cuenta:document.getElementById('rcCuenta').value,referencia:ref,archivo,principal:contrato});
     return reg;
   });
   if(!r) return;                      // el motivo ya se mostró
-  closeModal(); toast('Cobro registrado con su boleta ✓ · emitiendo el recibo…'); renderRecaudacion();
+  closeModal(); toast(`Cobro registrado con su boleta ✓${r.extras?' · '+r.extras+' lote(s) más con la misma boleta':''} · emitiendo el recibo…`); renderRecaudacion();
   /* Con la boleta arriba, el recibo sale solo y se ofrece para mandarlo. */
   if(r.pagoId) emitirYCompartirRecibo(r.pagoId);
 }
@@ -3098,6 +3100,7 @@ function pintarContrato(){
          ya están firmados en papel: no se genera otro, se sube ese. Sólo
          una venta hecha en el portal genera su contrato para firmar. */
       return `<div class="aviso-err" style="margin:6px 0">Falta el contrato firmado. ${ct.origen?'Generalo, firmalo y subilo.':'Es un contrato que ya existe: hay que subir el firmado.'}</div>`; })()}
+    ${typeof notaExpedienteCompartido==='function'?notaExpedienteCompartido(ct):''}
     <div class="btn-row">${(typeof generarContrato==='function' && ct.origen && !contratoFirmadoDe(ct))
         ? `<button class="btn btn-ghost btn-sm" onclick="generarContrato('${ct.id}')">📄 Generar contrato para firma</button>`
         : ''}
@@ -3147,7 +3150,7 @@ function pintarContrato(){
   if(drawerTab==='docs'){
     if(ct.estado==='borrador'||ct.estado==='en_aprobacion'){
       const reqs=(DB.documentosRequeridos&&DB.documentosRequeridos.length?DB.documentosRequeridos.filter(r=>r.obligatorio):DOCS_REQ()).slice().sort((a,b)=>(a.orden||0)-(b.orden||0));
-      const ds=documentosDe(ct.id); const conArchivo=t=>ds.filter(d=>d.tipo===t&&d.bucket&&d.ruta).length;
+      const ds=(typeof documentosExpediente==='function'?documentosExpediente(ct):documentosDe(ct.id)); const conArchivo=t=>ds.filter(d=>d.tipo===t&&d.bucket&&d.ruta).reduce((n,d)=>n+(d.cara==='ambas'?2:1),0);
       const filas=reqs.map(r=>({...r, tiene:conArchivo(r.codigo), ok:conArchivo(r.codigo)>=(r.caras||1)}));
       const completo=filas.every(f=>f.ok);
       h+=`<div class="card" style="margin:0 0 14px;border-left:3px solid ${completo?'var(--green)':'var(--gold)'}"><div class="card-b">
@@ -3454,7 +3457,7 @@ function modalPago(id){
   const ct=getContrato(id), ec=estadoCuenta(ct);
   openModal(`<div class="modal-h"><h3>Registrar pago</h3><p>${ct.no} · ${esc(nombreCliente(ct.clienteId))}</p></div>
     <div class="modal-b"><div class="form-grid">
-      <div class="field"><label>Monto (Q) *</label><input id="p-monto" type="number" value="${ec.prox?ec.prox.monto:''}"></div>
+      <div class="field"><label>Monto (Q) *</label><input id="p-monto" type="number" value="${ec.prox?ec.prox.monto:''}" oninput="totalBoleta('p')"></div>
       <div class="field"><label>Forma de pago</label><input id="p-forma" value="Transferencia bancaria" readonly style="background:var(--tint)"></div>
       <div class="field"><label>Cuenta acreditada</label><select id="p-cta">${opcionesCuenta()}</select></div>
       <div class="field full"><label>Foto de la boleta *</label>
@@ -3462,6 +3465,7 @@ function modalPago(id){
                onchange="if(typeof leerBoletaEn==='function')leerBoletaEn(this,{ref:'p-ref',monto:'p-monto',aviso:'p-leido'})">
         <div class="hint" id="p-leido">JPG, PNG o PDF · máximo 5 MB. Al elegir la foto, la referencia y el monto se leen solos.</div></div>
       <div class="field"><label>No. boleta / referencia *</label><input id="p-ref" placeholder="Se llena con la foto · o escribilo"></div>
+      ${bloqueBoletaCompartida('p')}
     </div><div class="hint">Queda como <b>registrado</b> y pasa a Confirmación de pagos; el recibo sale ahora.</div></div>
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarPago('${id}')">Aplicar pago</button></div>`);
@@ -3490,10 +3494,11 @@ async function guardarPago(id){
       if(!a.ok) toast('El pago quedó registrado, pero la foto no subió: '+a.error+' · Subila desde Cuenta.',9000,true);
       else (DB.adjuntos=DB.adjuntos||[]).push({id:a.dato.id,entidad:'pago',entidadId:Number(pago.id),bucket:a.dato.bucket,ruta:a.dato.ruta,nombre:archivo.name,mime:archivo.type,bytes:archivo.size,descripcion:'Boleta '+ref,fecha:HOY_ISO});
     }
+    const extras=filasBoleta('p'); if(extras.length) pago.extras=await cobrarExtras(extras,{forma:v('p-forma'),cuenta:v('p-cta'),referencia:ref,archivo,principal:ct.no});
     return pago;
   });
   if(!p) return;
-  await registrarGestion(id,'Cobranza','Cobranza Satisfactória','Boleta '+ref+' por '+Q(monto));
+  await registrarGestion(id,'Cobranza','Cobranza Satisfactória','Boleta '+ref+' por '+Q(monto)+(p.extras?' · compartida con '+p.extras+' lote(s) más':''));
   closeModal(); toast('Pago aplicado con su boleta ✓ · emitiendo el recibo…'); drawerTab='cuenta'; pintarContrato();
   emitirYCompartirRecibo(p.id);
 }
@@ -3839,15 +3844,19 @@ function contratoDeArchivo(nombre, texto, fase){
   for(const m of mNo){ const [,pre,num]=m.match(/^([a-z]+)[-\s]?(\d+)$/); const P=pre.toUpperCase();
     for(const no of [...new Set([P+'-'+num, P+'-'+String(+num), P+'-'+String(+num).padStart(3,'0')])]){ const ct=indices().contratosPorNo.get(no); if(ct&&enFase(ct)) return {ct,por:'número '+no}; } }
   const normLote=_normLote, tokensLote=_tokensLote(ruta);
+  const hallados=[];
   for(const cod of tokensLote){
     /* Sin fase elegida, un código que existe en más de una fase no se
        asigna: «i-06 CARLOS SALAZAR» (agrícola) caía en el SD-18 de FASE 1
        porque era el único contrato con I-06. Se pide la fase. */
     if(!fase){ const fs=fasesDeLote(cod); if(fs.length>1) return {ct:null, ambiguo:cod, fases:fs}; }
     const cands=DB.contratos.filter(c=>c.estado!=='anulado'&&normLote(c.lote)===cod&&enFase(c));
-    if(cands.length===1) return {ct:cands[0],por:'lote '+cod};
-    if(cands.length>1){ const fase=(ruta.match(/fase\s*(\d)/)||[])[1]; const c2=cands.filter(c=>fase&&_normTxt(c.fase).includes('fase '+fase)); if(c2.length===1) return {ct:c2[0],por:'lote '+cod+' fase '+fase}; }
+    if(cands.length===1) hallados.push({ct:cands[0],por:'lote '+cod});
+    else if(cands.length>1){ const fase=(ruta.match(/fase\s*(\d)/)||[])[1]; const c2=cands.filter(c=>fase&&_normTxt(c.fase).includes('fase '+fase)); if(c2.length===1) hallados.push({ct:c2[0],por:'lote '+cod+' fase '+fase}); }
   }
+  /* «D-7 Y D-8» nombra dos contratos: los papeles van al principal del
+     grupo (lotes comprados juntos) y respaldan a los demás. */
+  if(hallados.length) return hallados.find(h=>!h.ct.expedienteDe)||hallados[0];
   if(tokensLote.length) return null;               // había lote y no existe: no adivinar
   const palabras=ruta.split(/[^a-z]+/).filter(w=>w.length>=4&&!/^(contrato|ventas?|dpi|pago|deposito|boleta|enganche|firmado|lote|residencial|whatsapp|image|clientes?|copia|final)$/.test(w));
   let mejor=null, mejorN=0;
@@ -3908,6 +3917,7 @@ async function leerDocumentosMasa(){
     window.__masa.push({f, ruta, ct:m&&m.ct?m.ct:null, por:m&&m.ct?m.por:'', ambiguo:m&&m.ambiguo?m:null, lotes:m&&m.ct?[]:lotesSinContratoDe(ruta,v('cd-fase')), tipo:tipoDeArchivo(ruta), estado:''});
     out.innerHTML=`<div class="hint">Leídos ${window.__masa.length} de ${files.length}…</div>`;
   }
+  window.__vinculos=proponerVinculos(v('cd-fase'));
   pintarMasa(); document.getElementById('cd-leer').disabled=false; document.getElementById('cd-subir').hidden=false;
 }
 function pintarMasa(){
@@ -3919,7 +3929,7 @@ function pintarMasa(){
   const avisoFase=fases.length>1?`<div style="margin-top:4px;color:#B8452E"><b>Ojo:</b> los archivos caen en más de una fase (${fases.map(f=>`${porFase[f]} en ${esc(f)}`).join(', ')}). Si la carpeta es de una sola, elegila arriba y volvé a Leer.</div>`
     :fases.length===1?`<div style="margin-top:4px">Todo va a contratos de <b>${esc(fases[0])}</b>.</div>`:'';
   const avisoAmb=ambiguos?`<div style="margin-top:4px;color:#B8452E"><b>${ambiguos}</b> archivo(s) con un lote que existe en más de una fase: elegí la fase arriba y volvé a Leer.</div>`:'';
-  out.innerHTML=`<div class="hint" style="margin-bottom:8px"><b>${M.length}</b> archivos · <b>${listos}</b> listos para subir · ${sinCt?`<span style="color:#B8452E">${sinCt} sin contrato</span> · `:''}${sinTipo?`<span style="color:#8A5F12">${sinTipo} sin tipo</span>`:''}${avisoFase}${avisoAmb}
+  out.innerHTML=`${pintarVinculos()}<div class="hint" style="margin-bottom:8px"><b>${M.length}</b> archivos · <b>${listos}</b> listos para subir · ${sinCt?`<span style="color:#B8452E">${sinCt} sin contrato</span> · `:''}${sinTipo?`<span style="color:#8A5F12">${sinTipo} sin tipo</span>`:''}${avisoFase}${avisoAmb}
     ${lotesNuevos?`<div style="margin-top:4px;color:#8A5F12"><b>${lotesNuevos}</b> lote(s) existen pero no tienen contrato en el suite: son ventas que aún no están cargadas. Creá el contrato desde la fila (queda vigente, ya firmado) y los archivos de esa carpeta se acomodan solos.</div>`:''}</div>
     <div style="max-height:46vh;overflow:auto"><table class="data"><thead><tr><th>Archivo</th><th>Contrato</th><th>Tipo</th><th></th></tr></thead><tbody>${M.map((x,i)=>`<tr>
       <td title="${esc(x.ruta)}">${esc(x.ruta.split('/').slice(-2).join(' / '))}</td>
@@ -3945,28 +3955,6 @@ function sugerenciasMasa(fase){
     .sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo),undefined,{numeric:true}))
     .map(l=>`${l.codigo}${!fase&&l.fase?' · '+l.fase:''} · lote sin contrato`);
   return [...cts,...libres];
-}
-/* La lista bajo el campo: se filtra con cada letra, se elige con clic o
-   con flechas + Enter. Va en posición fija para que el contenedor con
-   scroll de la tabla no la recorte. */
-function sugerir(i,input){
-  const q=_normTxt(input.value).split(/\s+/).filter(Boolean);
-  const todas=sugerenciasMasa(v('cd-fase'));
-  const lista=(q.length?todas.filter(s=>{ const n=_normTxt(s); return q.every(w=>n.includes(w)); }):todas).slice(0,8);
-  let caja=document.getElementById('sug-lista'); if(!caja){ caja=document.createElement('div'); caja.id='sug-lista'; caja.className='sug-lista'; document.body.appendChild(caja); }
-  const r=input.getBoundingClientRect(); caja.style.left=r.left+'px'; caja.style.top=(r.bottom+2)+'px'; caja.style.width=Math.max(r.width,300)+'px';
-  caja.dataset.fila=i; caja.innerHTML=lista.length?lista.map((s,k)=>`<div class="sug-item${k===0?' act':''}" onmousedown="event.preventDefault();elegirSugerencia(${i},this.textContent)">${esc(s)}</div>`).join(''):`<div class="sug-item vacio">Nada con eso · probá el lote, el número o el apellido</div>`;
-  caja.hidden=false;
-}
-function cerrarSugerencias(){ const c=document.getElementById('sug-lista'); if(c) c.hidden=true; }
-function elegirSugerencia(i,valor){ cerrarSugerencias(); masaContrato(i,valor); }
-function sugTecla(e,i,input){
-  const c=document.getElementById('sug-lista'); const items=c&&!c.hidden?[...c.querySelectorAll('.sug-item:not(.vacio)')]:[];
-  if(e.key==='Escape'){ cerrarSugerencias(); return; }
-  if(e.key==='Enter'){ e.preventDefault(); const act=items.find(x=>x.classList.contains('act')); if(act) elegirSugerencia(i,act.textContent); else masaContrato(i,input.value); return; }
-  if(e.key!=='ArrowDown'&&e.key!=='ArrowUp'||!items.length) return;
-  e.preventDefault(); let k=items.findIndex(x=>x.classList.contains('act')); k=(k+(e.key==='ArrowDown'?1:-1)+items.length)%items.length;
-  items.forEach((x,j)=>x.classList.toggle('act',j===k)); items[k].scrollIntoView({block:'nearest'});
 }
 function masaContrato(i,valor){ valor=String(valor||'').split('·')[0].trim(); if(!valor) return; const x=window.__masa[i];
   /* Lo elegido de la lista es un número exacto: va directo, sin adivinar. */
@@ -4002,7 +3990,7 @@ function formContratoMasa(i){
       <div class="field"><label>Teléfono (opcional)</label><input id="cm-tel" inputmode="numeric"></div>
       <div class="field"><label>Vendedor</label><select id="cm-vend"><option value="">(sin vendedor)</option>${vends.map(p=>`<option>${esc(p.nombre)}</option>`).join('')}</select></div>
       <div class="field"><label>Fecha del contrato *</label><input id="cm-fecha" type="date" value="${_fechaDeCarpeta(x.ruta)}"></div>
-      <div class="field"><label>Enganche (Q)</label><input id="cm-eng" type="number" value="${ENGANCHE_MIN}"></div>
+      <div class="field"><label>Enganche (Q)</label><input id="cm-eng" type="number" min="0" value="${ENGANCHE_MIN}"><div class="hint">0 si no pagó enganche (promoción).</div></div>
       <div class="field"><label>Plazo (meses)</label><select id="cm-plz">${PLAZOS.map(p=>`<option value="${p}" ${p===60?'selected':''}>${p} meses</option>`).join('')}</select></div>
     </div>
     <div class="hint">Queda <b>vigente</b> con el lote vendido y el plan de pagos según fecha, enganche y plazo. El contrato firmado se sube como documento; no se genera otro.</div>
@@ -4029,6 +4017,7 @@ async function crearContratoMasa(i){
 async function subirDocumentosMasa(){
   if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se pueden subir archivos',5000,true);
   const btn=document.getElementById('cd-subir'); btn.disabled=true; let ok=0;
+  for(const g of (window.__vinculos||[])){ if(!g.ok||g.ya) continue; for(const c of g.otros){ if(await vincularExpediente(c.id, g.principal.id)) { g.ya=true; } } }
   for(const x of window.__masa){
     if(!x.ct||!x.tipo||x.estado) continue;
     try{
@@ -4059,7 +4048,8 @@ function modalBoleta(pagoId){
     <div class="modal-b"><div class="field"><label>Foto o PDF de la boleta *</label>
       <input id="b-archivo" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment"
              onchange="if(typeof leerBoletaEn==='function')leerBoletaEn(this,{aviso:'b-leido'})">
-      <div class="hint" id="b-leido">JPG, PNG o PDF · máximo 5 MB. Queda colgada del pago como respaldo de lo cobrado.</div></div></div>
+      <div class="hint" id="b-leido">JPG, PNG o PDF · máximo 5 MB. Queda colgada del pago como respaldo de lo cobrado.</div></div>
+      <div class="field full"><div class="hint">¿Esta misma boleta pagó también otros lotes? <a href="#" onclick="agregarFilaPago('b');return false;"><b>+ Agregar otro pago</b></a> · se cuelga en cada uno, con la misma referencia, y sale su recibo.</div><div id="b-filas"></div></div></div>
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarBoleta('${p.id}')">Subir boleta</button></div>`);
 }
@@ -4068,7 +4058,19 @@ async function guardarBoleta(pagoId){
   const entrada=document.getElementById('b-archivo'); const archivo=entrada&&entrada.files&&entrada.files[0];
   if(!archivo) return toast('Elegí el archivo de la boleta', 5000, true);
   if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se pueden subir archivos', 5000, true);
-  const r=await conBoton(()=>sbAdjuntar('pago', p.id, archivo, 'Boleta '+(p.referencia||'')));
+  const otros=filasPagosSinBoleta('b').filter(f=>f.pagoId&&!mismoId(f.pagoId,p.id));
+  const etiqueta=otros.length?' · compartida: '+[p].concat(otros.map(f=>DB.pagos.find(x=>mismoId(x.id,f.pagoId)))).map(x=>(getContrato(x.contratoId)||{}).no).filter(Boolean).join(', '):'';
+  const r=await conBoton(async()=>{
+    const r1=await sbAdjuntar('pago', p.id, archivo, 'Boleta '+(p.referencia||'')+etiqueta);
+    if(!r1.ok) return r1;
+    for(const f of otros){ const px=DB.pagos.find(x=>mismoId(x.id,f.pagoId)); if(!px) continue;
+      const rx=await sbAdjuntar('pago', px.id, archivo, 'Boleta '+(p.referencia||'')+etiqueta);
+      if(!rx.ok){ toast(((getContrato(px.contratoId)||{}).no||'')+': no subió · '+rx.error,7000,true); continue; }
+      (DB.adjuntos=DB.adjuntos||[]).push({ id:rx.dato.id, entidad:'pago', entidadId:px.id, bucket:rx.dato.bucket, ruta:rx.dato.ruta, nombre:rx.dato.nombre, mime:rx.dato.mime, bytes:rx.dato.bytes, descripcion:rx.dato.descripcion, fecha:HOY_ISO });
+      if(p.referencia&&!px.referencia&&typeof sbReferenciaPago==='function'){ const rr=await sbReferenciaPago(px.id,p.referencia); if(rr.ok) px.referencia=p.referencia; }
+      if(typeof emitirYCompartirRecibo==='function') await emitirYCompartirRecibo(px.id, true);
+    }
+    return r1; });
   if(!r||!r.ok) return;
   const a=r.dato||{};
   (DB.adjuntos=DB.adjuntos||[]).push({ id:a.id, entidad:'pago', entidadId:p.id, bucket:a.bucket, ruta:a.ruta, nombre:a.nombre, mime:a.mime, bytes:a.bytes, descripcion:a.descripcion, fecha:HOY_ISO });
@@ -4243,4 +4245,168 @@ if(hayRemoto()){
 }else{
   initDB();
   renderAuth();
+}
+
+/* ============================================================ SUGERENCIAS (genérico)
+   Una lista bajo cualquier campo: se filtra con cada letra, se elige con
+   clic o flechas + Enter. La carga masiva y la boleta compartida la usan. */
+function mostrarSugerencias(input, lista, alElegir, alEnter){
+  let caja=document.getElementById('sug-lista'); if(!caja){ caja=document.createElement('div'); caja.id='sug-lista'; caja.className='sug-lista'; document.body.appendChild(caja); }
+  const r=input.getBoundingClientRect(); caja.style.left=r.left+'px'; caja.style.top=(r.bottom+2)+'px'; caja.style.width=Math.max(r.width,300)+'px';
+  window.__sugElegir=v=>{ cerrarSugerencias(); alElegir(v); };
+  window.__sugEnter=alEnter||null;
+  caja.innerHTML=lista.length?lista.map((s,k)=>`<div class="sug-item${k===0?' act':''}" onmousedown="event.preventDefault();window.__sugElegir(this.textContent)">${esc(s)}</div>`).join(''):`<div class="sug-item vacio">Nada con eso · probá el lote, el número o el apellido</div>`;
+  caja.hidden=false;
+}
+function filtrarSugerencias(texto, todas, tope){ const q=_normTxt(texto).split(/\s+/).filter(Boolean); return (q.length?todas.filter(s=>{ const n=_normTxt(s); return q.every(w=>n.includes(w)); }):todas).slice(0,tope||8); }
+function cerrarSugerencias(){ const c=document.getElementById('sug-lista'); if(c) c.hidden=true; }
+function sugTecla(e,i,input){
+  const c=document.getElementById('sug-lista'); const items=c&&!c.hidden?[...c.querySelectorAll('.sug-item:not(.vacio)')]:[];
+  if(e.key==='Escape'){ cerrarSugerencias(); return; }
+  if(e.key==='Enter'){ e.preventDefault(); const act=items.find(x=>x.classList.contains('act')); if(act&&window.__sugElegir) window.__sugElegir(act.textContent); else if(window.__sugEnter) window.__sugEnter(input.value); return; }
+  if(e.key!=='ArrowDown'&&e.key!=='ArrowUp'||!items.length) return;
+  e.preventDefault(); let k=items.findIndex(x=>x.classList.contains('act')); k=(k+(e.key==='ArrowDown'?1:-1)+items.length)%items.length;
+  items.forEach((x,j)=>x.classList.toggle('act',j===k)); items[k].scrollIntoView({block:'nearest'});
+}
+/* Carga masiva: la fila i. */
+function sugerir(i,input){ mostrarSugerencias(input, filtrarSugerencias(input.value, sugerenciasMasa(v('cd-fase'))), val=>masaContrato(i,val), val=>masaContrato(i,val)); }
+function elegirSugerencia(i,valor){ cerrarSugerencias(); masaContrato(i,valor); }
+/* Cualquier campo que deba apuntar a un contrato: guarda el id en data-id. */
+function etiquetaContrato(c){ return `${c.no} · ${c.lote}${c.fase?' · '+c.fase:''} · ${nombreCliente(c.clienteId)}`; }
+function sugerirContrato(input){
+  const todas=DB.contratos.filter(c=>c.estado!=='anulado').sort((a,b)=>String(a.lote).localeCompare(String(b.lote),undefined,{numeric:true})).map(etiquetaContrato);
+  const elegir=val=>{ const no=String(val).split('·')[0].trim(); const c=indices().contratosPorNo.get(no); if(!c) return; input.value=etiquetaContrato(c); input.dataset.id=c.id; input.dispatchEvent(new Event('change')); };
+  mostrarSugerencias(input, filtrarSugerencias(input.value, todas), elegir, elegir);
+}
+
+/* ============================================================ BOLETA COMPARTIDA
+   Una sola transferencia que paga varios lotes (la señora del D-03 pagó
+   los enganches de D-03, E-03 y D-12 en una boleta). En el suite son N
+   pagos con la MISMA referencia y la misma boleta colgada de cada uno,
+   cada uno con su recibo. La conciliación suma lo que comparte referencia. */
+function bloqueBoletaCompartida(pref){
+  return `<div class="field full"><div class="hint">¿Esta boleta cubre más de un lote? <a href="#" onclick="agregarFilaBoleta('${pref}');return false;"><b>+ Agregar otro lote</b></a></div>
+    <div id="${pref}-filas"></div><div class="hint" id="${pref}-total"></div></div>`;
+}
+function agregarFilaBoleta(pref){
+  const caja=document.getElementById(pref+'-filas'); if(!caja) return;
+  caja.insertAdjacentHTML('beforeend',`<div class="fila-boleta" style="display:flex;gap:6px;margin:6px 0;align-items:center">
+    <input class="chip ct" style="flex:1;min-width:0" placeholder="Lote, SD-… o cliente" autocomplete="off" oninput="sugerirContrato(this)" onfocus="sugerirContrato(this)" onkeydown="sugTecla(event,0,this)" onblur="setTimeout(cerrarSugerencias,150)">
+    <input class="chip monto" type="number" step="0.01" style="width:110px" placeholder="Q" oninput="totalBoleta('${pref}')">
+    <button class="btn btn-ghost btn-sm" onclick="this.parentNode.remove();totalBoleta('${pref}')" title="Quitar">×</button></div>`);
+  caja.lastElementChild.querySelector('.ct').focus();
+}
+function filasBoleta(pref){
+  return [...document.querySelectorAll(`#${pref}-filas .fila-boleta`)].map(f=>({ id:f.querySelector('.ct').dataset.id, texto:f.querySelector('.ct').value, monto:+f.querySelector('.monto').value||0 }));
+}
+function totalBoleta(pref, montoPrincipalId){
+  const el=document.getElementById(pref+'-total'); if(!el) return;
+  const filas=filasBoleta(pref); const principal=+v(montoPrincipalId||(pref==='rc'?'rcMonto':'p-monto'))||0;
+  if(!filas.length){ el.textContent=''; return; }
+  const total=principal+filas.reduce((t,f)=>t+f.monto,0);
+  el.innerHTML=`Total de la boleta: <b>${Q(total)}</b> = ${Q(principal)}${filas.map(f=>' + '+Q(f.monto)).join('')} · se registra un pago por lote, todos con la misma referencia, y sale un recibo por cada uno.`;
+}
+/* Los pagos de los otros lotes, con la misma boleta y referencia. */
+async function cobrarExtras(filas, {forma, cuenta, referencia, archivo, principal}){
+  let n=0; const otros=[principal].concat(filas.map(f=>(getContrato(f.id)||{}).no)).filter(Boolean).join(', ');
+  for(const f of filas){
+    const ct=getContrato(f.id); if(!ct){ toast('Una fila de la boleta compartida no tiene contrato: se omitió',6000,true); continue; }
+    if(!(f.monto>0)){ toast(`Falta el monto para ${ct.no}`,6000,true); continue; }
+    const ec=estadoCuenta(ct); const prox=ec&&ec.prox; const vence=prox&&(prox.venc||prox.vence);
+    let pago=null;
+    if(vence && typeof marcarCobrada==='function'){ const reg=await marcarCobrada(ct.no, vence, {monto:f.monto,forma,cuenta,referencia,nota:'Boleta compartida: '+otros}); if(reg) pago=DB.pagos.find(x=>mismoId(x.id,reg.pagoId))||{id:reg.pagoId}; }
+    else pago=await registrarPago(ct.id,{monto:f.monto,forma,cuenta,referencia});
+    if(!pago) continue;
+    if(archivo && typeof hayBase==='function'&&hayBase()){
+      const a=await sbAdjuntar('pago', pago.id, archivo, `Boleta ${referencia} · compartida: ${otros}`);
+      if(a.ok) (DB.adjuntos=DB.adjuntos||[]).push({id:a.dato.id,entidad:'pago',entidadId:Number(pago.id),bucket:a.dato.bucket,ruta:a.dato.ruta,nombre:archivo.name,mime:archivo.type,bytes:archivo.size,descripcion:`Boleta ${referencia} · compartida: ${otros}`,fecha:HOY_ISO});
+      else toast(`${ct.no}: el pago quedó, la boleta no subió: ${a.error}`,8000,true);
+    }
+    await registrarGestion(ct.id,'Cobranza','Cobranza Satisfactória',`Boleta ${referencia} por ${Q(f.monto)} · compartida con ${otros}`);
+    if(typeof emitirYCompartirRecibo==='function') await emitirYCompartirRecibo(pago.id, true);
+    n++;
+  }
+  return n;
+}
+/* Boleta para pagos que YA existen en varios contratos (lo histórico del
+   CRM: los tres enganches ya están registrados, falta la boleta única). */
+function filasPagosSinBoleta(pref){
+  return [...document.querySelectorAll(`#${pref}-filas .fila-boleta`)].map(f=>({ pagoId:(f.querySelector('.pg')||{}).value, ct:f.querySelector('.ct').dataset.id }));
+}
+function agregarFilaPago(pref){
+  const caja=document.getElementById(pref+'-filas'); if(!caja) return;
+  caja.insertAdjacentHTML('beforeend',`<div class="fila-boleta" style="display:flex;gap:6px;margin:6px 0;align-items:center;flex-wrap:wrap">
+    <input class="chip ct" style="flex:1;min-width:160px" placeholder="Lote, SD-… o cliente" autocomplete="off" oninput="sugerirContrato(this)" onfocus="sugerirContrato(this)" onkeydown="sugTecla(event,0,this)" onblur="setTimeout(cerrarSugerencias,150)" onchange="pagosDeFila(this)">
+    <select class="chip pg" style="min-width:180px"><option value="">(elegí el contrato)</option></select>
+    <button class="btn btn-ghost btn-sm" onclick="this.parentNode.remove()" title="Quitar">×</button></div>`);
+  caja.lastElementChild.querySelector('.ct').focus();
+}
+function pagosDeFila(input){
+  const sel=input.parentNode.querySelector('.pg'); const id=input.dataset.id; if(!sel||!id) return;
+  const ps=(indices().pagosPorContrato.get(String(id))||[]).filter(p=>p.estado!=='rechazado'&&!adjuntosDe('pago',p.id).some(a=>!/^Recibo/i.test(a.descripcion||'')));
+  sel.innerHTML=ps.length?ps.map(p=>`<option value="${p.id}">${fmtD(p.fecha)} · ${Q(p.monto)}${p.referencia?' · ref '+esc(p.referencia):''}</option>`).join(''):'<option value="">(sin pagos pendientes de boleta)</option>';
+}
+
+/* ============================================================ EXPEDIENTE COMPARTIDO
+   Lotes comprados juntos con un solo papel (D-07 y D-08; D-05, D-06 y
+   D-09). Regla nueva: un contrato y un expediente por lote. Lo histórico
+   se cuadra vinculando: el expediente vive en el principal y respalda a
+   los demás. */
+function notaExpedienteCompartido(ct){
+  if(typeof principalDe!=='function') return '';
+  const p=principalDe(ct), vinc=vinculadosA(ct);
+  const puede=typeof puedeEscribir==='function'?puedeEscribir():true;
+  if(!mismoId(p.id,ct.id)) return `<div class="hint" style="margin:6px 0;padding:8px 10px;background:var(--tint);border-radius:8px">Lotes comprados juntos: el expediente vive en <b>${esc(p.no)} · ${esc(p.lote)}</b> y respalda a este contrato. ${puede?`<a href="#" onclick="separarExpediente('${ct.id}');return false;">Separar</a>`:''}</div>`;
+  if(vinc.length) return `<div class="hint" style="margin:6px 0;padding:8px 10px;background:var(--tint);border-radius:8px">Este expediente también respalda a <b>${vinc.map(c=>esc(c.no)+' · '+esc(c.lote)).join(', ')}</b> (lotes comprados juntos). ${puede?`<a href="#" onclick="modalVincularExpediente('${ct.id}');return false;">Vincular otro</a>`:''}</div>`;
+  return puede?`<div class="hint" style="margin:6px 0">¿Se compró junto con otro lote con un solo papel? <a href="#" onclick="modalVincularExpediente('${ct.id}');return false;">Compartir expediente</a></div>`:'';
+}
+function modalVincularExpediente(id){
+  const ct=getContrato(id); if(!ct) return;
+  const mismos=DB.contratos.filter(c=>!mismoId(c.id,id)&&c.estado!=='anulado'&&mismoId(c.clienteId,ct.clienteId));
+  openModal(`<div class="modal-h"><h3>Compartir expediente</h3><p>${esc(ct.no)} · ${esc(ct.lote)} · ${esc(nombreCliente(ct.clienteId))}</p></div>
+    <div class="modal-b">
+      <div class="hint" style="margin-bottom:10px">Sólo para lotes comprados juntos con un solo papel. Los documentos de <b>${esc(ct.no)}</b> pasarán a respaldar también al que elijas. Regla de aquí en adelante: un contrato y un expediente por lote.</div>
+      ${mismos.length?`<div class="field"><label>Del mismo cliente</label><select id="ve-mismo"><option value="">(otro)</option>${mismos.map(c=>`<option value="${c.id}">${esc(etiquetaContrato(c))}</option>`).join('')}</select></div>`:''}
+      <div class="field"><label>O buscá el contrato</label><input id="ve-otro" class="chip" style="width:100%" placeholder="Lote, SD-… o cliente" autocomplete="off" oninput="sugerirContrato(this)" onfocus="sugerirContrato(this)" onkeydown="sugTecla(event,0,this)" onblur="setTimeout(cerrarSugerencias,150)"></div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarVinculo('${id}')">Vincular</button></div>`);
+}
+async function guardarVinculo(id){
+  const otro=(document.getElementById('ve-mismo')||{}).value||(document.getElementById('ve-otro')||{}).dataset.id;
+  if(!otro) return toast('Elegí el otro contrato',4000,true);
+  const ok=await conBoton(()=>vincularExpediente(otro, id));
+  if(!ok) return;
+  closeModal(); toast('Expediente compartido ✓'); if(typeof pintarContrato==='function') pintarContrato();
+}
+async function separarExpediente(id){
+  const ok=await vincularExpediente(id, null); if(!ok) return;
+  toast('Expediente separado: este contrato vuelve a necesitar sus propios papeles'); if(typeof pintarContrato==='function') pintarContrato();
+}
+
+/* Carga masiva: carpetas con varios lotes del mismo cliente («D-7 Y D-8
+   NANCY DE LEÓN») se detectan como comprados juntos y se ofrecen para
+   vincular; los archivos van al principal (el lote menor). */
+function proponerVinculos(fase){
+  const M=window.__masa||[]; const enFase=_enFaseMasa(fase); const carpetas=new Map();
+  for(const x of M){ const carpeta=x.ruta.split('/').slice(0,-1).join('/'); if(!carpetas.has(carpeta)) carpetas.set(carpeta,[]); carpetas.get(carpeta).push(x); }
+  const out=[];
+  for(const [carpeta,filas] of carpetas){
+    const cts=[]; for(const cod of _tokensLote(_normTxt(carpeta).replace(/[_/\\]+/g,' '))){ const c=DB.contratos.filter(c=>c.estado!=='anulado'&&_normLote(c.lote)===cod&&enFase(c)); if(c.length===1&&!cts.some(y=>mismoId(y.id,c[0].id))) cts.push(c[0]); }
+    if(cts.length<2) continue;
+    if(!cts.every(c=>mismoId(c.clienteId,cts[0].clienteId))) continue;
+    cts.sort((a,b)=>String(a.lote).localeCompare(String(b.lote),undefined,{numeric:true}));
+    const principal=cts.find(c=>!c.expedienteDe&&vinculadosA(c).length)||cts.find(c=>!c.expedienteDe)||cts[0];
+    const otros=cts.filter(c=>!mismoId(c.id,principal.id));
+    const yaTodos=otros.every(c=>mismoId(c.expedienteDe,principal.id));
+    for(const x of filas){ if(x.ct&&cts.some(c=>mismoId(c.id,x.ct.id))){ x.ct=principal; x.por='lote '+principal.lote+' · principal del grupo'; } }
+    out.push({carpeta, principal, otros, ok:!yaTodos, ya:yaTodos});
+  }
+  return out;
+}
+function pintarVinculos(){
+  const V=window.__vinculos||[]; if(!V.length) return '';
+  return `<div style="margin:6px 0 10px;padding:8px 10px;background:var(--tint);border-radius:8px;font-size:12.5px">
+    <b>Lotes comprados juntos</b> (un solo papel para varios lotes): los archivos van al principal y respaldan a los demás.
+    ${V.map((g,i)=>`<div style="margin-top:4px"><label><input type="checkbox" ${g.ok?'checked':''} ${g.ya?'disabled':''} onchange="window.__vinculos[${i}].ok=this.checked"> ${esc(g.principal.no)} · ${esc(g.principal.lote)} + ${g.otros.map(c=>esc(c.lote)).join(' + ')} · ${esc(nombreCliente(g.principal.clienteId))}${g.ya?' <span class="hint">(ya vinculados)</span>':' · se vinculan al subir'}</label></div>`).join('')}</div>`;
 }

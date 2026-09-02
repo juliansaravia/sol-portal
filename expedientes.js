@@ -27,7 +27,7 @@ let EXP_BUSCA  = '';
    Postgres, esto se reemplaza por la consulta. */
 function faltantesDe(ct) {
   const c = contactoDe(ct.no) || {};
-  const docs = documentosDe(ct.id) || [];
+  const docs = (typeof documentosExpediente === 'function' ? documentosExpediente(ct) : documentosDe(ct.id)) || [];
 
   /* Un documento cuenta cuando hay ARCHIVO, no cuando hay fila. El
      portal anotaba nombres (`pendiente:dpi_frente.pdf`) y el expediente
@@ -161,7 +161,7 @@ function expPintar() {
 
   h += lista.map(ct => {
     const c = contactoDe(ct.no) || {};
-    const docs = documentosDe(ct.id) || [];
+    const docs = (typeof documentosExpediente === 'function' ? documentosExpediente(ct) : documentosDe(ct.id)) || [];
     const f = faltantesDe(ct);
     const graves = f.filter(x => x.grave).length;
     return `<tr>
@@ -192,7 +192,7 @@ function verExpediente(id) {
   const ct = getContrato(id);
   if (!ct) return;
   const c = contactoDe(ct.no) || {};
-  const docs = documentosDe(ct.id) || [];
+  const docs = (typeof documentosExpediente === 'function' ? documentosExpediente(ct) : documentosDe(ct.id)) || [];
   const e = estadoCuenta(ct);
   const f = faltantesDe(ct);
 

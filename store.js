@@ -724,6 +724,32 @@ const getContrato = id => (id == null) ? undefined : indices().contratos.get(Str
 const contratoDeLote = codigo => indices().contratoPorLote.get(String(codigo));
 const gestionesDe = id => DB.gestiones.filter(g => g.contratoId === id).sort((a, b) => b.fecha.localeCompare(a.fecha));
 const documentosDe = id => indices().docsPorContrato.get(String(id)) || [];
+/* ---------- Lotes comprados juntos: expediente compartido ----------
+   `expedienteDe` apunta al contrato principal del grupo. Los papeles se
+   suben ahí y respaldan a los vinculados (32_lotes_unidos…). */
+const principalDe = ct => (ct && ct.expedienteDe) ? (getContrato(ct.expedienteDe) || ct) : ct;
+const vinculadosA = ct => ct ? DB.contratos.filter(c => mismoId(c.expedienteDe, ct.id)) : [];
+const documentosExpediente = ct => {
+  if (!ct) return [];
+  const p = principalDe(ct), propios = documentosDe(ct.id);
+  return mismoId(p.id, ct.id) ? propios : propios.concat(documentosDe(p.id));
+};
+async function vincularExpediente(id, principalId) {
+  const ct = getContrato(id); if (!ct) { avisar('No se encontró el contrato'); return false; }
+  if (principalId && mismoId(principalId, id)) { avisar('Un contrato no puede respaldarse a sí mismo'); return false; }
+  const p = principalId ? getContrato(principalId) : null;
+  if (principalId && !p) { avisar('No se encontró el contrato principal'); return false; }
+  if (p && p.expedienteDe) { avisar(p.no + ' ya cuelga de otro expediente: vinculá directo al principal'); return false; }
+  if (typeof hayBase === 'function' && hayBase()) {
+    const r = await sbVincularExpediente(ct.id, p ? p.id : null);
+    if (!r.ok) { avisar(r.error); return false; }
+  }
+  ct.expedienteDe = p ? p.id : null;
+  await registrarGestion(ct.id, 'Bitácora Socios', 'Contactado', p ? 'Expediente compartido con ' + p.no + ' (lotes comprados juntos)' : 'Expediente separado: vuelve a llevar sus propios papeles');
+  if (typeof saveDB === 'function' && !(typeof hayBase === 'function' && hayBase())) saveDB();
+  return true;
+}
+
 
 /* ── Recibo de pago ── */
 const reciboDe = pagoId => (DB.recibos || []).find(r => mismoId(r.pagoId, pagoId)) || null;

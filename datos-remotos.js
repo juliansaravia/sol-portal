@@ -73,7 +73,8 @@ async function cargarDesdeSupabase() {
        recaudado cada contrato, que es de lo primero que se mira. */
     const [lotes, contratos, clientes, pagos, equipo, documentos, comisiones, adjuntos, recibos, liquidaciones, requeridos] = await Promise.all([
       todas('v_inventario', 'proyecto_id,proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado'),
-      todas('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,origen,banco,boleta,lote_id,cliente_id,persona_id'),
+      conRespaldo('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,origen,banco,boleta,lote_id,cliente_id,persona_id',
+                  'expediente_de'),
       todas('cliente', 'id,nombre,dpi,nit,telefono,email,direccion,ocupacion'),
       todas('pago', 'id,contrato_id,giro_id,monto,fecha_pago,forma_pago,referencia,estado'),
       /* `auth_uid` viene para saber quién ya puede entrar. No se guarda
@@ -203,6 +204,8 @@ async function cargarDesdeSupabase() {
            que se normaliza a cadena vacía y cada pantalla decide cómo
            decir «no se registró». */
         origen: c.origen || '',
+        // Lotes comprados juntos: el expediente vive en otro contrato (32)
+        expedienteDe: c.expediente_de || null,
         banco: c.banco || '',
         boleta: c.boleta || '',
         obligaciones: []

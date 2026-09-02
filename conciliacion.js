@@ -215,6 +215,20 @@ function analizarMov(mov) {
   // Se prueban las dos que trae Banrural — en las notas de crédito la buena
   // puede estar en cualquiera de las dos columnas.
   const refs = [mov.ref, mov.ref2].filter(Boolean);
+  /* Boleta compartida: una transferencia que pagó varios lotes está en el
+     suite como varios pagos con la misma referencia. Se suman. */
+  if (refs.length) {
+    const grupo = (DB.pagos || []).filter(p => p.estado !== 'rechazado' && p.referencia && refs.includes(String(p.referencia)));
+    if (grupo.length > 1) {
+      const suma = Math.round(grupo.reduce((t, p) => t + p.monto, 0) * 100) / 100;
+      const calza = difC(suma, mov.monto) <= TOLERANCIA_C;
+      const partes = grupo.map(p => ((getContrato(p.contratoId) || {}).no || '?') + ' ' + _Q(p.monto));
+      const nos = grupo.map(p => (getContrato(p.contratoId) || {}).no);
+      return { mov, estado: 'revisar', via: 'boleta_compartida', confianza: calza ? 0.9 : 0.5, libre,
+               candidatos: rankear(cuotasCerca(mov.fecha).filter(x => nos.includes(x.c)), mov),
+               nota: `Boleta compartida: la referencia calza con ${grupo.length} pagos registrados (${partes.join(' + ')} = ${_Q(suma)})${calza ? '.' : ', pero el depósito es de ' + _Q(mov.monto) + '.'}` };
+    }
+  }
   if (refs.length) {
     const dec = (DB.declaradas || []).filter(x => refs.includes(x.ref) && x.contrato);
     if (dec.length === 1) {

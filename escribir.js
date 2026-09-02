@@ -283,6 +283,23 @@ async function sbRegistrarPago(contrato_id, { monto, forma, cuenta, referencia, 
   });
 }
 
+/** La referencia de un pago que entró sin ella (boleta compartida). */
+async function sbReferenciaPago(pago_id, referencia) {
+  return escribir('anotar la referencia', async () => {
+    return oExplota(await SB.from('pago').update({ referencia, updated_at: new Date().toISOString() })
+      .eq('id', pago_id).select('id,referencia').single());
+  });
+}
+
+/** Lotes comprados juntos: el expediente de `contrato_id` vive en `principal_id` (null = separar). */
+async function sbVincularExpediente(contrato_id, principal_id) {
+  return escribir(principal_id ? 'compartir el expediente' : 'separar el expediente', async () => {
+    return oExplota(await SB.from('contrato')
+      .update({ expediente_de: principal_id || null, updated_at: new Date().toISOString() })
+      .eq('id', contrato_id).select('id,expediente_de').single());
+  });
+}
+
 async function sbConfirmarPago(pago_id, ok = true) {
   return escribir(ok ? 'confirmar el pago' : 'rechazar el pago', async () => {
     const fila = oExplota(await SB.from('pago').update({
@@ -943,7 +960,7 @@ async function sbReciboAdjunto(recibo_id, adjunto_id) {
    ============================================================ */
 Object.assign(window, {
   hayBase, escribir, traducirError,
-  sbCrearCliente, sbActualizarCliente,
+  sbCrearCliente, sbActualizarCliente, sbVincularExpediente, sbReferenciaPago,
   sbCrearContrato, sbEstadoContrato, sbReasignarContratos,
   sbRegistrarPago, sbConfirmarPago, sbBorrarPago,
   sbMarcarCobrada, sbMarcarNoCobrada, sbDesmarcarCuota,
