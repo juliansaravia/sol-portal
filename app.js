@@ -3886,7 +3886,7 @@ async function subirDocumentosMasa(){
       } else {
         r=await agregarDocumento(x.ct.id, x.tipo, x.f, null);
       }
-      x.estado=r?'<span class="badge b-ok">Subido</span>':'<span class="badge b-mora">Falló</span>'; if(r) ok++;
+      const ah=(x.f.__ahorro||window.__ultimoAhorro||0); x.estado=r?`<span class="badge b-ok">Subido</span>${ah?` <span class="hint">−${(ah/1048576).toFixed(1)} MB</span>`:''}`:'<span class="badge b-mora">Falló</span>'; if(r) ok++;
     }catch(e){ x.estado=`<span class="badge b-mora">${esc(e.message||String(e))}</span>`; }
     pintarMasa();
   }

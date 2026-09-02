@@ -460,6 +460,7 @@ const TOPE = { expedientes: 10485760, contratos: 20971520, boletas: 5242880, fac
  */
 async function sbSubirDocumento(contrato_id, codigo, archivo, cara) {
   return escribir('subir el documento', async () => {
+    if (typeof comprimirParaSubir === 'function') archivo = await comprimirParaSubir(archivo);
     if (!archivo) throw new Error('No se eligió ningún archivo.');
 
     const tipo = archivo.type || '';
@@ -787,6 +788,7 @@ const BUCKET_DE = {
 async function sbAdjuntar(entidad, id, archivo, descripcion) {
   return escribir('subir el respaldo', async () => {
     if (!archivo) throw new Error('No se eligió ningún archivo.');
+    if (typeof comprimirParaSubir === 'function') archivo = await comprimirParaSubir(archivo);
     const tipo = archivo.type || '';
     if (!MIMES_OK.includes(tipo))
       throw new Error('Solo se aceptan fotos (JPG, PNG, WEBP) o PDF. '

@@ -171,3 +171,74 @@ window.leerBoletaEn = leerBoletaEn;
 window.interpretarBoleta = interpretarBoleta;
 window.interpretarReciboCRM = interpretarReciboCRM;
 window.textoDePDF = textoDePDF;
+
+
+/* ============================================================
+   COMPRIMIR ANTES DE SUBIR
+
+   Un escaneo de 60 MB es resolución de imprenta; para leerlo en pantalla
+   y en un expediente basta 150 dpi. Todo archivo pasa por aquí antes de
+   subir (sbAdjuntar / sbSubirDocumento):
+     · fotos → JPEG, lado mayor 2,000 px, calidad 0.82 (un DPI sigue
+       legible con lupa);
+     · PDF de más de 3 MB → cada página se dibuja a ~150 dpi y se
+       re-arma como PDF de imágenes (pdf.js + jsPDF);
+     · PDF chicos o con texto (recibos del CRM) → intactos;
+     · si comprimir no achica, se sube el original.
+   Devuelve un File con el mismo nombre (extensión .jpg/.pdf) y anota
+   cuánto se ahorró en `File.__ahorro`.
+   ============================================================ */
+const COMPRIMIR_PDF_DESDE = 3 * 1024 * 1024;
+async function comprimirParaSubir(archivo, avisar) {
+  try {
+    if (!archivo || archivo.size < 400 * 1024) return archivo;
+    const tipo = archivo.type || '';
+    if (/^image\//.test(tipo)) return await _comprimirImagen(archivo, avisar);
+    if (/pdf/i.test(tipo) || /\.pdf$/i.test(archivo.name)) {
+      if (archivo.size < COMPRIMIR_PDF_DESDE) return archivo;
+      return await _comprimirPDF(archivo, avisar);
+    }
+    return archivo;
+  } catch (e) { console.warn('[comprimir] se sube el original:', e.message || e); return archivo; }
+}
+async function _comprimirImagen(archivo, avisar) {
+  const img = new Image(); const url = URL.createObjectURL(archivo);
+  await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = url; });
+  const esc = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
+  const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * esc); c.height = Math.round(img.naturalHeight * esc);
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+  URL.revokeObjectURL(url);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.82));
+  if (!blob || blob.size >= archivo.size) return archivo;
+  const f = new File([blob], archivo.name.replace(/\.[a-z0-9]+$/i, '') + '.jpg', { type: 'image/jpeg' });
+  f.__ahorro = archivo.size - blob.size; if (avisar) avisar(f);
+  return f;
+}
+async function _comprimirPDF(archivo, avisar) {
+  const J = window.jspdf && window.jspdf.jsPDF; if (!J) return archivo;
+  const lib = await cargarPdfjs();
+  const doc = await lib.getDocument({ data: await archivo.arrayBuffer() }).promise;
+  /* Si trae texto de verdad, es un PDF generado, no un escaneo: dejarlo. */
+  const p1 = await doc.getPage(1); const t = await p1.getTextContent();
+  if (t.items.map(x => x.str).join('').trim().length > 200) return archivo;
+  let salida = null;
+  for (let i = 1; i <= doc.numPages; i++) {
+    const pg = await doc.getPage(i);
+    const vp0 = pg.getViewport({ scale: 1 });                 // 72 dpi
+    const escala = 150 / 72;
+    const vp = pg.getViewport({ scale: escala });
+    const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+    await pg.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+    const jpg = c.toDataURL('image/jpeg', 0.72);
+    const wpt = vp0.width, hpt = vp0.height;
+    if (!salida) salida = new J({ unit: 'pt', format: [wpt, hpt], orientation: wpt > hpt ? 'l' : 'p' });
+    else salida.addPage([wpt, hpt], wpt > hpt ? 'l' : 'p');
+    salida.addImage(jpg, 'JPEG', 0, 0, wpt, hpt);
+  }
+  const blob = salida.output('blob');
+  if (blob.size >= archivo.size) return archivo;
+  const f = new File([blob], archivo.name.replace(/\.[a-z0-9]+$/i, '') + '.pdf', { type: 'application/pdf' });
+  f.__ahorro = archivo.size - blob.size; if (avisar) avisar(f);
+  return f;
+}
+window.comprimirParaSubir = comprimirParaSubir;
