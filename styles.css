@@ -630,7 +630,7 @@ select.chip{appearance:auto;padding:6px 10px}
   .kpi-value{font-size:22px}.kpi-value.sm{font-size:18px}
 }
 
-.recibo .sello{display:block;width:190px;margin:0 auto -14px;opacity:.92}
+.recibo .sello{display:block;width:210px;margin:0 auto -18px;opacity:.95}
 
 /* ── Administración · móvil nativo ── */
 .inicio-adm{display:flex;flex-direction:column}

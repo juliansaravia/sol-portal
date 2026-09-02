@@ -3444,8 +3444,8 @@ async function reciboPDF(d,numero){
   fila(['TOTAL PAGADO','','','',Q(d.pago.monto).replace('Q ',''),''],true);
   const ley=`PAGO REALIZADO CON BOLETA ${d.pago.referencia||'—'} EL DÍA ${f} CON VALOR DE ${Q(d.pago.monto)}   PAGO REGISTRADO POR: ${String(d.registradoPor||'').toUpperCase()}.`;
   doc.setFont('helvetica','bold'); const leyL=doc.splitTextToSize(ley,W-2*M-6); doc.rect(M,y,W-2*M,14*leyL.length+8); doc.text(leyL,M+3,y+12); y+=14*leyL.length+8;
-  y+=70; doc.setFont('helvetica','normal'); doc.setFontSize(10);
-  const sello=await selloAljibe(); if(sello){ try{ doc.addImage(sello,'PNG',W/2-96,y-58,192,55); }catch(e){} }
+  y+=96; doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  const sello=await selloAljibe(); if(sello){ try{ doc.addImage(sello,'PNG',W/2-100,y-84,200,80); }catch(e){} }
   doc.line(W/2-90,y,W/2+90,y); doc.text('Firma y Sello de la Empresa',W/2,y+14,{align:'center'});
   y+=60; doc.line(W/2-90,y,W/2+90,y); doc.text('Firma del Cliente',W/2,y+14,{align:'center'});
   doc.setFontSize(8); doc.setTextColor(120); doc.text(`${d.emisor} · Cuenta monetaria Banrural ${d.cuenta?d.cuenta.numero:''} · Generado por Suite Sol Inmobiliaria`,W/2,760,{align:'center'});
