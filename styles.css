@@ -671,3 +671,7 @@ select.chip{appearance:auto;padding:6px 10px}
 @media(max-width:640px){.hoja-tres{grid-template-columns:1fr}.hoja-tres .hoja-caja{border-right:0;border-bottom:1px solid #e6d9cf}}
 
 .leido{border-color:var(--green) !important;background:var(--green-soft)}
+
+#avisoVersion{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:190;background:var(--ink);color:#fff;padding:10px 16px;border-radius:12px;font-size:13.5px;box-shadow:0 8px 24px rgba(0,0,0,.25);display:flex;gap:12px;align-items:center}
+#avisoVersion button{background:var(--gold);border:0;color:#2b1f05;font-weight:700;padding:7px 12px;border-radius:8px;cursor:pointer;font-family:var(--font)}
+@media(max-width:760px){#avisoVersion{bottom:calc(84px + env(safe-area-inset-bottom));width:calc(100% - 24px);justify-content:space-between}}
