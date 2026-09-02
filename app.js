@@ -3521,10 +3521,13 @@ async function guardarGestion(id){
    el catálogo de la base, no esta lista. */
 const DOCS_REQ = () => (typeof DB !== 'undefined' && DB.documentosRequeridos && DB.documentosRequeridos.length)
   ? DB.documentosRequeridos
-  : [{codigo:'dpi',        nombre:'DPI del titular',      caras:2, obligatorio:true},
-     {codigo:'contrato',   nombre:'Contrato firmado',     caras:1, obligatorio:true},
+  : [{codigo:'formulario', nombre:'Formulario de solicitud', caras:1, obligatorio:true},
+     {codigo:'dpi',        nombre:'DPI del titular',      caras:2, obligatorio:true},
      {codigo:'dpi_pariente', nombre:'DPI del pariente o fiador', caras:2, obligatorio:true},
-     {codigo:'plan_pagos', nombre:'Plan de pagos firmado',caras:1, obligatorio:true}];
+     {codigo:'contrato',   nombre:'Contrato firmado',     caras:1, obligatorio:true},
+     {codigo:'plan_pagos', nombre:'Plan de pagos firmado',caras:1, obligatorio:true},
+     {codigo:'boleta_enganche', nombre:'Boleta del enganche', caras:1, obligatorio:true},
+     {codigo:'recibo_enganche', nombre:'Recibo del primer pago', caras:1, obligatorio:false}];
 
 /* ============================================================ RECIBO DE PAGO
    Formal, numerado y digital, como el del CRM pero automático: se emite
@@ -3855,13 +3858,21 @@ function contratoDeArchivo(nombre, texto, fase){
 }
 /* Qué documento es, por el nombre. Lo que no se sabe queda para que lo
    diga quien carga. */
+/* El expediente estándar por lote (decisión del dueño, 2 sept 2026, con
+   el I-08 como modelo): DPI, formulario de solicitud, contrato firmado,
+   plan de pagos firmado, boleta del depósito del enganche y recibo del
+   primer pago. «SOLICITUD DE COMPRA DE FRACCIÓN…» es el formulario, no
+   el contrato. */
 function tipoDeArchivo(nombre){
-  const n=_normTxt(nombre);
-  if(/contrato|compraventa|solicitud/.test(n)) return 'contrato';
+  const n=_normTxt(String(nombre||'').split('/').pop());
+  if(/formulario|solicitud/.test(n)) return 'formulario';
+  if(/contrato|compraventa/.test(n)) return 'contrato';
   if(/plan/.test(n)) return 'plan_pagos';
   if(/pariente|fiador|referencia/.test(n)) return 'dpi_pariente';
   if(/dpi|cui|identificacion/.test(n)) return 'dpi';
-  if(/enganche|boleta|recibo|pago|deposito|transferencia|cuota/.test(n)) return 'boleta';
+  if(/recibo/.test(n)) return 'recibo_enganche';
+  if(/enganche|deposito|depoisto|transferencia|boleta/.test(n)) return 'boleta_enganche';
+  if(/pago|cuota/.test(n)) return 'boleta';
   return '';
 }
 function modalCargaDocumentos(){
@@ -3881,7 +3892,7 @@ function modalCargaDocumentos(){
       <button id="cd-leer" class="btn btn-primary" onclick="leerDocumentosMasa()">Leer</button>
       <button id="cd-subir" class="btn btn-gold" onclick="subirDocumentosMasa()" hidden>Subir</button></div>`);
 }
-const TIPOS_MASA=[['contrato','Contrato firmado'],['plan_pagos','Plan de pagos firmado'],['dpi','DPI del titular'],['dpi_pariente','DPI del pariente/fiador'],['boleta','Boleta / recibo de pago'],['','(no subir)']];
+const TIPOS_MASA=[['contrato','Contrato firmado'],['plan_pagos','Plan de pagos firmado'],['formulario','Formulario de solicitud'],['dpi','DPI del titular'],['dpi_pariente','DPI del pariente/fiador'],['boleta_enganche','Boleta del enganche'],['recibo_enganche','Recibo del primer pago'],['boleta','Otra boleta de pago'],['','(no subir)']];
 window.__masa=[];
 async function leerDocumentosMasa(){
   const a=[...(document.getElementById('cd-carpeta').files||[])], b=[...(document.getElementById('cd-archivos').files||[])];

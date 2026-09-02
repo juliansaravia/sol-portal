@@ -38,10 +38,19 @@ function faltantesDe(ct) {
      es el respaldo para cuando el portal corre sin conexión. */
   const reqs = (typeof DB !== 'undefined' && DB.documentosRequeridos && DB.documentosRequeridos.length)
     ? DB.documentosRequeridos.filter(r => r.obligatorio)
-    : [{ codigo:'dpi', nombre:'DPI del titular', caras:2 },
-       { codigo:'contrato', nombre:'Contrato firmado', caras:1 },
+    : [{ codigo:'formulario', nombre:'Formulario de solicitud', caras:1 },
+       { codigo:'dpi', nombre:'DPI del titular', caras:2 },
        { codigo:'dpi_pariente', nombre:'DPI del pariente o fiador', caras:2 },
-       { codigo:'plan_pagos', nombre:'Plan de pagos firmado', caras:1 }];
+       { codigo:'contrato', nombre:'Contrato firmado', caras:1 },
+       { codigo:'plan_pagos', nombre:'Plan de pagos firmado', caras:1 },
+       { codigo:'boleta_enganche', nombre:'Boleta del enganche', caras:1 }];
+
+  /* La boleta del enganche de una venta nueva entra por Cobranza (colgada
+     del pago) y el recibo lo emite el suite: cuentan aunque no estén
+     subidos como documento. Lo histórico sí se sube al expediente. */
+  const pagosCt = (DB.pagos || []).filter(p => mismoId(p.contratoId, ct.id) && p.estado !== 'rechazado');
+  const enPago = r => r.codigo === 'boleta_enganche' && pagosCt.some(p => (typeof adjuntosDe === 'function' ? adjuntosDe('pago', p.id) : []).length);
+  const conRecibo = r => r.codigo === 'recibo_enganche' && (DB.recibos || []).some(x => mismoId(x.contratoId || x.contrato_id, ct.id) || pagosCt.some(p => mismoId(x.pagoId || x.pago_id, p.id)));
 
   const f = [];
   if (!c.tel)                         f.push({ que: 'teléfono',   grave: true });
@@ -50,7 +59,7 @@ function faltantesDe(ct) {
 
   for (const r of reqs) {
     const hay = conArchivo(r.codigo), caras = r.caras || 1;
-    if (hay >= caras) continue;
+    if (hay >= caras || enPago(r) || conRecibo(r)) continue;
     f.push({
       que: hay === 0 ? r.nombre.toLowerCase()
                      : `${r.nombre.toLowerCase()} · falta ${caras - hay} de ${caras} caras`,
