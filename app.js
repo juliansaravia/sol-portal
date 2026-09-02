@@ -162,6 +162,10 @@ async function entrar(){
     pedirCodigo2FA();
     return;
   }
+  if(exige2FA() && !window.__2faListo && typeof tengoSegundoFactor==='function' && !(await tengoSegundoFactor())){
+    pantallaEnrolar2FA(SESION.persona && SESION.persona.nombre);
+    return;
+  }
 
   const carga = await cargarDesdeSupabase();
   if(!carga.ok){ toast('Entraste, pero no se pudieron cargar los datos: '+carga.error); return; }
@@ -204,6 +208,50 @@ async function pintarEstado2FA(){
     ? `<div style="font-size:11px;opacity:.75">Segundo factor activo</div>`
     : `<button class="btn btn-ghost btn-sm" style="width:100%"
          onclick="modalEnrolar2FA()">Activar segundo factor</button>`;
+}
+
+/* ---------- Segundo factor obligatorio ----------
+   Decisión del dueño (1 sept 2026): nadie entra al suite sin
+   Authenticator. La invitación deja a la persona con contraseña Y
+   segundo factor. Exento sólo «consulta» (externos de solo lectura,
+   como un agente, que no puede leer un Authenticator). */
+function exige2FA(){ return !!(SESION && SESION.rol && SESION.rol!=='consulta'); }
+async function pantallaEnrolar2FA(nombre){
+  SCREEN='login';
+  const L=document.getElementById('login'); L.style.display='flex';
+  const r=await enrolarSegundoFactor();
+  if(!r.ok){ L.innerHTML=`<div class="login-box" style="max-width:420px"><div class="login-sub">Segundo factor</div>
+      <p class="login-hint" style="color:#C0492B">${esc(r.error)}</p>
+      <button class="btn btn-ghost" onclick="cerrarSesion()">Salir</button></div>`; return; }
+  L.innerHTML=`<div class="login-box" style="max-width:440px">
+    <div class="login-marca"><span class="brand-mark"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 30l16-14 16 14"/><path d="M12 26v12h24V26"/><path d="M24 6v4M9 11l2.8 2.8M39 11l-2.8 2.8M4 24h4M40 24h4"/></svg></span>
+      <span><span class="brand-name">SOL</span><span class="brand-sub">Inmobiliaria</span></span></div>
+    <div class="login-sub">Último paso${nombre?', '+esc(String(nombre).split(' ')[0]):''}</div>
+    <p class="login-hint">Activá tu segundo factor. Sin esto no se entra: protege los datos de los clientes.</p>
+    <div style="text-align:center;margin:4px 0 12px"><img src="${r.qr}" alt="Código para escanear" style="width:196px;height:196px"></div>
+    <div class="hint" style="text-align:left;margin-bottom:12px">1 · Instalá <b>Microsoft Authenticator</b> (gratis) en tu teléfono.<br>
+      2 · Abrilo, tocá <b>+</b> → <b>Cuenta de trabajo o escuela</b> → <b>Escanear código QR</b>.<br>
+      3 · Escribí abajo el código de seis dígitos que te muestra.<br>
+      <span style="opacity:.8">Si no podés escanear, escribí esta clave a mano: <code style="user-select:all">${esc(r.secreto)}</code></span></div>
+    <div class="field" style="text-align:left;margin-bottom:12px"><label>Código de la app</label>
+      <input id="mfa-nuevo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000"
+             style="font-size:22px;letter-spacing:6px;text-align:center" onkeydown="if(event.key==='Enter')activar2FAyEntrar('${r.factorId}')"></div>
+    <button class="btn btn-primary" style="width:100%" onclick="activar2FAyEntrar('${r.factorId}')">Activar y entrar</button>
+    <div id="mfa-err" class="err" style="min-height:18px;margin-top:8px;color:#C0492B;font-weight:600"></div>
+    <div class="hint" style="margin-top:10px"><a href="#" onclick="cerrarSesion();return false;">Salir y hacerlo después</a> · sin segundo factor no vas a poder entrar.</div>
+  </div>`;
+  setTimeout(()=>{ const i=document.getElementById('mfa-nuevo'); if(i&&i.focus) i.focus(); }, 60);
+}
+async function activar2FAyEntrar(factorId){
+  const err=document.getElementById('mfa-err');
+  const v=await conBoton(()=>confirmarSegundoFactor(factorId, (document.getElementById('mfa-nuevo')||{}).value));
+  if(!v) return;
+  if(!v.ok){ err.textContent=v.error; return; }
+  anotar('seguridad.2fa', 'Activó el segundo factor al entrar');
+  toast('Segundo factor activo ✓', 4000);
+  window.__2faListo=true;
+  const ok=await reanudarSesion();
+  if(ok===false) renderAuth();
 }
 
 /* ---------- Elegir contraseña al llegar por el correo ---------- */
@@ -364,6 +412,11 @@ async function reanudarSesion(){
   if(typeof faltaSegundoFactor==='function' && await faltaSegundoFactor()){
     pedirCodigo2FA();
     return 'codigo';
+  }
+  /* Sin segundo factor enrolado no se entra (salvo consulta). */
+  if(exige2FA() && !window.__2faListo && typeof tengoSegundoFactor==='function' && !(await tengoSegundoFactor())){
+    pantallaEnrolar2FA(r.persona && r.persona.nombre);
+    return 'enrolar';
   }
 
   const carga = await cargarDesdeSupabase();
