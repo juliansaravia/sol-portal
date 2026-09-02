@@ -653,3 +653,19 @@ select.chip{appearance:auto;padding:6px 10px}
   .tab-badge{position:absolute;top:2px;right:8px;margin:0;font-size:10px;padding:0 5px}
   .modal-h h3{font-size:16px}
 }
+
+/* ── Hoja para el cliente · simple ── */
+.hoja-tres{display:grid;grid-template-columns:1fr 1fr 1.4fr;border-bottom:1px solid #e6d9cf}
+.hoja-tres .hoja-caja{padding:16px 18px;border-right:1px solid #e6d9cf}
+.hoja-tres .hoja-caja:last-child{border-right:0}
+.hoja-tres .hoja-caja.destaca .hoja-label{font-weight:700;letter-spacing:.5px}
+.hoja-resumen{display:flex;flex-wrap:wrap;gap:8px 22px;padding:12px 18px;font-size:12.5px;border-bottom:1px solid #e6d9cf;color:#4a3a30}
+.hoja-resumen em{font-style:normal;opacity:.7}
+.hoja-tabla-wrap{padding:14px 18px;border-bottom:1px solid #e6d9cf}
+.hoja-tabla{width:100%;border-collapse:collapse;font-size:11.5px}
+.hoja-tabla th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:#7a6a5f;border-bottom:1px solid #d9c9bd;padding:5px 6px}
+.hoja-tabla td{padding:4px 6px;border-bottom:1px solid #f0e6df}
+.hoja-tabla .num,.hoja-tabla th.num{text-align:right}
+.hoja-tabla tr.hoy td{background:#faf1ea;font-weight:700}
+@media print{.hoja-tabla{font-size:10px}.hoja-tabla td{padding:2px 6px}}
+@media(max-width:640px){.hoja-tres{grid-template-columns:1fr}.hoja-tres .hoja-caja{border-right:0;border-bottom:1px solid #e6d9cf}}

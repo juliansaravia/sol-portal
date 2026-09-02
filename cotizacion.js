@@ -162,46 +162,47 @@ function hojaCliente(o) {
     </div>
   </div>
 
-  <div class="hoja-dos">
+  <!-- Tres números, con las palabras que usa el cliente: precio,
+       enganche y —lo principal— su cuota. Sin gráficas. -->
+  <div class="hoja-tres">
     <div class="hoja-caja">
-      <div class="hoja-paso">1</div>
-      <div class="hoja-label">Hoy usted da</div>
+      <div class="hoja-label">Precio del lote</div>
+      <div class="hoja-monto-med">${_q(precio)}</div>
+    </div>
+    <div class="hoja-caja">
+      <div class="hoja-label">Enganche <span class="hoja-sub">(lo que da hoy)</span></div>
       <div class="hoja-monto-med">${_q(enganche)}</div>
-      <div class="hoja-mon">${iconoMonedas()}</div>
     </div>
     <div class="hoja-caja destaca">
-      <div class="hoja-paso">2</div>
-      <div class="hoja-label">Después, cada mes</div>
+      <div class="hoja-label">SU CUOTA MENSUAL</div>
       <div class="hoja-monto-grande">${_q(plan.cuota)}</div>
-      <div class="hoja-sub">siempre el mismo monto</div>
+      <div class="hoja-sub">${plazo} cuotas · ${textoAnios(plazo)} · siempre la misma</div>
     </div>
   </div>
 
-  <div class="hoja-meses">
-    <div class="hoja-meses-txt">
-      <div class="hoja-paso">3</div>
-      <div>
-        <div class="hoja-label">Durante ${textoAnios(plazo)}</div>
-        <div class="hoja-sub">${plazo} cuotas · cada cuadro es un mes</div>
-      </div>
-    </div>
-    <div class="hoja-rejilla">${rejillaMeses(plazo)}</div>
+  <div class="hoja-resumen">
+    <span>Saldo a financiar <b>${_q(plan.saldo)}</b></span>
+    <span>Total que paga <b>${_q(plan.total)}</b> <em>(enganche + ${plazo} cuotas)</em></span>
+    <span>Sin banco, sin fiador, sin papeleo: por eso el total es mayor que el precio.</span>
   </div>
 
-  <div class="hoja-total">
-    <div class="hoja-total-col">
-      <span class="hoja-total-lbl">Si lo paga de una vez</span>
-      <span class="hoja-total-contado">${_q(precio)}</span>
-    </div>
-    <div class="hoja-total-col">
-      <span class="hoja-total-lbl">Monto hasta el final · ${textoAnios(plazo)}</span>
-      <span class="hoja-total-contado">${_q(plan.total)}</span>
-    </div>
-    <div class="hoja-total-por">
-      La diferencia es lo que cuesta que nosotros le prestemos: sin banco,
-      sin fiador y sin que le pidamos papeles. Entre menos tiempo, menos cuesta.
-    </div>
-  </div>
+  ${(() => {
+    const filas = [];
+    const base = new Date(HOY_ISO + 'T00:00:00');
+    const capMes = plan.saldo / plazo;
+    for (let i = 1; i <= plazo; i++) {
+      const d = new Date(base.getFullYear(), base.getMonth() + i, Math.min(base.getDate(), 28));
+      const resta = Math.max(0, plan.saldo - capMes * i);
+      filas.push(`<tr><td>${i}</td><td>${d.toLocaleDateString('es-GT', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+        <td class="num">${_q(plan.cuota)}</td><td class="num">${_q(resta)}</td></tr>`);
+    }
+    return `<div class="hoja-tabla-wrap">
+      <div class="hoja-label" style="margin-bottom:6px">Así quedan sus pagos</div>
+      <table class="hoja-tabla"><thead><tr><th>Cuota</th><th>Vence</th><th class="num">Paga</th><th class="num">Le queda por pagar</th></tr></thead>
+      <tbody><tr class="hoy"><td>Hoy</td><td>${fmtD(HOY_ISO)}</td><td class="num">${_q(enganche)}</td><td class="num">${_q(plan.saldo)}</td></tr>${filas.join('')}</tbody></table>
+      <div class="hoja-sub" style="margin-top:6px">Las fechas son orientativas: la primera cuota vence un mes después de firmar.</div>
+    </div>`;
+  })()}
 
   <div class="hoja-benef">
     ${BENEFICIOS.map(b => `<div class="hoja-ben">
@@ -209,11 +210,6 @@ function hojaCliente(o) {
       <div><div class="hoja-ben-t">${esc(b.titulo)}</div>
            <div class="hoja-ben-d">${esc(b.detalle)}</div></div>
     </div>`).join('')}
-  </div>
-
-  <div class="hoja-comparar">
-    <div class="hoja-label">Entre menos años, menos paga en total</div>
-    ${barrasPlazos(precio, enganche, plazos, plazo)}
   </div>
 
   <div class="hoja-pie">
