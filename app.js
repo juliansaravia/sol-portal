@@ -1563,7 +1563,7 @@ function renderRecaudacion(){
   let h=`<div class="kpis">
     <div class="kpi"><div class="kpi-label">Programado</div><div class="kpi-value sm">${Qk(R.programado)}</div>
       <div class="kpi-sub">${R.filas.length} cuota(s) · ${fmtD(desde)} al ${fmtD(hasta)}</div></div>
-    <div class="kpi accent"><div class="kpi-label">Recaudado</div><div class="kpi-value sm">${Qk(R.recaudado)}</div>
+    <div class="kpi accent"><div class="kpi-label">Recaudado</div><div class="kpi-value sm">${Qk(DB.pagos.filter(p=>p.fecha>=desde&&p.fecha<=hasta&&p.estado!=='rechazado').reduce((s,p)=>s+p.monto,0))}</div>
       <div class="kpi-sub">${pct}% de lo programado</div></div>
     <div class="kpi warn"><div class="kpi-label">Sin gestionar</div><div class="kpi-value">${R.pendientes.length}</div>
       <div class="kpi-sub">${Qk(R.pendientes.reduce((s,f)=>s+f.cuota.m,0))} sin marcar</div></div>
