@@ -557,8 +557,8 @@ function filaAsunto(a,i){
     <button class="btn btn-ghost btn-sm" onclick="asuntos()[${i}].ir()">Ver casos ›</button></div>`;
 }
 function pintarBadgeAsuntos(){
-  const b=document.getElementById('badgeAsuntos'); if(!b) return;
-  const n=asuntos().length; b.textContent=n; b.hidden=!n;
+  const n=asuntos().length;
+  ['badgeAsuntos','badgeAsuntosTab'].forEach(id=>{ const b=document.getElementById(id); if(b){ b.textContent=n; b.hidden=!n; } });
 }
 function renderAsuntos(){
   const A=asuntos();
@@ -601,7 +601,7 @@ function renderInicio(){
   const hoy=new Date(HOY_ISO+'T00:00:00');
   const mes=hoy.toLocaleDateString('es-GT',{month:'long',year:'numeric'});
 
-  let h=`<div class="alerta-global ${A.length?'':'ok'}">
+  let h=`<div class="inicio-adm"><div class="alerta-global ${A.length?'':'ok'}">
     <div class="ag-ico">${A.length?'⚠':'✓'}</div>
     <div class="ag-txt"><b>${A.length?`${A.length} asunto(s) requieren atención`:'Todo al día'}</b>
       <div class="hint">${A.length?'Revisá los pendientes críticos para mantener la operación al día.':'No hay pendientes críticos en este momento.'}</div></div>
@@ -615,11 +615,11 @@ function renderInicio(){
     {l:'Recaudado',v:Qk(K.rec),s:`${K.cartera?Math.round(K.rec/K.cartera*100):0}% de la cartera`,t:'Dinero confirmado que ya entró, enganches incluidos'},
     {l:'Saldo vencido',v:Qk(M.saldoVencido),s:`${M.enMora} contratos en mora`,t:`Cuotas vencidas y no pagadas · fuente: ${M.fuente}`,cls:'warn'},
   ];
-  h+=`<div class="kpis kpis-5">`+kpis.map(k=>`<div class="kpi ${k.cls||''}" title="${esc(k.t)}">
+  h+=`<div class="kpis kpis-5 sec-kpis">`+kpis.map(k=>`<div class="kpi ${k.cls||''}" title="${esc(k.t)}">
     <div class="kpi-label">${k.l}</div><div class="kpi-value sm">${k.v}</div><div class="kpi-sub">${k.s}</div></div>`).join('')+`</div>`;
 
-  // Prioridades de hoy · las tres más severas
-  h+=`<div class="grid2"><div class="card"><div class="card-h"><h2>Prioridades de hoy</h2></div><div class="card-b">`;
+  // Prioridades de hoy · las tres más severas (en el celular van primero)
+  h+=`<div class="grid2 sec-prio"><div class="card"><div class="card-h"><h2>Prioridades de hoy</h2></div><div class="card-b">`;
   h+=A.length?A.slice(0,3).map(filaAsunto).join(''):`<div class="empty">Nada pendiente 🎉</div>`;
   if(A.length>3) h+=`<div style="text-align:center;margin-top:8px"><button class="btn btn-ghost btn-sm" onclick="setView('asuntos')">Ver todos los asuntos ›</button></div>`;
   h+=`</div></div>`;
@@ -639,7 +639,7 @@ function renderInicio(){
       <div class="card-b" style="overflow-x:auto">${svg}</div></div></div>`;
 
   // Actividad reciente · con siguiente paso
-  h+=`<div class="grid2"><div class="card"><div class="card-h"><h2>Actividad reciente</h2>
+  h+=`<div class="grid2 sec-act"><div class="card"><div class="card-h"><h2>Actividad reciente</h2>
       <button class="btn btn-ghost btn-sm" onclick="setView('contratos')">Ver toda la actividad ›</button></div>
     <div class="card-b" style="padding:0"><table class="data"><thead><tr>
       <th>Contrato</th><th>Lote</th><th>Cliente</th><th>Estado</th><th>Próximo paso</th></tr></thead><tbody>`;
@@ -665,7 +665,7 @@ function renderInicio(){
         <a href="#" onclick="irA('contratos',{f:'sin_cliente'});return false;">Clientes <b>${conCli}/${total}</b> ›</a>
         <a href="#" onclick="setView('inventario');return false;">Ubicaciones <b>${conUbic}/${total}</b> ›</a>
         <a href="#" onclick="irA('contratos',{f:'sin_vendedor'});return false;">Vendedores <b>${conVend}/${total}</b> ›</a>
-      </div></div></div></div>`;
+      </div></div></div></div></div>`;
   C().innerHTML=h; pintarBadgeAsuntos();
 }
 
@@ -3396,7 +3396,7 @@ async function selloAljibe(){
     const svg=await (await fetch('assets/aljibe-sello.svg')).text();
     const img=new Image(); const url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));
     await new Promise((ok,no)=>{img.onload=ok;img.onerror=no;img.src=url;});
-    const c=document.createElement('canvas'); c.width=920; c.height=300; c.getContext('2d').drawImage(img,0,0,920,300); URL.revokeObjectURL(url);
+    const c=document.createElement('canvas'); c.width=1040; c.height=300; c.getContext('2d').drawImage(img,0,0,1040,300); URL.revokeObjectURL(url);
     _selloAljibe=c.toDataURL('image/png');
   }catch(e){ _selloAljibe=false; }
   return _selloAljibe||null;
@@ -3445,7 +3445,7 @@ async function reciboPDF(d,numero){
   const ley=`PAGO REALIZADO CON BOLETA ${d.pago.referencia||'—'} EL DÍA ${f} CON VALOR DE ${Q(d.pago.monto)}   PAGO REGISTRADO POR: ${String(d.registradoPor||'').toUpperCase()}.`;
   doc.setFont('helvetica','bold'); const leyL=doc.splitTextToSize(ley,W-2*M-6); doc.rect(M,y,W-2*M,14*leyL.length+8); doc.text(leyL,M+3,y+12); y+=14*leyL.length+8;
   y+=70; doc.setFont('helvetica','normal'); doc.setFontSize(10);
-  const sello=await selloAljibe(); if(sello){ try{ doc.addImage(sello,'PNG',W/2-92,y-58,184,60); }catch(e){} }
+  const sello=await selloAljibe(); if(sello){ try{ doc.addImage(sello,'PNG',W/2-96,y-58,192,55); }catch(e){} }
   doc.line(W/2-90,y,W/2+90,y); doc.text('Firma y Sello de la Empresa',W/2,y+14,{align:'center'});
   y+=60; doc.line(W/2-90,y,W/2+90,y); doc.text('Firma del Cliente',W/2,y+14,{align:'center'});
   doc.setFontSize(8); doc.setTextColor(120); doc.text(`${d.emisor} · Cuenta monetaria Banrural ${d.cuenta?d.cuenta.numero:''} · Generado por Suite Sol Inmobiliaria`,W/2,760,{align:'center'});

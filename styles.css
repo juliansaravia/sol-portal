@@ -631,3 +631,25 @@ select.chip{appearance:auto;padding:6px 10px}
 }
 
 .recibo .sello{display:block;width:190px;margin:0 auto -14px;opacity:.92}
+
+/* ── Administración · móvil nativo ── */
+.inicio-adm{display:flex;flex-direction:column}
+.inicio-adm>*{order:5}.inicio-adm>.alerta-global{order:0}.inicio-adm>.sec-kpis{order:1}.inicio-adm>.sec-prio{order:2}.inicio-adm>.sec-act{order:3}
+@media(max-width:760px){
+  .inicio-adm>.sec-prio{order:1}.inicio-adm>.sec-kpis{order:2}
+  .inicio-adm .grid2{display:block}.inicio-adm .grid2>.card{margin-bottom:12px}
+  .kpis-5{display:flex;overflow-x:auto;gap:10px;scroll-snap-type:x mandatory;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+  .kpis-5 .kpi{min-width:150px;scroll-snap-align:start;flex:none}
+  .inicio-adm .chart{min-height:140px}
+  .alerta-global{padding:12px 14px}.alerta-global .btn{width:100%;margin-top:6px}
+  .card{border-radius:12px;margin-bottom:12px}.card-h{padding:12px 14px}.card-b{padding:12px 14px}
+  .card-h h2{font-size:15px}
+  .topbar h1{font-size:17px}.topbar .sub{display:none}
+  .search-wrap{width:100%;order:9}.search-input{width:100%}
+  .chips{flex-wrap:nowrap;overflow-x:auto;padding:8px 12px;-webkit-overflow-scrolling:touch}.chips .chip{flex:none}
+  table.data th:first-child,table.data td:first-child{position:sticky;left:0;background:var(--surface);z-index:1}
+  table.data th:first-child{background:var(--tint)}
+  .tab-item{position:relative}
+  .tab-badge{position:absolute;top:2px;right:8px;margin:0;font-size:10px;padding:0 5px}
+  .modal-h h3{font-size:16px}
+}
