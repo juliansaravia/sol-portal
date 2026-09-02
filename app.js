@@ -3726,7 +3726,10 @@ function imprimirRecibo(){ const w=window.open('','_blank'); if(!w) return; cons
 function modalCargaRecibos(){
   openModal(`<div class="modal-h"><h3>Cargar recibos del CRM</h3><p>Varios PDF a la vez · cada uno se cuelga del pago que le corresponde</p></div>
     <div class="modal-b">
-      <div class="field"><label>Recibos (PDF)</label><input id="cr-archivos" type="file" accept="application/pdf" multiple></div>
+      <div class="form-grid">
+        <div class="field"><label>Carpeta de recibos (con subcarpetas)</label><input id="cr-carpeta" type="file" webkitdirectory directory multiple></div>
+        <div class="field"><label>…o PDF sueltos</label><input id="cr-archivos" type="file" accept="application/pdf" multiple></div>
+      </div>
       <div class="hint">Se lee contrato, monto, fecha y referencia de cada recibo. Se enlaza al pago del contrato con ese monto y la fecha más cercana que aún no tenga respaldo.</div>
       <div id="cr-resultado" style="margin-top:12px"></div>
     </div>
@@ -3734,7 +3737,7 @@ function modalCargaRecibos(){
       <button id="cr-btn" class="btn btn-primary" onclick="cargarRecibosCRM()">Leer y cargar</button></div>`);
 }
 async function cargarRecibosCRM(){
-  const inp=document.getElementById('cr-archivos'); const files=inp&&inp.files?[...inp.files]:[];
+  const files=[...(document.getElementById('cr-carpeta').files||[]),...(document.getElementById('cr-archivos').files||[])].filter(f=>/\.pdf$/i.test(f.name)&&!/^\./.test(f.name));
   const out=document.getElementById('cr-resultado'); const btn=document.getElementById('cr-btn');
   if(!files.length) return toast('Elegí los PDF de los recibos',5000,true);
   if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se pueden subir archivos',5000,true);
