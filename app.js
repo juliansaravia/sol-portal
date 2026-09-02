@@ -1620,7 +1620,7 @@ function renderRecaudacion(){
       const eP=pago?pago.estado:'registrado';
       est=`<span class="badge b-ok">Cobrada</span>${eP==='confirmado'?' <span class="badge b-ok">Confirmada</span>':(eP==='rechazado'?' <span class="badge b-mora">Rechazada</span>':' <span class="badge">Por confirmar</span>')}
            <div class="hint">${esc(r.referencia||'sin boleta')} · ${Q(r.monto)}</div>`;
-      acc=`<button class="btn btn-ghost btn-sm" onclick="deshacerRecaudo('${c.c}','${c.f}')">Deshacer</button>`;
+      acc=`${r.pagoId?`<button class="btn btn-primary btn-sm" onclick="emitirYCompartirRecibo('${r.pagoId}')">${reciboDe(r.pagoId)?'Recibo':'Emitir recibo'}</button> `:''}<button class="btn btn-ghost btn-sm" onclick="deshacerRecaudo('${c.c}','${c.f}')">Deshacer</button>`;
     } else if(f.estado==='no_cobrada'){
       est=`<span class="badge b-mora">No cobrada</span>
            <div class="hint">${esc(motivoLabel(r.motivo))}${r.promesa?' · promete el '+fmtD(r.promesa):''}</div>`;
@@ -2284,7 +2284,8 @@ function renderConfirmacion(){
       <td>${esc(p.cuenta)}</td><td>${esc(p.forma)}</td><td>${esc(p.referencia)||'—'}</td>
       <td class="num">${Q(p.monto)}</td>
       <td><button class="btn btn-primary btn-sm" onclick="doConfirmar('${p.id}',true)">Confirmar</button>
-          <button class="btn btn-ghost btn-sm" onclick="doConfirmar('${p.id}',false)">Rechazar</button></td></tr>`;});
+          <button class="btn btn-ghost btn-sm" onclick="doConfirmar('${p.id}',false)">Rechazar</button>
+          <button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">${reciboDe(p.id)?'Recibo':'Emitir recibo'}</button></td></tr>`;});
   h+=`</tbody></table></div></div>
     <div class="hint">Flujo real del CRM: la boleta se registra y luego contabilidad verifica el depósito antes de aplicarlo a la cartera.</div>`;
   C().innerHTML=h;
