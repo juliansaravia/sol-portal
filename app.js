@@ -3813,8 +3813,11 @@ function contratoDeArchivo(nombre, texto, fase){
      contratos de esa fase. */
   const enFase=c=>!fase||_normTxt(c.fase||'')===_normTxt(fase);
   const pista=ruta+' '+_normTxt(texto||'').slice(0,4000);
-  const mNo=pista.match(/\b(sd|res|ag)[-\s]?(\d{1,5})\b/g)||[];
-  for(const m of mNo){ const no=m.toUpperCase().replace(/[\s-]*/,'').replace(/^([A-Z]+)(\d+)$/,'$1-$2'); const ct=indices().contratosPorNo.get(no); if(ct&&enFase(ct)) return {ct,por:'número '+no}; }
+  /* Cualquier prefijo de serie (SD-111, RES-005, AGR-006), con o sin
+     ceros a la izquierda: se prueba tal cual, sin ceros y con tres. */
+  const mNo=pista.match(/\b([a-z]{2,4})[-\s]?(\d{1,5})\b/g)||[];
+  for(const m of mNo){ const [,pre,num]=m.match(/^([a-z]+)[-\s]?(\d+)$/); const P=pre.toUpperCase();
+    for(const no of [...new Set([P+'-'+num, P+'-'+String(+num), P+'-'+String(+num).padStart(3,'0')])]){ const ct=indices().contratosPorNo.get(no); if(ct&&enFase(ct)) return {ct,por:'número '+no}; } }
   const normLote=_normLote, tokensLote=_tokensLote(ruta);
   for(const cod of tokensLote){
     const cands=DB.contratos.filter(c=>c.estado!=='anulado'&&normLote(c.lote)===cod&&enFase(c));
@@ -3926,7 +3929,10 @@ function sugTecla(e,i,input){
   e.preventDefault(); let k=items.findIndex(x=>x.classList.contains('act')); k=(k+(e.key==='ArrowDown'?1:-1)+items.length)%items.length;
   items.forEach((x,j)=>x.classList.toggle('act',j===k)); items[k].scrollIntoView({block:'nearest'});
 }
-function masaContrato(i,valor){ valor=String(valor||'').split('·')[0].trim(); if(!valor) return; const m=contratoDeArchivo(valor,'',v('cd-fase')); const x=window.__masa[i];
+function masaContrato(i,valor){ valor=String(valor||'').split('·')[0].trim(); if(!valor) return; const x=window.__masa[i];
+  /* Lo elegido de la lista es un número exacto: va directo, sin adivinar. */
+  const directo=indices().contratosPorNo.get(valor.toUpperCase()); if(directo){ x.ct=directo; x.por='a mano'; x.lotes=[]; pintarMasa(); return; }
+  const m=contratoDeArchivo(valor,'',v('cd-fase'));
   if(m){ x.ct=m.ct; x.por='a mano'; x.lotes=[]; }
   else { x.lotes=lotesSinContratoDe(valor,v('cd-fase')); toast(x.lotes.length?'Ese lote existe pero no tiene contrato · podés crearlo aquí':'No encontré ese contrato',4000,!x.lotes.length); }
   pintarMasa(); }
