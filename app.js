@@ -3390,8 +3390,16 @@ async function selloAljibe(){
   if(_selloAljibe!==null) return _selloAljibe||null;
   const aDataURL=b=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(b);});
   try{
-    const png=await fetch('assets/aljibe-sello.png'); 
-    if(png.ok && /image\/png/.test(png.headers.get('content-type')||'')){ _selloAljibe=await aDataURL(await png.blob()); return _selloAljibe; }
+    const png=await fetch('assets/aljibe-sello.png');
+    if(png.ok && /image\/png/.test(png.headers.get('content-type')||'')){
+      /* Se recomprime a JPEG: jsPDF mete un PNG sin comprimir y el recibo
+         pesaba 1.4 MB. En JPEG sobre fondo blanco se ve igual y pesa 60 KB. */
+      const img=new Image(); const url=URL.createObjectURL(await png.blob());
+      await new Promise((ok,no)=>{img.onload=ok;img.onerror=no;img.src=url;});
+      const c=document.createElement('canvas'); c.width=img.naturalWidth; c.height=img.naturalHeight;
+      const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,c.width,c.height); g.drawImage(img,0,0); URL.revokeObjectURL(url);
+      _selloAljibe=c.toDataURL('image/jpeg',0.85); return _selloAljibe;
+    }
     /* El vectorial se rasteriza en un canvas para que jsPDF lo acepte. */
     const svg=await (await fetch('assets/aljibe-sello.svg')).text();
     const img=new Image(); const url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));
@@ -3405,7 +3413,9 @@ let _logoAljibe=null;
 async function logoAljibe(){
   if(_logoAljibe) return _logoAljibe;
   try{ const b=await (await fetch('assets/aljibe-logo.png')).blob();
-       _logoAljibe=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(b);}); }catch(e){ _logoAljibe=null; }
+       const img=new Image(); const url=URL.createObjectURL(b); await new Promise((ok,no)=>{img.onload=ok;img.onerror=no;img.src=url;});
+       const c=document.createElement('canvas'); c.width=img.naturalWidth; c.height=img.naturalHeight; const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,c.width,c.height); g.drawImage(img,0,0); URL.revokeObjectURL(url);
+       _logoAljibe=c.toDataURL('image/jpeg',0.9); }catch(e){ _logoAljibe=null; }
   return _logoAljibe;
 }
 function reciboHTML(d,numero){
@@ -3427,7 +3437,7 @@ function reciboHTML(d,numero){
 async function reciboPDF(d,numero){
   const J=window.jspdf&&window.jspdf.jsPDF; if(!J) return null;
   const doc=new J({unit:'pt',format:'letter'}); const W=612, M=56; let y=50;
-  const logo=await logoAljibe(); if(logo){ try{ doc.addImage(logo,'PNG',M,y,80,80); }catch(e){} }
+  const logo=await logoAljibe(); if(logo){ try{ doc.addImage(logo,'JPEG',M,y,80,80); }catch(e){} }
   y+=110;
   doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.text(`RECIBO DE PAGO No ${String(numero).padStart(8,'0')}`,W/2,y,{align:'center'}); doc.setLineWidth(1); doc.line(W/2-150,y+4,W/2+150,y+4);
   y+=36; doc.setFontSize(11); doc.setFont('helvetica','normal');
@@ -3445,7 +3455,7 @@ async function reciboPDF(d,numero){
   const ley=`PAGO REALIZADO CON BOLETA ${d.pago.referencia||'—'} EL DÍA ${f} CON VALOR DE ${Q(d.pago.monto)}   PAGO REGISTRADO POR: ${String(d.registradoPor||'').toUpperCase()}.`;
   doc.setFont('helvetica','bold'); const leyL=doc.splitTextToSize(ley,W-2*M-6); doc.rect(M,y,W-2*M,14*leyL.length+8); doc.text(leyL,M+3,y+12); y+=14*leyL.length+8;
   y+=96; doc.setFont('helvetica','normal'); doc.setFontSize(10);
-  const sello=await selloAljibe(); if(sello){ try{ doc.addImage(sello,'PNG',W/2-100,y-84,200,80); }catch(e){} }
+  const sello=await selloAljibe(); if(sello){ try{ doc.addImage(sello,/^data:image\/jpeg/.test(sello)?'JPEG':'PNG',W/2-100,y-84,200,80); }catch(e){} }
   doc.line(W/2-90,y,W/2+90,y); doc.text('Firma y Sello de la Empresa',W/2,y+14,{align:'center'});
   y+=60; doc.line(W/2-90,y,W/2+90,y); doc.text('Firma del Cliente',W/2,y+14,{align:'center'});
   doc.setFontSize(8); doc.setTextColor(120); doc.text(`${d.emisor} · Cuenta monetaria Banrural ${d.cuenta?d.cuenta.numero:''} · Generado por Suite Sol Inmobiliaria`,W/2,760,{align:'center'});
