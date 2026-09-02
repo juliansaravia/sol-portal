@@ -1676,8 +1676,8 @@ function modalCobro(contrato,fecha){
       <div class="field"><label>Monto recibido</label>
         <input id="rcMonto" type="number" step="0.01" value="${(Math.round(c.m*100)/100)}"></div>
       <div class="field"><label>Forma de pago</label>
-        <select id="rcForma"><option>Depósito bancario</option><option>Transferencia</option>
-          <option>Efectivo en sala de venta</option><option>Pago en línea</option></select></div>
+        <input id="rcForma" value="Transferencia bancaria" readonly style="background:var(--tint)">
+        <div class="hint">Solo se reciben transferencias a la cuenta recaudadora. Decisión del dueño.</div></div>
       <div class="field"><label>Cuenta acreditada</label>
         <select id="rcCuenta">${opcionesCuenta()}</select></div>
       <div class="field"><label>Foto de la boleta *</label>
@@ -3455,7 +3455,7 @@ function modalPago(id){
   openModal(`<div class="modal-h"><h3>Registrar pago</h3><p>${ct.no} · ${esc(nombreCliente(ct.clienteId))}</p></div>
     <div class="modal-b"><div class="form-grid">
       <div class="field"><label>Monto (Q) *</label><input id="p-monto" type="number" value="${ec.prox?ec.prox.monto:''}"></div>
-      <div class="field"><label>Forma de pago</label><select id="p-forma">${CATALOGOS.formasPago.map(f=>`<option>${f}</option>`).join('')}</select></div>
+      <div class="field"><label>Forma de pago</label><input id="p-forma" value="Transferencia bancaria" readonly style="background:var(--tint)"></div>
       <div class="field"><label>Cuenta acreditada</label><select id="p-cta">${opcionesCuenta()}</select></div>
       <div class="field full"><label>Foto de la boleta *</label>
         <input id="p-foto" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment"
