@@ -171,7 +171,7 @@ async function generarFormulario(id){
   const fila=(k,val,cls)=>`<tr><th>${k}</th><td class="${cls||''}">${val?esc(String(val)):''}</td></tr>`;
   const Qn=n=>'Q. '+(Math.round(n*100)/100).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2});
   const fecha=ct.fecha?fmtD(ct.fecha):fmtD(HOY_ISO);
-  const tipoLote=[l.area?`${l.area} mts²`:'', l.tipo?`tipo ${l.tipo}`:'', _esAgroTxt(l.fase||ct.fase)?'Agrícola':(l.fase||ct.fase||'')].filter(Boolean).join(' · ');
+  const tipoLote=[l.area?`${l.area} mts²`:'', l.tipo?(/^tipo/i.test(String(l.tipo))?String(l.tipo):`tipo ${l.tipo}`):'', _esAgroTxt(l.fase||ct.fase)?'Agrícola':(l.fase||ct.fase||'')].filter(Boolean).join(' · ');
 
   const html=`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
 <title>Formulario de solicitud · ${esc(ct.no)} · ${esc(ct.lote)}</title>
