@@ -85,7 +85,7 @@ function conLimite(promesa, segundos, queHacia) {
 }
 
 /* Quién está usando el portal ahora mismo. */
-const SESION = { persona: null, rol: null, email: null, modoConsulta: true };
+const SESION = { persona: null, rol: null, email: null, modoConsulta: true, debeCambiar: false };
 
 /** ¿Está configurado el acceso remoto? Si no, el portal corre con datos locales. */
 const hayRemoto = () => SB !== null;
@@ -172,6 +172,8 @@ async function cargarSesion(usuarioYaConocido) {
                        email: p.email, activo: p.activo };
     SESION.rol = p.rol;
     SESION.email = user.email;
+    /* Administración le asignó una contraseña temporal: al entrar elige la suya. */
+    SESION.debeCambiar = !!(user.user_metadata && user.user_metadata.debe_cambiar);
     SESION.modoConsulta = p.modo_consulta !== false;
     return { ok: true, persona: SESION.persona };
   }
@@ -316,8 +318,9 @@ async function definirContrasena(nueva) {
   const c = String(nueva || '');
   const v = validarContrasenaFuerte(c, [SESION.email, SESION.persona && SESION.persona.nombre]);
   if (!v.ok) return { ok: false, error: 'Falta: ' + v.faltan.join(' · ') };
-  const { error } = await SB.auth.updateUser({ password: c });
+  const { error } = await SB.auth.updateUser({ password: c, data: { debe_cambiar: false } });
   if (error) return { ok: false, error: error.message };
+  SESION.debeCambiar = false;
   return { ok: true };
 }
 

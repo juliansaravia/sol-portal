@@ -467,7 +467,8 @@ async function crearCliente(nombreCompleto, extra = {}) {
     return crearClienteLocal(nombreCompleto, extra);
   const r = await sbCrearCliente({
     nombre: nombreCompleto.trim(), dpi: extra.dpi, telefono: extra.telefono,
-    email: extra.email, direccion: extra.direccion, ocupacion: extra.ocupacion
+    email: extra.email, direccion: extra.direccion, ocupacion: extra.ocupacion,
+    pariente: extra.pariente || null
   });
   if (!r.ok) { avisar(r.error); return null; }
   return DB.clientes[DB.clientes.length - 1];

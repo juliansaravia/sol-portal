@@ -146,10 +146,20 @@ async function sbCrearCliente(datos) {
       ocupacion: datos.ocupacion || null
     }).select('id,nombre,dpi,nit,telefono,email,direccion,ocupacion').single());
 
+    /* El pariente o fiador que se anota al vender es la referencia 1 del
+       formulario. Antes se perdía: sólo vivía en el navegador. */
+    const par = datos.pariente;
+    if (par && par.nombre) {
+      const { error: eRef } = await SB.from('referencia_personal').insert({
+        cliente_id: fila.id, orden: 1, nombre: par.nombre, telefono: par.telefono || null,
+        parentesco: 'Pariente o fiador', direccion: par.direccion || null, email: par.email || null
+      });
+      if (eRef) console.warn('[cliente] la referencia no se guardó:', eRef.message);
+    }
     DB.clientes.push({
       id: fila.id, nombre: fila.nombre, apellido: '',
       dpi: fila.dpi, nit: fila.nit, tel: fila.telefono, correo: fila.email,
-      direccion: fila.direccion, ocupacion: fila.ocupacion
+      direccion: fila.direccion, ocupacion: fila.ocupacion, pariente: par || null
     });
     return fila;
   });

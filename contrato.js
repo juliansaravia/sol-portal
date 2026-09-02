@@ -142,3 +142,112 @@ async function generarContrato(id){
   await agregarDocumento(id,'Contrato firmado',`contrato_${ct.no}.pdf`);
   toast('Contrato '+ct.no+' generado');
 }
+
+/* ============================================================
+   FORMULARIO DE SOLICITUD — el papel que llena el cliente, prellenado
+   con todo lo que el suite ya sabe (lote, precio, plan, vendedor, datos
+   del comprador y referencias). Se imprime o se manda como PDF, el
+   cliente completa lo que falta a mano y firma; el escaneo se sube como
+   «Formulario de solicitud». Modelo: el del lote I-08 agrícola.
+   ============================================================ */
+async function generarFormulario(id){
+  const ct=getContrato(id); if(!ct){toast('Contrato no encontrado');return;}
+  const cli=getCliente(ct.clienteId)||{};
+  const l=getLote(ct.clave||ct.lote)||{};
+  const plan=planFinanciamiento(ct.precio, ct.enganche!=null?ct.enganche:ENGANCHE_MIN, ct.plazo||60, ct.tasa);
+  const yo=(typeof SESION!=='undefined'&&SESION.persona)||{};
+  const admin=/admin|gerencia/.test(String(yo.rol||''))?yo.nombre:'';
+  /* Referencias: las de la base y, si no hay, el pariente que se anotó al vender. */
+  let refs=[];
+  if(typeof hayBase==='function'&&hayBase()&&cli.id){
+    try{ const r=await SB.from('referencia_personal').select('orden,nombre,telefono,parentesco').eq('cliente_id',cli.id).order('orden'); if(!r.error) refs=r.data||[]; }catch(e){}
+  }
+  if(!refs.length&&cli.pariente&&cli.pariente.nombre) refs=[{nombre:cli.pariente.nombre,telefono:cli.pariente.telefono}];
+  const pagoEng=(DB.pagos||[]).filter(p=>mismoId(p.contratoId,ct.id)&&p.estado!=='rechazado').sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha)))[0];
+  const boleta=ct.boleta||(pagoEng&&pagoEng.referencia)||'';
+  const banco=ct.banco||(boleta?'Banrural':'');
+  const nombre=`${cli.nombre||''} ${cli.apellido||''}`.trim();
+  const tel=cli.tel||cli.telefono||'', correo=cli.correo||cli.email||'';
+  const fila=(k,val,cls)=>`<tr><th>${k}</th><td class="${cls||''}">${val?esc(String(val)):''}</td></tr>`;
+  const Qn=n=>'Q. '+(Math.round(n*100)/100).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fecha=ct.fecha?fmtD(ct.fecha):fmtD(HOY_ISO);
+  const tipoLote=[l.area?`${l.area} mts²`:'', l.tipo?`tipo ${l.tipo}`:'', _esAgroTxt(l.fase||ct.fase)?'Agrícola':(l.fase||ct.fase||'')].filter(Boolean).join(' · ');
+
+  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<title>Formulario de solicitud · ${esc(ct.no)} · ${esc(ct.lote)}</title>
+<style>
+  @page{size:letter;margin:1.4cm 1.6cm}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;color:#000;max-width:19cm;margin:0 auto;padding:14px}
+  .cab{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:10px}
+  table{border-collapse:collapse;width:100%}
+  th{text-align:left;font-weight:700;font-size:8.5pt;text-transform:uppercase;padding:4px 6px;border:1px dotted #555;width:52%;vertical-align:top}
+  td{padding:4px 8px;border:1px dotted #555;min-height:18px;height:20px;font-size:11pt}
+  td.d{background:#fffbe6;font-weight:700}
+  .sec{font-weight:700;font-size:9pt;text-align:right;margin:10px 0 2px;letter-spacing:.3px}
+  .marca{text-align:center;font-size:9pt;line-height:1.3;border:1px solid #999;border-radius:8px;padding:8px 12px;min-width:150px}
+  .marca b{display:block;font-size:12pt;letter-spacing:1px}
+  .firmas{margin-top:26px;display:grid;grid-template-columns:1fr 1fr;gap:16px 24px;align-items:end}
+  .firmas .ln{border-bottom:1px solid #000;height:34px}
+  .firmas .lb{font-size:9.5pt;padding-top:3px}
+  .pie{margin-top:14px;font-size:8.5pt;color:#666}
+  .noprint{text-align:center;margin:18px 0}
+  .noprint button{background:#2E6B4F;color:#fff;border:0;padding:11px 22px;border-radius:8px;font-size:14px;cursor:pointer;font-family:inherit;margin:0 4px}
+  @media print{.noprint{display:none}body{padding:0}}
+</style></head><body>
+<div class="cab">
+  <table style="width:62%">
+    ${fila('Número de lote', ct.lote, 'd')}
+    ${fila('Área de lote', tipoLote, 'd')}
+    ${fila('Fecha', fecha, 'd')}
+    ${fila('Vendedor', ct.vendedor||'', 'd')}
+    ${fila('Administrador de venta', admin, admin?'d':'')}
+  </table>
+  <div class="marca"><b>LA ESPERANZA</b>Lotificación<br>San Miguel Pochuta, Chimaltenango<br><span style="font-size:8pt;color:#666">${esc(ct.no)}</span></div>
+</div>
+<div class="sec">ESTA ÁREA LA LLENA EL VENDEDOR</div>
+<table>
+  ${fila('Precio de lote de comprador', Qn(ct.precio), 'd')}
+  ${fila('Monto de pago inicial (enganche)', Qn(plan.enganche), 'd')}
+  ${fila('Banco de depósito de pago de enganche', banco, banco?'d':'')}
+  ${fila('Número de boleta o referencia', boleta, boleta?'d':'')}
+  ${fila('Saldo deudor (monto a financiar)', Qn(Math.max(0,ct.precio-plan.enganche)), 'd')}
+  ${fila('Plazo a financiar', `${plan.plazo} pagos`, 'd')}
+  ${fila('Cuota mensual de lote', Qn(plan.cuota), 'd')}
+</table>
+<div class="sec">ESTA ÁREA LA LLENA EL CLIENTE</div>
+<table>
+  ${fila('Nombre completo del comprador', nombre, nombre?'d':'')}
+  ${fila('Número de DPI del comprador', cli.dpi, cli.dpi?'d':'')}
+  ${fila('Número de NIT (si tiene)', cli.nit, cli.nit?'d':'')}
+  ${fila('Nacionalidad', '')}
+  ${fila('Fecha de nacimiento', cli.nacimiento?fmtD(cli.nacimiento):'', cli.nacimiento?'d':'')}
+  ${fila('Estado civil', '')}
+  ${fila('Género (masculino o femenino)', '')}
+  ${fila('Profesión', cli.ocupacion, cli.ocupacion?'d':'')}
+  ${fila('Dirección de casa', cli.direccion, cli.direccion?'d':'')}
+  ${fila('Número de teléfono de casa', '')}
+  ${fila('Número de teléfono celular', tel, tel?'d':'')}
+  ${fila('Dirección de correo electrónico', correo, correo?'d':'')}
+  ${fila('Tipo de ocupación (propio o empresa)', '')}
+  ${fila('Nombre de la empresa', '')}
+  ${fila('Dirección de la empresa', '')}
+  ${fila('Número de teléfono de la empresa', '')}
+  <tr><th colspan="2" style="width:auto">Referencias familiares / personales</th></tr>
+  ${[0,1,2].map(i=>fila(`Nombre de referencia ${i+1}`, refs[i]&&refs[i].nombre, refs[i]&&refs[i].nombre?'d':'')+fila(`Número de teléfono referencia ${i+1}`, refs[i]&&refs[i].telefono, refs[i]&&refs[i].telefono?'d':'')).join('')}
+</table>
+<div class="firmas">
+  <div><div class="ln"></div><div class="lb">Firma comprador</div></div>
+  <div><div class="ln" style="height:auto;padding-bottom:4px;font-size:11pt">${esc(nombre)}</div><div class="lb">Nombre de comprador</div></div>
+  <div></div>
+  <div><div class="ln" style="height:auto;padding-bottom:4px;font-size:11pt">${esc(cli.dpi||'')}</div><div class="lb">Número de DPI o pasaporte</div></div>
+</div>
+<p class="pie">Formulario de solicitud · Contrato ${esc(ct.no)} · Lote ${esc(ct.lote)} · Prellenado por el Suite Sol Inmobiliaria el ${fmtD(HOY_ISO)}. Lo sombreado viene del sistema; el cliente completa lo demás a mano y firma. El escaneo se sube al expediente como «Formulario de solicitud».</p>
+<div class="noprint"><button onclick="window.print()">Imprimir / Guardar PDF</button></div>
+</body></html>`;
+  const w=window.open('','_blank');
+  if(!w){toast('Permite las ventanas emergentes para ver el formulario');return;}
+  w.document.write(html); w.document.close();
+  await registrarGestion(id,'Bitácora Socios','Contactado','Formulario de solicitud generado prellenado desde el suite');
+  toast('Formulario de '+ct.no+' listo: imprimilo o guardalo en PDF, el cliente lo completa y firma');
+}
+function _esAgroTxt(f){ return /agro|agric/i.test(String(f||'')); }

@@ -154,6 +154,12 @@ async function entrar(){
     toast(r.error, 6000, true); return;
   }
 
+  /* Contraseña temporal (la asignó administración): antes que nada,
+     elige la suya. Hasta entonces no hay aplicación. */
+  if(SESION.debeCambiar && !window.__contrasenaDefinida){
+    pantallaNuevaContrasena(SESION.persona && SESION.persona.nombre, true);
+    return;
+  }
   /* La contraseña sola no alcanza si esta persona ya enroló su
      teléfono. El token que Supabase acaba de dar es aal1; hasta que no
      suba a aal2, las políticas de la base le niegan los expedientes y
@@ -255,7 +261,7 @@ async function activar2FAyEntrar(factorId){
 }
 
 /* ---------- Elegir contraseña al llegar por el correo ---------- */
-async function pantallaNuevaContrasena(nombre){
+async function pantallaNuevaContrasena(nombre, temporal){
   SCREEN='login';
   const L=document.getElementById('login'); L.style.display='flex';
   /* Con segundo factor activo, Supabase exige aal2 para cambiar la
@@ -265,7 +271,7 @@ async function pantallaNuevaContrasena(nombre){
     <div class="login-marca"><span class="brand-mark"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 30l16-14 16 14"/><path d="M12 26v12h24V26"/><path d="M24 6v4M9 11l2.8 2.8M39 11l-2.8 2.8M4 24h4M40 24h4"/></svg></span>
       <span><span class="brand-name">SOL</span><span class="brand-sub">Inmobiliaria</span></span></div>
     <div class="login-sub">Bienvenido${nombre?', '+esc(String(nombre).split(' ')[0]):''}</div>
-    <p class="login-hint">Elegí tu contraseña. Es tuya: nadie más la ve.</p>
+    <p class="login-hint">${temporal?'Administración te dio una contraseña temporal. Elegí la tuya: nadie más la ve.':'Elegí tu contraseña. Es tuya: nadie más la ve.'}</p>
     ${pideCodigo?`<div class="field" style="text-align:left;margin-bottom:12px"><label>Código de Microsoft Authenticator</label>
       <input id="np-cod" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" style="letter-spacing:6px;text-align:center">
       <div class="hint">Tu cuenta tiene segundo factor: hace falta para cambiar la contraseña.</div></div>`:''}
@@ -396,8 +402,8 @@ async function reanudarSesion(){
 
   /* Llegó por el enlace del correo: primero elige contraseña. Hasta que
      no la ponga, no hay aplicación. */
-  if(window.LLEGO_POR_CORREO && !window.__contrasenaDefinida){
-    pantallaNuevaContrasena(r.persona && r.persona.nombre);
+  if((window.LLEGO_POR_CORREO || SESION.debeCambiar) && !window.__contrasenaDefinida){
+    pantallaNuevaContrasena(r.persona && r.persona.nombre, !!SESION.debeCambiar);
     return 'contrasena';
   }
 
@@ -1975,7 +1981,7 @@ function modalContrasena(id){
       <p class="hint" style="margin-bottom:8px">Le llega un correo con un enlace. ${p.entra?'La actual sigue sirviendo hasta que la cambie.':'Necesita tener cuenta: usá «Invitar» primero.'}</p>
       <button class="btn btn-ghost" ${p.entra?'':'disabled'} onclick="closeModal();restablecerContrasenaDe('${p.id}')">Mandar enlace</button>
       <div class="sect-t" style="margin-top:18px">Opción 2 · asignarle una ahora</div>
-      <p class="hint" style="margin-bottom:8px">${p.entra?'Reemplaza la actual de inmediato.':'Le crea la cuenta ya confirmada — no espera ningún correo.'} 12+ caracteres con mayúscula, minúscula, número y símbolo.</p>
+      <p class="hint" style="margin-bottom:8px">${p.entra?'Reemplaza la actual de inmediato.':'Le crea la cuenta ya confirmada — no espera ningún correo.'} 12+ caracteres con mayúscula, minúscula, número y símbolo. <b>Es temporal:</b> al entrar tiene que cambiarla por una suya y activar el segundo factor.</p>
       <div class="form-grid">
         <div class="field"><label>Contraseña nueva</label><input id="pw-1" type="password" autocomplete="new-password"></div>
         <div class="field"><label>Repetila</label><input id="pw-2" type="password" autocomplete="new-password"></div>
@@ -3148,17 +3154,17 @@ function pintarContrato(){
   }
 
   if(drawerTab==='docs'){
-    if(ct.estado==='borrador'||ct.estado==='en_aprobacion'){
+    if(ct.estado!=='anulado'){
       const reqs=(DB.documentosRequeridos&&DB.documentosRequeridos.length?DB.documentosRequeridos.filter(r=>r.obligatorio):DOCS_REQ()).slice().sort((a,b)=>(a.orden||0)-(b.orden||0));
       const ds=(typeof documentosExpediente==='function'?documentosExpediente(ct):documentosDe(ct.id)); const conArchivo=t=>ds.filter(d=>d.tipo===t&&d.bucket&&d.ruta).reduce((n,d)=>n+(d.cara==='ambas'?2:1),0);
       const filas=reqs.map(r=>({...r, tiene:conArchivo(r.codigo), ok:conArchivo(r.codigo)>=(r.caras||1)}));
       const completo=filas.every(f=>f.ok);
       h+=`<div class="card" style="margin:0 0 14px;border-left:3px solid ${completo?'var(--green)':'var(--gold)'}"><div class="card-b">
-        <b>${ct.estado==='borrador'?(completo?'Expediente completo':'Expediente para enviar a aprobación'):'En el comité de crédito'}</b>
-        <div class="hint" style="margin:4px 0 10px">${ct.estado==='borrador'?'Sin estos papeles la venta no llega al comité. Subilos desde el celular: la cámara abre sola.':'Se aprueba o se deniega desde el portal interno.'}</div>
+        <b>${ct.estado==='borrador'?(completo?'Expediente completo':'Expediente para enviar a aprobación'):ct.estado==='en_aprobacion'?'En el comité de crédito':(completo?'Expediente completo':'Expediente incompleto')}</b>
+        <div class="hint" style="margin:4px 0 10px">${ct.estado==='borrador'?'Sin estos papeles la venta no llega al comité. Subilos desde el celular: la cámara abre sola.':ct.estado==='en_aprobacion'?'Se aprueba o se deniega desde el portal interno.':'Un expediente por lote: contrato y plan firmados, formulario, DPI, DPI del pariente y boleta del enganche. Subilos desde el celular.'}</div>
         ${filas.map(f=>`<div class="check-row ${f.ok?'hecho':''}"><div class="check-ico">${f.ok?'✓':'○'}</div>
           <div class="check-txt"><b>${esc(f.nombre)}</b><div class="hint">${f.caras>1?`${f.tiene} de ${f.caras} caras`:(f.ok?'subido':'falta')}</div></div>
-          <div class="check-acc">${f.ok?'':`<button class="btn btn-gold btn-sm" onclick="modalDocumentoTipo('${ct.id}','${f.codigo}')">Subir</button>`}</div></div>`).join('')}
+          <div class="check-acc">${f.codigo==='formulario'&&typeof generarFormulario==='function'?`<button class="btn btn-ghost btn-sm" onclick="generarFormulario('${ct.id}')" title="Prellenado con los datos del suite">Generar</button> `:''}${f.ok?'':`<button class="btn btn-gold btn-sm" onclick="modalDocumentoTipo('${ct.id}','${f.codigo}')">Subir</button>`}</div></div>`).join('')}
         ${ct.estado==='borrador'?`<div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" ${completo?'':'disabled title="Falta expediente"'} onclick="doEnviarAprobacion('${ct.id}')">Enviar a aprobación →</button></div>`:''}
       </div></div>`;
     }
