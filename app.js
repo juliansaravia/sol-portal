@@ -3726,6 +3726,8 @@ function imprimirRecibo(){ const w=window.open('','_blank'); if(!w) return; cons
 function modalCargaRecibos(){
   openModal(`<div class="modal-h"><h3>Cargar recibos del CRM</h3><p>Varios PDF a la vez · cada uno se cuelga del pago que le corresponde</p></div>
     <div class="modal-b">
+      <div class="field"><label>Fase o proyecto (opcional)</label>
+        <select id="cr-fase"><option value="">Cualquiera · el recibo trae el número de contrato</option>${[...new Set(DB.lotes.map(l=>l.fase).filter(Boolean))].sort().map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('')}</select></div>
       <div class="form-grid">
         <div class="field"><label>Carpeta de recibos (con subcarpetas)</label><input id="cr-carpeta" type="file" webkitdirectory directory multiple></div>
         <div class="field"><label>…o PDF sueltos</label><input id="cr-archivos" type="file" accept="application/pdf" multiple></div>
@@ -3750,7 +3752,8 @@ async function cargarRecibosCRM(){
       const texto=await textoDePDF(f); const r=interpretarReciboCRM(texto);
       if(!r||!r.contrato||!r.monto){ fila.leido='<span class="badge b-mora">No parece un recibo del CRM</span>'; fila.res='—'; pinta(); continue; }
       fila.leido=`${esc(r.contrato)} · ${Q(r.monto)} · ${r.fechaPago?fmtD(r.fechaPago):'sin fecha'} · ref ${esc(r.referencia||'—')} · recibo ${esc(r.reciboCRM||'')}`;
-      const ct=indices().contratosPorNo.get(String(r.contrato));
+      let ct=indices().contratosPorNo.get(String(r.contrato));
+      if(!ct&&r.lote){ const m=contratoDeArchivo(r.lote,'',v('cr-fase')); if(m) ct=m.ct; }
       if(!ct){ fila.pago='—'; fila.res='<span class="badge b-mora">Contrato no existe en el sistema</span>'; pinta(); continue; }
       const cand=(indices().pagosPorContrato.get(String(ct.id))||[]).filter(p=>p.estado!=='rechazado'&&Math.abs(p.monto-r.monto)<0.01&&!adjuntosDe('pago',p.id).some(a=>!/^Recibo /.test(a.descripcion||'')||/CRM/.test(a.descripcion||'')));
       if(!cand.length){ fila.pago='—'; fila.res=`<span class="badge b-pend">Sin pago de ${Q(r.monto)} pendiente de respaldo en ${esc(r.contrato)}</span>`; pinta(); continue; }
@@ -3786,22 +3789,26 @@ function _normTxt(t){ return String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'
         otro Manuel de Jesús;
      3· sólo sin lote: el nombre del cliente, con todas las palabras
         largas de la carpeta presentes (mínimo dos). */
-function contratoDeArchivo(nombre, texto){
+function contratoDeArchivo(nombre, texto, fase){
   const ruta=_normTxt(nombre.replace(/\.[a-z0-9]+$/i,'')).replace(/[_/\\]+/g,' ');
+  /* Si quien carga eligió una fase (los expedientes agrícolas vienen por
+     lote, y D-03 existe en AGROLOTES y en otra fase), sólo se buscan
+     contratos de esa fase. */
+  const enFase=c=>!fase||_normTxt(c.fase||'')===_normTxt(fase);
   const pista=ruta+' '+_normTxt(texto||'').slice(0,4000);
   const mNo=pista.match(/\b(sd|res|ag)[-\s]?(\d{1,5})\b/g)||[];
-  for(const m of mNo){ const no=m.toUpperCase().replace(/[\s-]*/,'').replace(/^([A-Z]+)(\d+)$/,'$1-$2'); const ct=indices().contratosPorNo.get(no); if(ct) return {ct,por:'número '+no}; }
+  for(const m of mNo){ const no=m.toUpperCase().replace(/[\s-]*/,'').replace(/^([A-Z]+)(\d+)$/,'$1-$2'); const ct=indices().contratosPorNo.get(no); if(ct&&enFase(ct)) return {ct,por:'número '+no}; }
   const normLote=x=>String(x||'').toUpperCase().replace(/\s+/g,'').replace(/^([A-Z]{1,2})-?0*(\d{1,3})$/,(_,a,b)=>a+'-'+b.padStart(2,'0'));
   const tokensLote=[...new Set((ruta.match(/\b([a-z]{1,2})[-\s]?0?(\d{1,3})\b/g)||[]).map(x=>normLote(x)))].filter(x=>/^[A-Z]{1,2}-\d{2,3}$/.test(x));
   for(const cod of tokensLote){
-    const cands=DB.contratos.filter(c=>c.estado!=='anulado'&&normLote(c.lote)===cod);
+    const cands=DB.contratos.filter(c=>c.estado!=='anulado'&&normLote(c.lote)===cod&&enFase(c));
     if(cands.length===1) return {ct:cands[0],por:'lote '+cod};
     if(cands.length>1){ const fase=(ruta.match(/fase\s*(\d)/)||[])[1]; const c2=cands.filter(c=>fase&&_normTxt(c.fase).includes('fase '+fase)); if(c2.length===1) return {ct:c2[0],por:'lote '+cod+' fase '+fase}; }
   }
   if(tokensLote.length) return null;               // había lote y no existe: no adivinar
   const palabras=ruta.split(/[^a-z]+/).filter(w=>w.length>=4&&!/^(contrato|ventas?|dpi|pago|deposito|boleta|enganche|firmado|lote|residencial|whatsapp|image|clientes?|copia|final)$/.test(w));
   let mejor=null, mejorN=0;
-  for(const c of DB.contratos){ if(c.estado==='anulado') continue; const cli=_normTxt(nombreCliente(c.clienteId)); if(!cli||cli==='(sin titular)') continue;
+  for(const c of DB.contratos){ if(c.estado==='anulado'||!enFase(c)) continue; const cli=_normTxt(nombreCliente(c.clienteId)); if(!cli||cli==='(sin titular)') continue;
     const n=palabras.filter(w=>cli.includes(w)).length; if(n>mejorN){ mejorN=n; mejor=c; } }
   if(mejor&&mejorN>=2&&mejorN>=Math.min(3,palabras.length)) return {ct:mejor,por:'cliente '+nombreCliente(mejor.clienteId)};
   return null;
@@ -3820,6 +3827,9 @@ function tipoDeArchivo(nombre){
 function modalCargaDocumentos(){
   openModal(`<div class="modal-h"><h3>Cargar documentos en masa</h3><p>Carpetas enteras · cada archivo va al contrato que le corresponde</p></div>
     <div class="modal-b">
+      <div class="field"><label>¿De qué fase o proyecto son estos expedientes?</label>
+        <select id="cd-fase"><option value="">Cualquiera (identifica por número de contrato o lote único)</option>${[...new Set(DB.lotes.map(l=>l.fase).filter(Boolean))].sort().map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('')}</select>
+        <div class="hint">Elegí la fase cuando los archivos vienen sólo por lote (D-03, H-06…): el mismo código existe en más de una fase y así no hay confusión.</div></div>
       <div class="form-grid">
         <div class="field"><label>Carpeta (con subcarpetas)</label><input id="cd-carpeta" type="file" webkitdirectory directory multiple></div>
         <div class="field"><label>…o archivos sueltos</label><input id="cd-archivos" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple></div>
@@ -3842,7 +3852,7 @@ async function leerDocumentosMasa(){
   for(const f of files){
     const ruta=f.webkitRelativePath||f.name;
     let texto=''; if(/pdf/i.test(f.type)&&f.size<6e6){ try{ texto=await textoDePDF(f); }catch(e){} }
-    const m=contratoDeArchivo(ruta,texto);
+    const m=contratoDeArchivo(ruta,texto,v('cd-fase'));
     window.__masa.push({f, ruta, ct:m?m.ct:null, por:m?m.por:'', tipo:tipoDeArchivo(ruta), estado:''});
     out.innerHTML=`<div class="hint">Leídos ${window.__masa.length} de ${files.length}…</div>`;
   }
@@ -3859,7 +3869,7 @@ function pintarMasa(){
       <td>${x.estado||''}</td></tr>`).join('')}</tbody></table></div>`;
   document.getElementById('cd-subir').textContent=`Subir ${listos}`;
 }
-function masaContrato(i,valor){ const m=contratoDeArchivo(valor,''); const x=window.__masa[i]; if(m){ x.ct=m.ct; x.por='a mano'; } else toast('No encontré ese contrato',4000,true); pintarMasa(); }
+function masaContrato(i,valor){ const m=contratoDeArchivo(valor,'',v('cd-fase')); const x=window.__masa[i]; if(m){ x.ct=m.ct; x.por='a mano'; } else toast('No encontré ese contrato',4000,true); pintarMasa(); }
 async function subirDocumentosMasa(){
   if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se pueden subir archivos',5000,true);
   const btn=document.getElementById('cd-subir'); btn.disabled=true; let ok=0;
