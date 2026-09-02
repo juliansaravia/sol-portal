@@ -799,7 +799,7 @@ function contactoDe(numeroContrato) {
 
 /* ---------- Mutaciones ---------- */
 async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, reserva, enganche, plazo, girosSaldo, origen,
-                         direccion, ocupacion, ingresoMensual, constancia, pesoConstancia, pariente }) {
+                         direccion, ocupacion, ingresoMensual, constancia, pesoConstancia, pariente, fecha, historico }) {
   const l = getLote(lote);
   if (!l) { avisar('No se encontró el lote ' + lote); return null; }
 
@@ -817,7 +817,8 @@ async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, res
     const r = await sbCrearContrato({
       lote: l, cliente_id: cli.id, persona_id: vend ? vend.id : null,
       enganche: enganche !== undefined ? enganche : (reserva !== undefined ? reserva : ENGANCHE_MIN),
-      plazo: plazo || girosSaldo || 60, origen: origen || 'Campo', estado: 'borrador'
+      plazo: plazo || girosSaldo || 60, origen: origen || 'Campo', estado: 'borrador',
+      fecha: fecha || undefined, historico: !!historico
     });
     if (!r.ok) { avisar(r.error); return null; }
 
@@ -827,10 +828,20 @@ async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, res
       vendedor: vendedor || '', fecha: r.dato.fecha,
       precio: Number(r.dato.precio_venta), enganche: Number(r.dato.enganche),
       plazo: r.dato.plazo_meses, tasa: Number(r.dato.tasa_mensual),
-      estado: r.dato.estado, obligaciones: []
+      estado: r.dato.estado, obligaciones: [], origen: historico ? null : (origen || 'Campo'), fuente: historico ? 'Carga masiva' : 'Suite'
     };
     DB.contratos.push(ct);
     l.estado = 'reservado';
+    if (historico) {
+      /* Ya se vendió y ya se firmó: no pasa por comité. Queda vigente y
+         el lote vendido, igual que lo que vino del CRM. */
+      const e = await sbEstadoContrato(ct.id, 'aprobado', 'vendido');
+      if (!e.ok) { avisar(e.error); return null; }
+      ct.estado = typeof estadoDePortal === 'function' ? estadoDePortal('activo') : 'aprobado';
+      l.estado = 'vendido';
+      await registrarGestion(ct.id, 'Bitácora Socios', 'Solucionado', 'Contrato histórico cargado con su expediente (ya firmado)');
+      return ct;
+    }
     await registrarGestion(ct.id, 'Bitácora Socios', 'Contactado', 'Contrato creado desde ' + (origen || 'Campo'));
     return ct;
   }
@@ -838,9 +849,9 @@ async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, res
   DB.meta.correlativo++;
   const ct = {
     id: uid(), no: 'SD-' + DB.meta.correlativo, lote, clienteId: cli.id,
-    fecha: HOY_ISO, precio: l.precio, estado: 'borrador',
+    fecha: fecha || HOY_ISO, precio: l.precio, estado: historico ? 'aprobado' : 'borrador',
     vendedor: vendedor || 'Compra en línea', firma: 'firmado',
-    origen: origen || 'Campo', integrantes: [], recaudadoBase: 0, fuente: 'Suite',
+    origen: historico ? null : (origen || 'Campo'), integrantes: [], recaudadoBase: 0, fuente: historico ? 'Carga masiva' : 'Suite',
     ingresoDeclarado: ingresoMensual || null, constancia: constancia || null
   };
   ct.obligaciones = crearObligaciones(ct, 0, {
@@ -848,8 +859,8 @@ async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, res
     plazo: plazo || girosSaldo
   });
   DB.contratos.push(ct);
-  if (l) l.estado = 'reservado';
-  await registrarGestion(ct.id, 'Bitácora Socios', 'Contactado', 'Contrato creado desde ' + ct.origen);
+  if (l) l.estado = historico ? 'vendido' : 'reservado';
+  await registrarGestion(ct.id, 'Bitácora Socios', 'Contactado', historico ? 'Contrato histórico cargado con su expediente' : 'Contrato creado desde ' + ct.origen);
   saveDB();
   return ct;
 }

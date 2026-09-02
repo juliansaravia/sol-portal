@@ -179,7 +179,7 @@ async function sbActualizarCliente(id, datos) {
    pero si algún día dejaran de coincidir, la que manda es la de
    la base: es la que ve la contabilidad.
    ============================================================ */
-async function sbCrearContrato({ lote, cliente_id, persona_id, enganche, plazo, origen, banco, boleta, estado }) {
+async function sbCrearContrato({ lote, cliente_id, persona_id, enganche, plazo, origen, banco, boleta, estado, fecha, historico }) {
   return escribir('crear el contrato', async () => {
     if (!lote || !lote.id) throw new Error('No se identificó el lote.');
     if (!lote.proyecto_id) throw new Error('El lote no trae proyecto. Recarga la página.');
@@ -192,7 +192,7 @@ async function sbCrearContrato({ lote, cliente_id, persona_id, enganche, plazo, 
       cliente_id,
       persona_id: persona_id || null,
       numero,
-      fecha: new Date().toISOString().slice(0, 10),
+      fecha: fecha || new Date().toISOString().slice(0, 10),
       precio_venta: lote.precio,
       enganche: enganche,
       plazo_meses: plazo,
@@ -202,10 +202,13 @@ async function sbCrearContrato({ lote, cliente_id, persona_id, enganche, plazo, 
          sólo entonces lo envía a aprobación. Decisión del dueño (1 sept
          2026): sin expediente completo no llega al comité. */
       estado: estadoDeBase(estado || 'borrador'),
-      origen: origen || 'Campo',
+      /* Un contrato histórico (carga masiva de expedientes) ya está firmado
+         en papel: sin origen, para que la ficha pida subir el firmado y no
+         ofrezca generar otro. */
+      origen: historico ? null : (origen || 'Campo'),
       banco: banco || null,
       boleta: boleta || null,
-      fuente: 'Suite'
+      fuente: historico ? 'Carga masiva' : 'Suite'
     }).select('id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado').single());
 
     // El plan de pago lo arma la base, no el navegador.

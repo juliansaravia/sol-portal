@@ -3789,6 +3789,23 @@ function _normTxt(t){ return String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'
         otro Manuel de Jesús;
      3· sólo sin lote: el nombre del cliente, con todas las palabras
         largas de la carpeta presentes (mínimo dos). */
+const _normLote=x=>String(x||'').toUpperCase().replace(/\s+/g,'').replace(/^([A-Z]{1,2})-?0*(\d{1,3})$/,(_,a,b)=>a+'-'+b.padStart(2,'0'));
+const _tokensLote=ruta=>[...new Set((ruta.match(/\b([a-z]{1,2})[-\s]?0?(\d{1,3})\b/g)||[]).map(x=>_normLote(x)))].filter(x=>/^[A-Z]{1,2}-\d{2,3}$/.test(x));
+/* Lotes que el nombre menciona, existen en la fase y NO tienen contrato:
+   la carpeta «i-06 CARLOS SALAZAR» es una venta que el suite aún no
+   conoce. Se ofrecen para crear el contrato ahí mismo. */
+function lotesSinContratoDe(nombre, fase){
+  const ruta=_normTxt(String(nombre||'').replace(/\.[a-z0-9]+$/i,'')).replace(/[_/\\]+/g,' ');
+  const enFase=x=>!fase||_normTxt(x.fase||'')===_normTxt(fase);
+  const out=[];
+  for(const cod of _tokensLote(ruta)){
+    const conCt=DB.contratos.some(c=>c.estado!=='anulado'&&_normLote(c.lote)===cod&&enFase(c));
+    if(conCt) continue;
+    const ls=DB.lotes.filter(l=>_normLote(l.codigo)===cod&&enFase(l));
+    if(ls.length===1) out.push(ls[0]);
+  }
+  return out;
+}
 function contratoDeArchivo(nombre, texto, fase){
   const ruta=_normTxt(nombre.replace(/\.[a-z0-9]+$/i,'')).replace(/[_/\\]+/g,' ');
   /* Si quien carga eligió una fase (los expedientes agrícolas vienen por
@@ -3798,8 +3815,7 @@ function contratoDeArchivo(nombre, texto, fase){
   const pista=ruta+' '+_normTxt(texto||'').slice(0,4000);
   const mNo=pista.match(/\b(sd|res|ag)[-\s]?(\d{1,5})\b/g)||[];
   for(const m of mNo){ const no=m.toUpperCase().replace(/[\s-]*/,'').replace(/^([A-Z]+)(\d+)$/,'$1-$2'); const ct=indices().contratosPorNo.get(no); if(ct&&enFase(ct)) return {ct,por:'número '+no}; }
-  const normLote=x=>String(x||'').toUpperCase().replace(/\s+/g,'').replace(/^([A-Z]{1,2})-?0*(\d{1,3})$/,(_,a,b)=>a+'-'+b.padStart(2,'0'));
-  const tokensLote=[...new Set((ruta.match(/\b([a-z]{1,2})[-\s]?0?(\d{1,3})\b/g)||[]).map(x=>normLote(x)))].filter(x=>/^[A-Z]{1,2}-\d{2,3}$/.test(x));
+  const normLote=_normLote, tokensLote=_tokensLote(ruta);
   for(const cod of tokensLote){
     const cands=DB.contratos.filter(c=>c.estado!=='anulado'&&normLote(c.lote)===cod&&enFase(c));
     if(cands.length===1) return {ct:cands[0],por:'lote '+cod};
@@ -3853,7 +3869,7 @@ async function leerDocumentosMasa(){
     const ruta=f.webkitRelativePath||f.name;
     let texto=''; if(/pdf/i.test(f.type)&&f.size<6e6){ try{ texto=await textoDePDF(f); }catch(e){} }
     const m=contratoDeArchivo(ruta,texto,v('cd-fase'));
-    window.__masa.push({f, ruta, ct:m?m.ct:null, por:m?m.por:'', tipo:tipoDeArchivo(ruta), estado:''});
+    window.__masa.push({f, ruta, ct:m?m.ct:null, por:m?m.por:'', lotes:m?[]:lotesSinContratoDe(ruta,v('cd-fase')), tipo:tipoDeArchivo(ruta), estado:''});
     out.innerHTML=`<div class="hint">Leídos ${window.__masa.length} de ${files.length}…</div>`;
   }
   pintarMasa(); document.getElementById('cd-leer').disabled=false; document.getElementById('cd-subir').hidden=false;
@@ -3861,15 +3877,73 @@ async function leerDocumentosMasa(){
 function pintarMasa(){
   const M=window.__masa; const out=document.getElementById('cd-resultado');
   const sinCt=M.filter(x=>!x.ct).length, sinTipo=M.filter(x=>x.ct&&!x.tipo).length, listos=M.filter(x=>x.ct&&x.tipo&&!x.estado).length;
-  out.innerHTML=`<div class="hint" style="margin-bottom:8px"><b>${M.length}</b> archivos · <b>${listos}</b> listos para subir · ${sinCt?`<span style="color:#B8452E">${sinCt} sin contrato</span> · `:''}${sinTipo?`<span style="color:#8A5F12">${sinTipo} sin tipo</span>`:''}</div>
+  const lotesNuevos=[...new Set(M.filter(x=>!x.ct).flatMap(x=>(x.lotes||[]).map(claveDe)))].length;
+  out.innerHTML=`<div class="hint" style="margin-bottom:8px"><b>${M.length}</b> archivos · <b>${listos}</b> listos para subir · ${sinCt?`<span style="color:#B8452E">${sinCt} sin contrato</span> · `:''}${sinTipo?`<span style="color:#8A5F12">${sinTipo} sin tipo</span>`:''}
+    ${lotesNuevos?`<div style="margin-top:4px;color:#8A5F12"><b>${lotesNuevos}</b> lote(s) existen pero no tienen contrato en el suite: son ventas que aún no están cargadas. Creá el contrato desde la fila (queda vigente, ya firmado) y los archivos de esa carpeta se acomodan solos.</div>`:''}</div>
     <div style="max-height:46vh;overflow:auto"><table class="data"><thead><tr><th>Archivo</th><th>Contrato</th><th>Tipo</th><th></th></tr></thead><tbody>${M.map((x,i)=>`<tr>
       <td title="${esc(x.ruta)}">${esc(x.ruta.split('/').slice(-2).join(' / '))}</td>
-      <td>${x.ct?`<b>${x.ct.no}</b> · ${esc(x.ct.lote)} <span class="hint">${esc(x.por)}</span>`:`<input class="chip" style="min-width:110px" placeholder="SD-000 o lote" onchange="masaContrato(${i},this.value)">`}</td>
+      <td>${x.ct?`<b>${x.ct.no}</b> · ${esc(x.ct.lote)} <span class="hint">${esc(x.por)}</span>`
+           :(x.lotes&&x.lotes.length)?x.lotes.map(l=>`<button class="btn btn-gold btn-sm" style="margin:2px 4px 2px 0" onclick="masaCrear(${i},'${esc(claveDe(l))}')">Crear contrato ${esc(l.codigo)}</button>`).join('')+`<div class="hint">el lote existe · sin contrato</div>`
+           :`<input class="chip" style="min-width:110px" placeholder="SD-000 o lote" onchange="masaContrato(${i},this.value)">`}</td>
       <td><select class="chip" onchange="window.__masa[${i}].tipo=this.value;pintarMasa()">${TIPOS_MASA.map(([v,t])=>`<option value="${v}" ${x.tipo===v?'selected':''}>${t}</option>`).join('')}</select></td>
-      <td>${x.estado||''}</td></tr>`).join('')}</tbody></table></div>`;
+      <td>${x.estado||''}</td></tr>${x.crear?`<tr><td colspan="4" style="background:var(--tint)">${formContratoMasa(i)}</td></tr>`:''}`).join('')}</tbody></table></div>`;
   document.getElementById('cd-subir').textContent=`Subir ${listos}`;
+  const foco=document.getElementById('cm-nombre'); if(foco&&!foco.dataset.visto){ foco.dataset.visto='1'; foco.scrollIntoView({block:'center'}); }
 }
-function masaContrato(i,valor){ const m=contratoDeArchivo(valor,'',v('cd-fase')); const x=window.__masa[i]; if(m){ x.ct=m.ct; x.por='a mano'; } else toast('No encontré ese contrato',4000,true); pintarMasa(); }
+function masaContrato(i,valor){ const m=contratoDeArchivo(valor,'',v('cd-fase')); const x=window.__masa[i];
+  if(m){ x.ct=m.ct; x.por='a mano'; x.lotes=[]; }
+  else { x.lotes=lotesSinContratoDe(valor,v('cd-fase')); toast(x.lotes.length?'Ese lote existe pero no tiene contrato · podés crearlo aquí':'No encontré ese contrato',4000,!x.lotes.length); }
+  pintarMasa(); }
+/* ---- crear el contrato que falta, desde la misma fila ---- */
+const MESES_ES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','setiembre','octubre','noviembre','diciembre'];
+function _clienteDeCarpeta(ruta){
+  const partes=String(ruta||'').split('/'); if(partes.length>1) partes.pop();      // el archivo no es el cliente
+  const seg=[...partes].reverse().find(p=>_tokensLote(_normTxt(p)).length)||partes[partes.length-1]||'';
+  const limpio=seg.replace(/\b[A-Za-z]{1,2}[-\s]?0?\d{1,3}\b/g,' ').replace(/\b(y|e|lote|lotes|ventas?|contratos?)\b/gi,' ').replace(/[,\-_·]+/g,' ').replace(/\s+/g,' ').trim();
+  return limpio.toLowerCase().replace(/(^|\s)([a-záéíóúñ])/g,(m,a,b)=>a+b.toUpperCase());
+}
+function _fechaDeCarpeta(ruta){
+  const n=_normTxt(ruta||''); const hoy=(typeof HOY_ISO==='string'?HOY_ISO:new Date().toISOString().slice(0,10));
+  const i=MESES_ES.findIndex(m=>new RegExp('\\b'+m+'\\b').test(n)); if(i<0) return hoy;
+  const mes=(i>=9?i:i+1); const anio=(n.match(/\b(20\d{2})\b/)||[])[1]||hoy.slice(0,4);
+  return `${anio}-${String(mes).padStart(2,'0')}-01`;
+}
+function masaCrear(i,clave){ window.__masa.forEach(x=>{ delete x.crear; }); window.__masa[i].crear=clave; pintarMasa(); }
+function masaCancelarCrear(i){ delete window.__masa[i].crear; pintarMasa(); }
+function formContratoMasa(i){
+  const x=window.__masa[i], l=getLote(x.crear); if(!l) return '';
+  const vends=DB.equipo.filter(p=>p.rol==='vendedor'||p.vendedorHasta).sort((a,b)=>a.nombre.localeCompare(b.nombre));
+  return `<div class="sect-t">Contrato histórico · lote ${esc(l.codigo)}${l.fase?` · ${esc(l.fase)}`:''} · ${Qk(l.precio)}</div>
+    <div class="form-grid">
+      <div class="field"><label>Cliente *</label><input id="cm-nombre" value="${esc(_clienteDeCarpeta(x.ruta))}"></div>
+      <div class="field"><label>DPI (opcional)</label><input id="cm-dpi" inputmode="numeric" placeholder="13 dígitos"></div>
+      <div class="field"><label>Teléfono (opcional)</label><input id="cm-tel" inputmode="numeric"></div>
+      <div class="field"><label>Vendedor</label><select id="cm-vend"><option value="">(sin vendedor)</option>${vends.map(p=>`<option>${esc(p.nombre)}</option>`).join('')}</select></div>
+      <div class="field"><label>Fecha del contrato *</label><input id="cm-fecha" type="date" value="${_fechaDeCarpeta(x.ruta)}"></div>
+      <div class="field"><label>Enganche (Q)</label><input id="cm-eng" type="number" value="${ENGANCHE_MIN}"></div>
+      <div class="field"><label>Plazo (meses)</label><select id="cm-plz">${PLAZOS.map(p=>`<option value="${p}" ${p===60?'selected':''}>${p} meses</option>`).join('')}</select></div>
+    </div>
+    <div class="hint">Queda <b>vigente</b> con el lote vendido y el plan de pagos según fecha, enganche y plazo. El contrato firmado se sube como documento; no se genera otro.</div>
+    <div class="btn-row"><button class="btn btn-primary btn-sm" onclick="crearContratoMasa(${i})">Crear y acomodar archivos</button>
+      <button class="btn btn-ghost btn-sm" onclick="masaCancelarCrear(${i})">Cancelar</button></div>`;
+}
+async function crearContratoMasa(i){
+  const x=window.__masa[i]; const clave=x.crear; const nombre=v('cm-nombre').trim(); const fecha=v('cm-fecha');
+  if(nombre.split(' ').length<2) return toast('Poné nombre y apellido del cliente',4000,true);
+  if(!fecha) return toast('Falta la fecha del contrato',4000,true);
+  const dpi=v('cm-dpi').replace(/\D/g,''); if(dpi&&typeof validaDPI==='function'&&!validaDPI(dpi).ok) return toast(validaDPI(dpi).msg,4000,true);
+  const btn=document.querySelector('#cd-resultado .btn-primary'); if(btn){ btn.disabled=true; btn.textContent='Creando…'; }
+  const ct=await nuevoContrato({lote:clave, nombre, dpi:dpi||'', telefono:v('cm-tel').trim(), vendedor:v('cm-vend'),
+    enganche:+v('cm-eng')||0, plazo:+v('cm-plz')||60, fecha, historico:true});
+  if(!ct){ if(btn){ btn.disabled=false; btn.textContent='Crear y acomodar archivos'; } return; }
+  if(typeof reindexar==='function') reindexar();
+  delete x.crear;
+  /* Con el contrato ya en la lista, todo lo que estaba huérfano se vuelve a resolver. */
+  for(const y of window.__masa){ if(y.ct) continue; const m=contratoDeArchivo(y.ruta,'',v('cd-fase')); if(m){ y.ct=m.ct; y.por=m.por; y.lotes=[]; } else y.lotes=lotesSinContratoDe(y.ruta,v('cd-fase')); }
+  anotar('contrato.historico', `${ct.no} · ${ct.lote} · ${nombre}`);
+  toast(`Contrato ${ct.no} creado · ${window.__masa.filter(y=>y.ct&&mismoId(y.ct.id,ct.id)).length} archivo(s) acomodados`);
+  pintarMasa();
+}
 async function subirDocumentosMasa(){
   if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se pueden subir archivos',5000,true);
   const btn=document.getElementById('cd-subir'); btn.disabled=true; let ok=0;
