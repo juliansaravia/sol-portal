@@ -3753,7 +3753,7 @@ async function cargarRecibosCRM(){
       if(!r||!r.contrato||!r.monto){ fila.leido='<span class="badge b-mora">No parece un recibo del CRM</span>'; fila.res='—'; pinta(); continue; }
       fila.leido=`${esc(r.contrato)} · ${Q(r.monto)} · ${r.fechaPago?fmtD(r.fechaPago):'sin fecha'} · ref ${esc(r.referencia||'—')} · recibo ${esc(r.reciboCRM||'')}`;
       let ct=indices().contratosPorNo.get(String(r.contrato));
-      if(!ct&&r.lote){ const m=contratoDeArchivo(r.lote,'',v('cr-fase')); if(m) ct=m.ct; }
+      if(!ct&&r.lote){ const m=contratoDeArchivo(r.lote,'',v('cr-fase')); if(m&&m.ct) ct=m.ct; }
       if(!ct){ fila.pago='—'; fila.res='<span class="badge b-mora">Contrato no existe en el sistema</span>'; pinta(); continue; }
       const cand=(indices().pagosPorContrato.get(String(ct.id))||[]).filter(p=>p.estado!=='rechazado'&&Math.abs(p.monto-r.monto)<0.01&&!adjuntosDe('pago',p.id).some(a=>!/^Recibo /.test(a.descripcion||'')||/CRM/.test(a.descripcion||'')));
       if(!cand.length){ fila.pago='—'; fila.res=`<span class="badge b-pend">Sin pago de ${Q(r.monto)} pendiente de respaldo en ${esc(r.contrato)}</span>`; pinta(); continue; }
@@ -3794,9 +3794,26 @@ const _tokensLote=ruta=>[...new Set((ruta.match(/\b([a-z]{1,2})[-\s]?0?(\d{1,3})
 /* Lotes que el nombre menciona, existen en la fase y NO tienen contrato:
    la carpeta «i-06 CARLOS SALAZAR» es una venta que el suite aún no
    conoce. Se ofrecen para crear el contrato ahí mismo. */
+/* Qué cuenta como «de la fase elegida». Vacío: todas. «__residencial»:
+   todas menos la agrícola (los expedientes del residencial vienen en una
+   sola carpeta con FASE 1 y FASE 2 mezcladas). */
+const _esAgro=f=>/agro|agric/.test(_normTxt(f||''));
+function _enFaseMasa(fase){ return x=>{ if(!fase) return true; const f=_normTxt(x.fase||''); if(fase==='__residencial') return !_esAgro(f); return f===_normTxt(fase); }; }
+function etiquetaFase(fase){ return fase==='__residencial'?'Residencial (todas las fases menos la agrícola)':(fase||'Cualquiera'); }
+/* En qué fases existe un código de lote (D-06 está en FASE 1 y en AGROLOTES). */
+function fasesDeLote(cod){ return [...new Set(DB.lotes.filter(l=>_normLote(l.codigo)===cod).map(l=>l.fase||'(sin fase)'))]; }
+/* La fase que dice la carpeta raíz: «CONTRATOS LOTES AGRÍCOLAS 2» es la
+   agrícola; «RESIDENCIAL» es todo lo que no es agrícola. Si no dice
+   nada, vacío y se pide a mano. */
+function faseDeRutas(rutas){
+  const raiz=_normTxt((rutas||[]).map(r=>String(r).split('/').slice(0,-1).join(' ')).join(' '));
+  if(/agric|agro/.test(raiz)){ const f=[...new Set(DB.lotes.map(l=>l.fase).filter(Boolean))].find(_esAgro); if(f) return f; }
+  if(/residencial/.test(raiz)) return '__residencial';
+  return '';
+}
 function lotesSinContratoDe(nombre, fase){
   const ruta=_normTxt(String(nombre||'').replace(/\.[a-z0-9]+$/i,'')).replace(/[_/\\]+/g,' ');
-  const enFase=x=>!fase||_normTxt(x.fase||'')===_normTxt(fase);
+  const enFase=_enFaseMasa(fase);
   const out=[];
   for(const cod of _tokensLote(ruta)){
     const conCt=DB.contratos.some(c=>c.estado!=='anulado'&&_normLote(c.lote)===cod&&enFase(c));
@@ -3811,7 +3828,7 @@ function contratoDeArchivo(nombre, texto, fase){
   /* Si quien carga eligió una fase (los expedientes agrícolas vienen por
      lote, y D-03 existe en AGROLOTES y en otra fase), sólo se buscan
      contratos de esa fase. */
-  const enFase=c=>!fase||_normTxt(c.fase||'')===_normTxt(fase);
+  const enFase=_enFaseMasa(fase);
   const pista=ruta+' '+_normTxt(texto||'').slice(0,4000);
   /* Cualquier prefijo de serie (SD-111, RES-005, AGR-006), con o sin
      ceros a la izquierda: se prueba tal cual, sin ceros y con tres. */
@@ -3820,6 +3837,10 @@ function contratoDeArchivo(nombre, texto, fase){
     for(const no of [...new Set([P+'-'+num, P+'-'+String(+num), P+'-'+String(+num).padStart(3,'0')])]){ const ct=indices().contratosPorNo.get(no); if(ct&&enFase(ct)) return {ct,por:'número '+no}; } }
   const normLote=_normLote, tokensLote=_tokensLote(ruta);
   for(const cod of tokensLote){
+    /* Sin fase elegida, un código que existe en más de una fase no se
+       asigna: «i-06 CARLOS SALAZAR» (agrícola) caía en el SD-18 de FASE 1
+       porque era el único contrato con I-06. Se pide la fase. */
+    if(!fase){ const fs=fasesDeLote(cod); if(fs.length>1) return {ct:null, ambiguo:cod, fases:fs}; }
     const cands=DB.contratos.filter(c=>c.estado!=='anulado'&&normLote(c.lote)===cod&&enFase(c));
     if(cands.length===1) return {ct:cands[0],por:'lote '+cod};
     if(cands.length>1){ const fase=(ruta.match(/fase\s*(\d)/)||[])[1]; const c2=cands.filter(c=>fase&&_normTxt(c.fase).includes('fase '+fase)); if(c2.length===1) return {ct:c2[0],por:'lote '+cod+' fase '+fase}; }
@@ -3847,8 +3868,8 @@ function modalCargaDocumentos(){
   openModal(`<div class="modal-h"><h3>Cargar documentos en masa</h3><p>Carpetas enteras · cada archivo va al contrato que le corresponde</p></div>
     <div class="modal-b">
       <div class="field"><label>¿De qué fase o proyecto son estos expedientes?</label>
-        <select id="cd-fase" onchange="if(window.__masa&&window.__masa.length)pintarMasa()"><option value="">Cualquiera (identifica por número de contrato o lote único)</option>${[...new Set(DB.lotes.map(l=>l.fase).filter(Boolean))].sort().map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('')}</select>
-        <div class="hint">Elegí la fase cuando los archivos vienen sólo por lote (D-03, H-06…): el mismo código existe en más de una fase y así no hay confusión.</div></div>
+        <select id="cd-fase" onchange="if(window.__masa&&window.__masa.length)pintarMasa()"><option value="">Cualquiera (sólo por número de contrato o lote que exista en una sola fase)</option>${[...new Set(DB.lotes.map(l=>l.fase).filter(Boolean))].sort().map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('')}${DB.lotes.some(l=>_esAgro(l.fase))?'<option value="__residencial">Residencial · todas las fases menos la agrícola</option>':''}</select>
+        <div class="hint" id="cd-fase-hint">Se detecta sola por el nombre de la carpeta (AGRÍCOLAS, RESIDENCIAL). Un lote como D-06 existe en FASE 1 y en AGROLOTES: sin fase no se asigna.</div></div>
       <div class="form-grid">
         <div class="field"><label>Carpeta (con subcarpetas)</label><input id="cd-carpeta" type="file" webkitdirectory directory multiple></div>
         <div class="field"><label>…o archivos sueltos</label><input id="cd-archivos" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple></div>
@@ -3867,12 +3888,13 @@ async function leerDocumentosMasa(){
   const files=[...a,...b].filter(f=>!/^\./.test(f.name)&&!/\.(zip|rar|txt|ds_store)$/i.test(f.name));
   if(!files.length) return toast('Elegí una carpeta o archivos',5000,true);
   const out=document.getElementById('cd-resultado'); document.getElementById('cd-leer').disabled=true;
+  if(!v('cd-fase')){ const det=faseDeRutas(files.map(f=>f.webkitRelativePath||f.name)); if(det){ document.getElementById('cd-fase').value=det; const h=document.getElementById('cd-fase-hint'); if(h) h.innerHTML=`<b>Fase detectada por la carpeta: ${esc(etiquetaFase(det))}.</b> Si no es, cambiala y volvé a Leer.`; } }
   window.__masa=[];
   for(const f of files){
     const ruta=f.webkitRelativePath||f.name;
     let texto=''; if(/pdf/i.test(f.type)&&f.size<6e6){ try{ texto=await textoDePDF(f); }catch(e){} }
     const m=contratoDeArchivo(ruta,texto,v('cd-fase'));
-    window.__masa.push({f, ruta, ct:m?m.ct:null, por:m?m.por:'', lotes:m?[]:lotesSinContratoDe(ruta,v('cd-fase')), tipo:tipoDeArchivo(ruta), estado:''});
+    window.__masa.push({f, ruta, ct:m&&m.ct?m.ct:null, por:m&&m.ct?m.por:'', ambiguo:m&&m.ambiguo?m:null, lotes:m&&m.ct?[]:lotesSinContratoDe(ruta,v('cd-fase')), tipo:tipoDeArchivo(ruta), estado:''});
     out.innerHTML=`<div class="hint">Leídos ${window.__masa.length} de ${files.length}…</div>`;
   }
   pintarMasa(); document.getElementById('cd-leer').disabled=false; document.getElementById('cd-subir').hidden=false;
@@ -3881,11 +3903,17 @@ function pintarMasa(){
   const M=window.__masa; const out=document.getElementById('cd-resultado');
   const sinCt=M.filter(x=>!x.ct).length, sinTipo=M.filter(x=>x.ct&&!x.tipo).length, listos=M.filter(x=>x.ct&&x.tipo&&!x.estado).length;
   const lotesNuevos=[...new Set(M.filter(x=>!x.ct).flatMap(x=>(x.lotes||[]).map(claveDe)))].length;
-  out.innerHTML=`<div class="hint" style="margin-bottom:8px"><b>${M.length}</b> archivos · <b>${listos}</b> listos para subir · ${sinCt?`<span style="color:#B8452E">${sinCt} sin contrato</span> · `:''}${sinTipo?`<span style="color:#8A5F12">${sinTipo} sin tipo</span>`:''}
+  const porFase={}; M.filter(x=>x.ct).forEach(x=>{ const f=x.ct.fase||'(sin fase)'; porFase[f]=(porFase[f]||0)+1; });
+  const fases=Object.keys(porFase); const ambiguos=M.filter(x=>x.ambiguo).length;
+  const avisoFase=fases.length>1?`<div style="margin-top:4px;color:#B8452E"><b>Ojo:</b> los archivos caen en más de una fase (${fases.map(f=>`${porFase[f]} en ${esc(f)}`).join(', ')}). Si la carpeta es de una sola, elegila arriba y volvé a Leer.</div>`
+    :fases.length===1?`<div style="margin-top:4px">Todo va a contratos de <b>${esc(fases[0])}</b>.</div>`:'';
+  const avisoAmb=ambiguos?`<div style="margin-top:4px;color:#B8452E"><b>${ambiguos}</b> archivo(s) con un lote que existe en más de una fase: elegí la fase arriba y volvé a Leer.</div>`:'';
+  out.innerHTML=`<div class="hint" style="margin-bottom:8px"><b>${M.length}</b> archivos · <b>${listos}</b> listos para subir · ${sinCt?`<span style="color:#B8452E">${sinCt} sin contrato</span> · `:''}${sinTipo?`<span style="color:#8A5F12">${sinTipo} sin tipo</span>`:''}${avisoFase}${avisoAmb}
     ${lotesNuevos?`<div style="margin-top:4px;color:#8A5F12"><b>${lotesNuevos}</b> lote(s) existen pero no tienen contrato en el suite: son ventas que aún no están cargadas. Creá el contrato desde la fila (queda vigente, ya firmado) y los archivos de esa carpeta se acomodan solos.</div>`:''}</div>
     <div style="max-height:46vh;overflow:auto"><table class="data"><thead><tr><th>Archivo</th><th>Contrato</th><th>Tipo</th><th></th></tr></thead><tbody>${M.map((x,i)=>`<tr>
       <td title="${esc(x.ruta)}">${esc(x.ruta.split('/').slice(-2).join(' / '))}</td>
-      <td>${x.ct?`<b>${x.ct.no}</b> · ${esc(x.ct.lote)} <span class="hint">${esc(x.por)}</span>`
+      <td>${x.ct?`<b>${x.ct.no}</b> · ${esc(x.ct.lote)}${x.ct.fase?` · ${esc(x.ct.fase)}`:''} · ${esc(nombreCliente(x.ct.clienteId))} <span class="hint">${esc(x.por)}</span>`
+           :x.ambiguo?`<div style="color:#B8452E;font-size:12px;margin-bottom:4px">${esc(x.ambiguo.ambiguo)} existe en ${esc(x.ambiguo.fases.join(' y '))}: elegí la fase arriba</div><input class="chip" style="min-width:190px" placeholder="Lote, SD-… o cliente" autocomplete="off" oninput="sugerir(${i},this)" onfocus="sugerir(${i},this)" onkeydown="sugTecla(event,${i},this)" onblur="setTimeout(cerrarSugerencias,150)">`
            :(x.lotes&&x.lotes.length)?x.lotes.map(l=>`<button class="btn btn-gold btn-sm" style="margin:2px 4px 2px 0" onclick="masaCrear(${i},'${esc(claveDe(l))}')">Crear contrato ${esc(l.codigo)}</button>`).join('')+`<div class="hint">el lote existe · sin contrato</div>`
            :`<input class="chip" style="min-width:190px" placeholder="Lote, SD-… o cliente" autocomplete="off" oninput="sugerir(${i},this)" onfocus="sugerir(${i},this)" onkeydown="sugTecla(event,${i},this)" onblur="setTimeout(cerrarSugerencias,150)">`}</td>
       <td><select class="chip" onchange="window.__masa[${i}].tipo=this.value;pintarMasa()">${TIPOS_MASA.map(([v,t])=>`<option value="${v}" ${x.tipo===v?'selected':''}>${t}</option>`).join('')}</select></td>
@@ -3897,7 +3925,7 @@ function pintarMasa(){
    cliente) y los lotes de la fase que aún no tienen contrato. Se escribe
    «i-06» o «salazar» y se elige de la lista. */
 function sugerenciasMasa(fase){
-  const enFase=x=>!fase||_normTxt(x.fase||'')===_normTxt(fase);
+  const enFase=_enFaseMasa(fase);
   const cts=DB.contratos.filter(c=>c.estado!=='anulado'&&enFase(c))
     .sort((a,b)=>String(a.lote).localeCompare(String(b.lote),undefined,{numeric:true}))
     .map(c=>`${c.no} · ${c.lote}${!fase&&c.fase?' · '+c.fase:''} · ${nombreCliente(c.clienteId)}`);
@@ -3931,9 +3959,10 @@ function sugTecla(e,i,input){
 }
 function masaContrato(i,valor){ valor=String(valor||'').split('·')[0].trim(); if(!valor) return; const x=window.__masa[i];
   /* Lo elegido de la lista es un número exacto: va directo, sin adivinar. */
-  const directo=indices().contratosPorNo.get(valor.toUpperCase()); if(directo){ x.ct=directo; x.por='a mano'; x.lotes=[]; pintarMasa(); return; }
+  const directo=indices().contratosPorNo.get(valor.toUpperCase()); if(directo){ x.ct=directo; x.por='a mano'; x.lotes=[]; x.ambiguo=null; pintarMasa(); return; }
   const m=contratoDeArchivo(valor,'',v('cd-fase'));
-  if(m){ x.ct=m.ct; x.por='a mano'; x.lotes=[]; }
+  if(m&&m.ct){ x.ct=m.ct; x.por='a mano'; x.lotes=[]; x.ambiguo=null; }
+  else if(m&&m.ambiguo){ toast(`${m.ambiguo} existe en ${m.fases.join(' y ')}: elegí la fase arriba`,5000,true); }
   else { x.lotes=lotesSinContratoDe(valor,v('cd-fase')); toast(x.lotes.length?'Ese lote existe pero no tiene contrato · podés crearlo aquí':'No encontré ese contrato',4000,!x.lotes.length); }
   pintarMasa(); }
 /* ---- crear el contrato que falta, desde la misma fila ---- */
@@ -3981,7 +4010,7 @@ async function crearContratoMasa(i){
   if(typeof reindexar==='function') reindexar();
   delete x.crear;
   /* Con el contrato ya en la lista, todo lo que estaba huérfano se vuelve a resolver. */
-  for(const y of window.__masa){ if(y.ct) continue; const m=contratoDeArchivo(y.ruta,'',v('cd-fase')); if(m){ y.ct=m.ct; y.por=m.por; y.lotes=[]; } else y.lotes=lotesSinContratoDe(y.ruta,v('cd-fase')); }
+  for(const y of window.__masa){ if(y.ct) continue; const m=contratoDeArchivo(y.ruta,'',v('cd-fase')); if(m&&m.ct){ y.ct=m.ct; y.por=m.por; y.lotes=[]; y.ambiguo=null; } else y.lotes=lotesSinContratoDe(y.ruta,v('cd-fase')); }
   anotar('contrato.historico', `${ct.no} · ${ct.lote} · ${nombre}`);
   toast(`Contrato ${ct.no} creado · ${window.__masa.filter(y=>y.ct&&mismoId(y.ct.id,ct.id)).length} archivo(s) acomodados`);
   pintarMasa();
