@@ -973,6 +973,8 @@ function renderContratos(){
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <input class="chip" style="min-width:220px" placeholder="Buscar por número, lote, cliente o vendedor…" value="${esc(ctBusca)}" oninput="ctBusca=this.value;renderContratos();document.querySelector('.card-h input').focus()">
       ${F==='sin_boleta'?`<button class="btn btn-gold btn-sm" onclick="modalCargaRecibos()">Cargar recibos del CRM</button>`:''}
+      ${F==='sin_firmado'?`<button class="btn btn-gold btn-sm" onclick="modalCargaDocumentos()">Cargar contratos firmados</button>`:''}
+      <button class="btn btn-ghost btn-sm" onclick="modalCargaDocumentos()">Cargar documentos</button>
       <button class="btn btn-primary btn-sm" onclick="modalNuevoContrato()">+ Nuevo contrato</button></div></div>
     <div class="card-b chips">${Object.entries(FILTROS_CT).map(([k,v])=>`<button class="chip ${k===F?'on':''}" onclick="irA('contratos',{f:'${k}'})">${v.t}</button>`).join('')}</div>
     <div class="card-b" style="padding:0;overflow-x:auto"><table class="data"><thead><tr>
@@ -3761,6 +3763,70 @@ async function cargarRecibosCRM(){
     pinta();
   }
   btn.disabled=false; anotar('pago.boletas_crm', `${ok} de ${files.length} recibos`); pintarBadgeAsuntos();
+  if(typeof vista!=='undefined'&&vista==='contratos') renderContratos();
+}
+
+/* ============================================================ CARGA MASIVA DE DOCUMENTOS
+   Contratos firmados, planes de pago, DPI: muchos archivos a la vez.
+   A qué contrato va cada uno se decide así, en orden:
+     1· si el PDF trae texto, el número de contrato (SD-111) o el lote;
+     2· el nombre del archivo: «SD-111», «B-23», «FASE 2 M-01», o el
+        nombre del cliente (dos palabras que coincidan bastan);
+   Lo que no se puede identificar se lista para hacerlo a mano. */
+function _normTxt(t){ return String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+function contratoDeArchivo(nombre, texto){
+  const pista=_normTxt(nombre.replace(/\.[a-z0-9]+$/i,''))+' '+_normTxt(texto||'').slice(0,4000);
+  // 1· número de contrato
+  const mNo=pista.match(/\b([a-z]{2,4})[-\s]?(\d{1,5})\b/g)||[];
+  for(const m of mNo){ const no=m.toUpperCase().replace(/\s+/,'-').replace(/^([A-Z]+)(\d)/,'$1-$2'); const ct=indices().contratosPorNo.get(no); if(ct) return {ct,por:'número '+no}; }
+  // 2· lote (con fase si viene)
+  const mLote=pista.match(/\b([a-z]{1,2})[-\s]?0?(\d{1,3})\b/g)||[];
+  for(const m of mLote){ const cod=m.toUpperCase().replace(/\s+/,'-').replace(/^([A-Z]+)-?0?(\d+)$/,(_,a,b)=>a+'-'+b.padStart(2,'0'));
+    const cands=DB.contratos.filter(c=>c.estado!=='anulado'&&String(c.lote||'').toUpperCase().replace(/-0?(\d+)$/,(_,b)=>'-'+b.padStart(2,'0'))===cod);
+    if(cands.length===1) return {ct:cands[0],por:'lote '+cod};
+    if(cands.length>1){ const fase=(pista.match(/fase\s*(\d)/)||[])[1]; const c2=cands.filter(c=>fase?_normTxt(c.fase).includes('fase '+fase):false); if(c2.length===1) return {ct:c2[0],por:'lote '+cod+' fase '+fase}; }
+  }
+  // 3· nombre del cliente: dos palabras de 4+ letras que coincidan
+  const palabras=pista.split(/[^a-z]+/).filter(w=>w.length>=4);
+  let mejor=null, mejorN=0;
+  for(const c of DB.contratos){ if(c.estado==='anulado') continue; const cli=_normTxt(nombreCliente(c.clienteId)); if(!cli||cli==='(sin titular)') continue;
+    const n=palabras.filter(w=>cli.includes(w)).length; if(n>mejorN){ mejorN=n; mejor=c; } }
+  if(mejor&&mejorN>=2) return {ct:mejor,por:'cliente '+nombreCliente(mejor.clienteId)};
+  return null;
+}
+function modalCargaDocumentos(){
+  const reqs=(DB.documentosRequeridos&&DB.documentosRequeridos.length?DB.documentosRequeridos:DOCS_REQ());
+  openModal(`<div class="modal-h"><h3>Cargar documentos en masa</h3><p>Muchos archivos a la vez · cada uno se cuelga del contrato que le corresponde</p></div>
+    <div class="modal-b">
+      <div class="field"><label>¿Qué documento es?</label><select id="cd-tipo">${reqs.map(r=>`<option value="${r.codigo}">${esc(r.nombre)}</option>`).join('')}</select></div>
+      <div class="field"><label>Archivos (PDF o fotos)</label><input id="cd-archivos" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple></div>
+      <div class="hint">El contrato se identifica por el número (<b>SD-111</b>) o el lote (<b>B-23</b>, <b>FASE 2 M-01</b>) en el nombre del archivo, o por el nombre del cliente. Ej.: <i>SD-111 contrato.pdf</i>, <i>B-23 Kenya Quité.pdf</i>.</div>
+      <div id="cd-resultado" style="margin-top:12px"></div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
+      <button id="cd-btn" class="btn btn-primary" onclick="cargarDocumentosMasa()">Leer y cargar</button></div>`);
+}
+async function cargarDocumentosMasa(){
+  const tipo=v('cd-tipo'); const inp=document.getElementById('cd-archivos'); const files=inp&&inp.files?[...inp.files]:[];
+  const out=document.getElementById('cd-resultado'); const btn=document.getElementById('cd-btn');
+  if(!files.length) return toast('Elegí los archivos',5000,true);
+  if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se pueden subir archivos',5000,true);
+  btn.disabled=true; const filas=[]; let ok=0;
+  const pinta=()=>{ out.innerHTML=`<table class="data"><thead><tr><th>Archivo</th><th>Contrato</th><th>Resultado</th></tr></thead><tbody>${filas.map(f=>`<tr><td>${esc(f.archivo)}</td><td>${f.ct}</td><td>${f.res}</td></tr>`).join('')}</tbody></table><div class="hint" style="margin-top:8px">${ok} de ${files.length} colgados</div>`; };
+  for(const f of files){
+    const fila={archivo:f.name,ct:'…',res:''}; filas.push(fila); pinta();
+    try{
+      let texto=''; if(/pdf/i.test(f.type)){ try{ texto=await textoDePDF(f); }catch(e){} }
+      const m=contratoDeArchivo(f.name, texto);
+      if(!m){ fila.ct='—'; fila.res='<span class="badge b-pend">No pude saber de qué contrato es · subilo desde su ficha</span>'; pinta(); continue; }
+      fila.ct=`<b>${m.ct.no}</b> · ${esc(m.ct.lote)} · ${esc(nombreCliente(m.ct.clienteId))} <span class="hint">(por ${esc(m.por)})</span>`;
+      const r=await agregarDocumento(m.ct.id, tipo, f, null);
+      if(!r){ fila.res='<span class="badge b-mora">No se pudo subir</span>'; pinta(); continue; }
+      ok++; fila.res='<span class="badge b-ok">Colgado</span>';
+    }catch(e){ fila.res=`<span class="badge b-mora">${esc(e.message||String(e))}</span>`; }
+    pinta();
+  }
+  btn.disabled=false; anotar('documento.carga_masa', `${tipo}: ${ok} de ${files.length}`); pintarBadgeAsuntos();
   if(typeof vista!=='undefined'&&vista==='contratos') renderContratos();
 }
 
