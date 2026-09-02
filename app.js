@@ -3385,6 +3385,22 @@ const DOCS_REQ = () => (typeof DB !== 'undefined' && DB.documentosRequeridos && 
    Formal, numerado y digital, como el del CRM pero automático: se emite
    al subir la boleta y queda colgado del pago. Se comparte por WhatsApp
    desde el celular (Web Share) o se descarga. */
+let _selloAljibe=null;
+async function selloAljibe(){
+  if(_selloAljibe!==null) return _selloAljibe||null;
+  const aDataURL=b=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(b);});
+  try{
+    const png=await fetch('assets/aljibe-sello.png'); 
+    if(png.ok && /image\/png/.test(png.headers.get('content-type')||'')){ _selloAljibe=await aDataURL(await png.blob()); return _selloAljibe; }
+    /* El vectorial se rasteriza en un canvas para que jsPDF lo acepte. */
+    const svg=await (await fetch('assets/aljibe-sello.svg')).text();
+    const img=new Image(); const url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));
+    await new Promise((ok,no)=>{img.onload=ok;img.onerror=no;img.src=url;});
+    const c=document.createElement('canvas'); c.width=920; c.height=300; c.getContext('2d').drawImage(img,0,0,920,300); URL.revokeObjectURL(url);
+    _selloAljibe=c.toDataURL('image/png');
+  }catch(e){ _selloAljibe=false; }
+  return _selloAljibe||null;
+}
 let _logoAljibe=null;
 async function logoAljibe(){
   if(_logoAljibe) return _logoAljibe;
@@ -3405,7 +3421,7 @@ function reciboHTML(d,numero){
       <tr><td>${esc(d.obligacion)}</td><td>${esc(d.cuota)}</td><td>${f}</td><td>${esc(p.forma||'')}</td><td>${Q(p.monto).replace('Q ','')}</td><td>${esc(p.referencia||d.lote||'')}</td></tr>
       <tr><td colspan="4"><b>TOTAL PAGADO</b></td><td><b>${Q(p.monto).replace('Q ','')}</b></td><td></td></tr>
       <tr><td colspan="6"><b>PAGO REALIZADO CON BOLETA ${esc(p.referencia||'—')} EL DÍA ${f} CON VALOR DE ${Q(p.monto)}<br>PAGO REGISTRADO POR: ${esc(String(d.registradoPor||'').toUpperCase())}.</b></td></tr></table>
-    <div class="firmas"><div><div class="linea"></div>Firma y Sello de la Empresa</div><div><div class="linea"></div>Firma del Cliente</div></div>
+    <div class="firmas"><div><img class="sello" src="assets/aljibe-sello.png" onerror="this.onerror=null;this.src='assets/aljibe-sello.svg'" alt="Sello ALJIBE S.A."><div class="linea"></div>Firma y Sello de la Empresa</div><div><div class="linea" style="margin-top:96px"></div>Firma del Cliente</div></div>
     <p class="pie">${esc(d.emisor)} · Cuenta monetaria Banrural ${d.cuenta?d.cuenta.numero:''} · Generado por Suite Sol Inmobiliaria</p></div>`;
 }
 async function reciboPDF(d,numero){
@@ -3428,7 +3444,8 @@ async function reciboPDF(d,numero){
   fila(['TOTAL PAGADO','','','',Q(d.pago.monto).replace('Q ',''),''],true);
   const ley=`PAGO REALIZADO CON BOLETA ${d.pago.referencia||'—'} EL DÍA ${f} CON VALOR DE ${Q(d.pago.monto)}   PAGO REGISTRADO POR: ${String(d.registradoPor||'').toUpperCase()}.`;
   doc.setFont('helvetica','bold'); const leyL=doc.splitTextToSize(ley,W-2*M-6); doc.rect(M,y,W-2*M,14*leyL.length+8); doc.text(leyL,M+3,y+12); y+=14*leyL.length+8;
-  y+=60; doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  y+=70; doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  const sello=await selloAljibe(); if(sello){ try{ doc.addImage(sello,'PNG',W/2-92,y-58,184,60); }catch(e){} }
   doc.line(W/2-90,y,W/2+90,y); doc.text('Firma y Sello de la Empresa',W/2,y+14,{align:'center'});
   y+=60; doc.line(W/2-90,y,W/2+90,y); doc.text('Firma del Cliente',W/2,y+14,{align:'center'});
   doc.setFontSize(8); doc.setTextColor(120); doc.text(`${d.emisor} · Cuenta monetaria Banrural ${d.cuenta?d.cuenta.numero:''} · Generado por Suite Sol Inmobiliaria`,W/2,760,{align:'center'});

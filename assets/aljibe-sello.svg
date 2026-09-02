@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 150" width="460" height="150">
+  <!-- Sello de ALJIBE S.A. Versión digital del sello de hule del recibo:
+       recuadro redondeado y letras gruesas de tinta. Si existe
+       assets/aljibe-sello.png (el escaneo real), el recibo usa ese. -->
+  <defs>
+    <filter id="tinta" x="-2%" y="-2%" width="104%" height="104%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="1.6"/>
+    </filter>
+  </defs>
+  <g filter="url(#tinta)" fill="none" stroke="#1c1c1c" stroke-width="7" stroke-linejoin="round" opacity="0.92">
+    <rect x="8" y="8" width="444" height="134" rx="14"/>
+  </g>
+  <text x="230" y="103" text-anchor="middle" font-family="Arial Black, Helvetica, Arial, sans-serif" font-weight="900" font-size="72" letter-spacing="4" fill="#1c1c1c" opacity="0.92" filter="url(#tinta)">ALJIBE S.A.</text>
+</svg>

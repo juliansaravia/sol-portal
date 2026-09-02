@@ -629,3 +629,5 @@ select.chip{appearance:auto;padding:6px 10px}
   .card-h{flex-wrap:wrap;gap:8px}.card-h .hint{width:100%}
   .kpi-value{font-size:22px}.kpi-value.sm{font-size:18px}
 }
+
+.recibo .sello{display:block;width:190px;margin:0 auto -14px;opacity:.92}
