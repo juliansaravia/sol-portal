@@ -3088,6 +3088,7 @@ function pintarContrato(){
     if(ct.estado==='aprobado')
       h+=`<div class="btn-row"><button class="btn btn-primary" onclick="modalPago('${ct.id}')">Registrar pago</button>
         <button class="btn btn-ghost" onclick="verEstadoCuenta('${ct.id}')">Ver completo / imprimir</button>
+        <button class="btn btn-ghost" onclick="descargarEstadoCuentaPDF('${ct.id}')">Estado de cuenta PDF</button>
         <button class="btn btn-ghost" onclick="enviarEC('${ct.id}')">Enviar por WhatsApp</button></div>`;
     /* Cada pago con su boleta. Lo cobrado antes del portal entró sin
        respaldo; acá se ve cuál falta y se sube desde la misma fila. */
@@ -3571,6 +3572,59 @@ function nombreRecibo(d, numero){
   const cuota = d.cuota && d.cuota !== '—' ? ' cuota ' + limpio(String(d.cuota).replace('/','de')) : '';
   return `Recibo ${limpio(d.contrato.no||'')}${cuota} No ${String(numero).padStart(8,'0')}.pdf`;
 }
+/* ============================================================ ESTADO DE CUENTA · PDF
+   El mismo estado de cuenta que se imprime, como archivo: cabecera de
+   ALJIBE, resumen del plan y todas las cuotas con su estado. Sale junto
+   con el recibo después de cada cobro, y a pedido desde la ficha. */
+function nombreEstadoCuenta(ct){ return `Estado de cuenta ${String(ct.no||'').replace(/[^\w.-]+/g,'-')} al ${HOY_ISO}.pdf`; }
+async function estadoCuentaPDF(ct){
+  const J=window.jspdf&&window.jspdf.jsPDF; if(!J||!ct) return null;
+  const {filas,totalPlan,plan}=filasEstadoCuenta(ct); const cli=getCliente(ct.clienteId);
+  const pagado=filas.filter(f=>f.estado==='pagado').reduce((s,f)=>s+f.cuota,0);
+  const pend=Math.max(0,totalPlan-pagado), prox=filas.find(f=>f.estado!=='pagado'), venc=filas.filter(f=>f.estado==='vencido');
+  const doc=new J({unit:'pt',format:'letter'}); const W=612, M=48; let y=44;
+  const logo=await logoAljibe(); if(logo){ try{ doc.addImage(logo,'JPEG',M,y,54,54); }catch(e){} }
+  doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.text('ESTADO DE CUENTA',W-M,y+18,{align:'right'});
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(90);
+  doc.text(`ALJIBE, S.A. · La Esperanza · al ${fmtD(HOY_ISO)}`,W-M,y+34,{align:'right'}); doc.setTextColor(0);
+  y+=74;
+  const fila2=(a,b,c,d)=>{ doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.text(a,M,y); doc.setFont('helvetica','bold'); doc.text(String(b),M+110,y);
+    if(c){ doc.setFont('helvetica','normal'); doc.text(c,W/2+10,y); doc.setFont('helvetica','bold'); doc.text(String(d),W/2+120,y); } y+=16; };
+  fila2('Cliente',cli?cli.nombre:nombreCliente(ct.clienteId),'Contrato',ct.no||'');
+  fila2('Lote',`${ct.lote||''}${ct.fase?' · '+ct.fase:''}`,'Fecha de venta',fmtD(ct.fecha));
+  fila2('Precio de venta',Q(ct.precio),'Enganche',Q(plan.enganche));
+  fila2('Plazo',`${plan.plazo} meses`,'Cuota mensual',Q(plan.cuota));
+  y+=6; doc.setDrawColor(200); doc.line(M,y,W-M,y); y+=18;
+  // resumen en tres cajas
+  const caja=(x,t,v,rojo)=>{ doc.setDrawColor(210); doc.roundedRect(x,y,160,52,6,6); doc.setFontSize(8.5); doc.setTextColor(110); doc.setFont('helvetica','normal'); doc.text(t.toUpperCase(),x+10,y+16);
+    doc.setFontSize(15); doc.setFont('helvetica','bold'); doc.setTextColor(rojo?184:46,rojo?69:107,rojo?46:79); doc.text(v,x+10,y+38); doc.setTextColor(0); };
+  caja(M,'Pagado a la fecha',Q(pagado)); caja(M+176,'Saldo pendiente',Q(pend)); caja(M+352,venc.length?`${venc.length} cuota(s) vencida(s)`:'Próxima cuota',venc.length?Q(venc.reduce((s,f)=>s+f.cuota,0)):(prox?Q(prox.cuota)+'  '+fmtD(prox.venc):'Plan liquidado'),!!venc.length);
+  y+=70;
+  // tabla de cuotas
+  const cols=[M,M+52,M+150,M+240,M+330,M+420,W-M]; const th=['Cuota','Obligación','Vence','Cuota','Saldo después','Estado'];
+  const cab=()=>{ doc.setFillColor(244,246,245); doc.rect(M,y,W-2*M,18,'F'); doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(90);
+    th.forEach((t,i)=>doc.text(t,cols[i]+4,y+12,{align:i>=3&&i<=4?'left':'left'})); doc.setTextColor(0); y+=18; };
+  cab();
+  filas.forEach((f,idx)=>{
+    if(y>740){ doc.addPage(); y=44; cab(); }
+    const est={pagado:['Pagada',46,107,79],vencido:['Vencida',184,69,46],parcial:['Parcial',138,95,18]}[f.estado]||['Pendiente',110,110,110];
+    if(idx%2) { doc.setFillColor(250,251,250); doc.rect(M,y,W-2*M,16,'F'); }
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(0);
+    doc.text(`${f.n}/${f.de}`,cols[0]+4,y+11); doc.text(String(f.obl||'').slice(0,18),cols[1]+4,y+11); doc.text(fmtD(f.venc),cols[2]+4,y+11);
+    doc.text(Q(f.cuota),cols[3]+4,y+11); doc.text(Q(f.final),cols[4]+4,y+11);
+    doc.setTextColor(est[1],est[2],est[3]); doc.setFont('helvetica','bold'); doc.text(est[0],cols[5]+4,y+11); doc.setTextColor(0);
+    y+=16;
+  });
+  y+=10; doc.setFontSize(8); doc.setTextColor(120); doc.setFont('helvetica','normal');
+  doc.text('Los pagos registrados y pendientes de confirmación no aparecen como pagados hasta que finanzas los confirme. Generado por Suite Sol Inmobiliaria.',M,Math.min(y+8,760),{maxWidth:W-2*M});
+  return doc.output('blob');
+}
+async function descargarEstadoCuentaPDF(id){
+  const ct=getContrato(id); if(!ct) return;
+  const b=await conBoton(()=>estadoCuentaPDF(ct)); if(!b) return toast('No se pudo generar el PDF',6000,true);
+  const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=nombreEstadoCuenta(ct); a.click(); setTimeout(()=>URL.revokeObjectURL(u),4000);
+}
+
 /* Emite (o recupera) el recibo de un pago, genera el PDF, lo guarda como
    adjunto del pago y lo ofrece para compartir. */
 async function emitirYCompartirRecibo(pagoId, silencioso){
@@ -3600,6 +3654,8 @@ async function emitirYCompartirRecibo(pagoId, silencioso){
 function modalRecibo(pagoId,numero,pdfBlob,adj){
   const d=datosRecibo(pagoId); if(!d) return;
   window.__reciboBlob=pdfBlob||null; window.__reciboNombre=nombreRecibo(d,numero);
+  window.__ecBlob=null; window.__ecNombre=nombreEstadoCuenta(d.contrato);
+  if(d.contrato&&d.contrato.id) estadoCuentaPDF(d.contrato).then(b=>{ window.__ecBlob=b||null; const btn=document.getElementById('btn-ec'); if(btn&&b) btn.disabled=false; });
   const tel=String((d.cliente&&d.cliente.telefono)||d.contrato.tel||'').replace(/\D/g,'');
   const texto=`Hola ${String(d.nombre||'').split(' ')[0]}, le confirmamos su pago de ${Q(d.pago.monto)} (cuota ${d.cuota}, lote ${d.lote}) con boleta ${d.pago.referencia||''}. Adjuntamos su recibo No ${String(numero).padStart(8,'0')}. ¡Gracias!`;
   const wa=tel?`https://wa.me/${tel.length===8?'502'+tel:tel}?text=${encodeURIComponent(texto)}`:'';
@@ -3607,14 +3663,18 @@ function modalRecibo(pagoId,numero,pdfBlob,adj){
     <div class="modal-b"><div class="recibo-prev">${reciboHTML(d,numero)}</div></div>
     <div class="modal-f" style="flex-wrap:wrap">
       <button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
-      ${pdfBlob?`<button class="btn btn-ghost" onclick="descargarRecibo()">Descargar PDF</button>`:(adj?`<button class="btn btn-ghost" onclick="verAdjunto('${adj.id}')">Ver PDF</button>`:'')}
-      ${(pdfBlob&&navigator.share)?`<button class="btn btn-primary" onclick="compartirRecibo()">Compartir (WhatsApp)</button>`:(wa?`<a class="btn btn-primary" href="${wa}" target="_blank" rel="noopener">WhatsApp</a>`:'')}
+      ${pdfBlob?`<button class="btn btn-ghost" onclick="descargarRecibo()">Recibo PDF</button>`:(adj?`<button class="btn btn-ghost" onclick="verAdjunto('${adj.id}')">Ver recibo</button>`:'')}
+      <button id="btn-ec" class="btn btn-ghost" disabled onclick="descargarEC()">Estado de cuenta PDF</button>
+      ${(pdfBlob&&navigator.share)?`<button class="btn btn-primary" onclick="compartirRecibo()">Compartir los dos (WhatsApp)</button>`:(wa?`<a class="btn btn-primary" href="${wa}" target="_blank" rel="noopener">WhatsApp</a>`:'')}
       <button class="btn btn-ghost" onclick="imprimirRecibo()">Imprimir</button></div>`);
 }
 function descargarRecibo(){ const b=window.__reciboBlob; if(!b) return; const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=window.__reciboNombre; a.click(); setTimeout(()=>URL.revokeObjectURL(u),4000); }
+function descargarEC(){ const b=window.__ecBlob; if(!b) return; const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=window.__ecNombre; a.click(); setTimeout(()=>URL.revokeObjectURL(u),4000); }
 async function compartirRecibo(){ const b=window.__reciboBlob; if(!b||!navigator.share) return descargarRecibo();
-  const f=new File([b],window.__reciboNombre,{type:'application/pdf'});
-  try{ if(navigator.canShare&&!navigator.canShare({files:[f]})) return descargarRecibo(); await navigator.share({files:[f],title:'Recibo de pago',text:'Recibo de pago · ALJIBE'}); }catch(e){} }
+  /* Recibo y estado de cuenta juntos: el cliente recibe los dos archivos en el mismo mensaje. */
+  const files=[new File([b],window.__reciboNombre,{type:'application/pdf'})];
+  if(window.__ecBlob) files.push(new File([window.__ecBlob],window.__ecNombre,{type:'application/pdf'}));
+  try{ if(navigator.canShare&&!navigator.canShare({files})) return descargarRecibo(); await navigator.share({files,title:'Recibo y estado de cuenta',text:'Recibo de pago y estado de cuenta · ALJIBE'}); }catch(e){} }
 function imprimirRecibo(){ const w=window.open('','_blank'); if(!w) return; const h=document.querySelector('.recibo-prev'); w.document.write(`<html><head><title>Recibo</title><link rel="stylesheet" href="${location.origin}${location.pathname.replace(/[^/]*$/,'')}styles.css"></head><body style="padding:30px">${h?h.innerHTML:''}<script>setTimeout(()=>print(),400)<\/script></body></html>`); w.document.close(); }
 
 /* Boleta de un pago ya registrado (histórico o no). */
