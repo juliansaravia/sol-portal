@@ -92,7 +92,16 @@ async function leerBoletaEn(input, ids) {
     const mon = ids.monto ? document.getElementById(ids.monto) : null;
     const partes = [];
     if (r.referencia) { if (ref && !ref.value.trim()) ref.value = r.referencia; partes.push('referencia ' + r.referencia); }
-    if (r.monto)      { if (mon && !(+mon.value > 0)) mon.value = r.monto; partes.push('Q ' + r.monto.toLocaleString('es-GT', { minimumFractionDigits: 2 })); }
+    if (r.monto) {
+      /* El monto manda lo que dice la boleta, aunque el campo traiga la
+         cuota programada: si el cliente pagó otra cosa, eso es lo que
+         entró. Se dice cuál era el valor anterior si difiere. */
+      const previo = mon ? +mon.value : 0;
+      if (mon) { mon.value = r.monto; mon.classList.add('leido'); }
+      let txt = 'Q ' + r.monto.toLocaleString('es-GT', { minimumFractionDigits: 2 });
+      if (previo > 0 && Math.abs(previo - r.monto) >= 0.01) txt += ' (la cuota programada era Q ' + previo.toLocaleString('es-GT', { minimumFractionDigits: 2 }) + ')';
+      partes.push(txt);
+    }
     if (!partes.length) { decir('No pude leer la referencia en la foto: escribila a mano.', true); return; }
     decir('Leído de la boleta: ' + partes.join(' · ') + ' — revisá antes de guardar.');
     if (ref && r.referencia && ref.value === r.referencia) ref.classList.add('leido');
