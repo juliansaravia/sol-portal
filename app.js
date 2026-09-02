@@ -1604,6 +1604,26 @@ function renderRecaudacion(){
     filas=R.filas.filter(f=>recFiltro==='todas'||f.estado===recFiltro).sort((a,b)=>a.cuota.f<b.cuota.f?-1:1);
   }
 
+  /* Lo que entró esta semana: todo pago con fecha en el rango, se haya
+     registrado desde aquí, desde la ficha o por el bot. Con su boleta,
+     su recibo y si finanzas ya lo confirmó. */
+  if(!q){
+    const pagosSem=DB.pagos.filter(p=>p.fecha>=desde&&p.fecha<=hasta&&p.estado!=='rechazado').sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+    const tot=pagosSem.reduce((s,p)=>s+p.monto,0), conf=pagosSem.filter(p=>p.estado==='confirmado');
+    h+=`<div class="card"><div class="card-h"><h2>Cobrado esta semana · ${Qk(tot)}</h2>
+        <span class="hint">${pagosSem.length} pago(s) · ${conf.length} confirmado(s) por finanzas · ${Qk(conf.reduce((s,p)=>s+p.monto,0))} firme</span></div>
+      <div class="card-b" style="padding:0;overflow-x:auto"><table class="data"><thead><tr>
+      <th>Fecha</th><th>Contrato</th><th>Cliente</th><th class="num">Monto</th><th>Referencia</th><th>Boleta</th><th>Recibo</th><th>Estado</th></tr></thead><tbody>`;
+    if(!pagosSem.length) h+=`<tr><td colspan="8"><div class="empty">Todavía no entró ningún pago esta semana.</div></td></tr>`;
+    pagosSem.forEach(p=>{ const ct=getContrato(p.contratoId)||{}; const bol=adjuntosDe('pago',p.id).filter(a=>!/^Recibo/i.test(a.descripcion||'')); const rc=reciboDe(p.id);
+      h+=`<tr><td>${fmtD(p.fecha)}</td><td><b>${ct.no?`<a href="#" onclick="abrirContrato('${ct.id}','cuenta');return false;">${ct.no}</a>`:'—'}</b></td>
+        <td>${ct.clienteId?esc(nombreCliente(ct.clienteId)):'—'}</td><td class="num">${Q(p.monto)}</td><td>${esc(p.referencia||'—')}</td>
+        <td>${bol.length?`<button class="btn btn-ghost btn-sm" onclick="verAdjunto('${bol[0].id}')">Ver</button>`:'<span class="badge b-pend">Sin boleta</span>'}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">${rc?'No '+String(rc.numero).padStart(6,'0'):'Emitir'}</button></td>
+        <td>${p.estado==='confirmado'?'<span class="badge b-ok">Confirmado</span>':'<span class="badge b-info">Por confirmar</span>'}</td></tr>`; });
+    h+=`</tbody></table></div></div>`;
+  }
+
   h+=`<div class="card"><div class="card-h" style="flex-wrap:wrap;gap:10px"><h2>${q?`Cuotas de «${esc(window.__recBusca.trim())}» · ${filas.length}`:'Cuotas de la semana'}</h2>
       <input class="chip" style="min-width:240px" placeholder="Buscar contrato, lote o cliente…" value="${esc(window.__recBusca||'')}"
              oninput="window.__recBusca=this.value;renderRecaudacion();const i=document.querySelector('.card-h input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}">
@@ -2290,7 +2310,13 @@ function renderConfirmacion(){
     <div class="hint">Flujo real del CRM: la boleta se registra y luego contabilidad verifica el depósito antes de aplicarlo a la cartera.</div>`;
   C().innerHTML=h;
 }
-async function doConfirmar(id,ok){ if(await confirmarPago(id,ok)){toast(ok?'Pago confirmado ✓':'Pago rechazado');renderConfirmacion();} }
+async function doConfirmar(id,ok){
+  if(!(await confirmarPago(id,ok))) return;
+  toast(ok?'Pago confirmado ✓ · actualizando la cartera…':'Pago rechazado'); renderConfirmacion();
+  /* La base aplicó el pago a las cuotas (02_funciones.sql); si el portal
+     no recarga los giros, la cuota sigue saliendo como cobrable. */
+  if(typeof cargarCartera==='function' && hayRemoto()){ const r=await cargarCartera(); if(r.ok && typeof vista!=='undefined') setView(vista); }
+}
 
 /* ============================================================ COMISIONES
    Tres pestañas: lo que se debe, lo que está en proceso, y el
@@ -3443,7 +3469,18 @@ async function guardarPago(id){
   const foto=(document.getElementById('p-foto')||{}).files; const archivo=foto&&foto[0];
   if(!archivo){toast('Adjuntá la foto de la boleta: sin ella no se puede confirmar el pago',6000,true);return;}
   const p=await conBoton(async()=>{
-    const pago=await registrarPago(id,{monto,forma:v('p-forma'),cuenta:v('p-cta'),referencia:ref});
+    /* Si hay una cuota pendiente, el pago se ata a ella y queda marcada
+       como cobrada (misma ruta que Recaudación). Si no —abono libre—,
+       se registra suelto y la base lo aplica al confirmarse. */
+    const ct=getContrato(id), ec=estadoCuenta(ct); const prox=ec&&ec.prox; const vence=prox&&(prox.venc||prox.vence);
+    let pago=null;
+    if(vence && typeof marcarCobrada==='function'){
+      const reg=await marcarCobrada(ct.no, vence, {monto,forma:v('p-forma'),cuenta:v('p-cta'),referencia:ref,nota:''});
+      if(!reg) return null;
+      pago=DB.pagos.find(x=>mismoId(x.id,reg.pagoId))||{id:reg.pagoId};
+    } else {
+      pago=await registrarPago(id,{monto,forma:v('p-forma'),cuenta:v('p-cta'),referencia:ref});
+    }
     if(!pago) return null;
     if(typeof hayBase==='function'&&hayBase()){
       const a=await sbAdjuntar('pago', pago.id, archivo, 'Boleta '+ref);
