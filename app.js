@@ -591,7 +591,7 @@ function asuntos(){
   if(sinVend) A.push({sev:'media',n:sinVend,t:'contratos sin vendedor',d:'Sin responsable no hay comisión ni seguimiento',ir:()=>irA('contratos',{f:'sin_vendedor'})});
   if(sinCli) A.push({sev:'media',n:sinCli,t:'contratos sin cliente vinculado',d:'Existe la venta, falta la ficha del titular',ir:()=>irA('contratos',{f:'sin_cliente'})});
   const pagosSinBoleta=DB.pagos.filter(p=>p.estado==='confirmado'&&!adjuntosDe('pago',p.id).length).length;
-  if(pagosSinBoleta) A.push({sev:'media',n:pagosSinBoleta,t:pagosSinBoleta===1?'pago cobrado sin boleta de respaldo':'pagos cobrados sin boleta de respaldo',d:'Lo cobrado antes del portal entró sin comprobante: hay que subir cada boleta',ir:()=>irA('contratos',{f:'sin_boleta'})});
+  if(pagosSinBoleta) A.push({sev:'media',n:pagosSinBoleta,t:pagosSinBoleta===1?'pago cobrado sin boleta de respaldo':'pagos cobrados sin boleta de respaldo',d:'Lo cobrado antes del portal entró sin comprobante. Con los recibos del CRM en PDF se cargan de golpe.',ir:()=>irA('contratos',{f:'sin_boleta'})});
   const sinFirmado=activos.filter(c=>!contratoFirmadoDe(c)).length;
   if(sinFirmado) A.push({sev:'media',n:sinFirmado,t:sinFirmado===1?'contrato sin el firmado en el sistema':'contratos sin el firmado en el sistema',d:'El contrato existe en papel; falta subir el escaneado',ir:()=>irA('contratos',{f:'sin_firmado'})});
   if(sinAcceso) A.push({sev:'baja',n:sinAcceso,t:'usuarios sin acceso',d:'Pendientes de invitación o de correo',ir:()=>setView('equipo')});
@@ -972,6 +972,7 @@ function renderContratos(){
   let h=`<div class="card"><div class="card-h" style="flex-wrap:wrap;gap:10px"><h2>Contratos · ${filas.length}${F!=='todos'?` <span class="hint">de ${DB.contratos.length}</span>`:''}</h2>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <input class="chip" style="min-width:220px" placeholder="Buscar por número, lote, cliente o vendedor…" value="${esc(ctBusca)}" oninput="ctBusca=this.value;renderContratos();document.querySelector('.card-h input').focus()">
+      ${F==='sin_boleta'?`<button class="btn btn-gold btn-sm" onclick="modalCargaRecibos()">Cargar recibos del CRM</button>`:''}
       <button class="btn btn-primary btn-sm" onclick="modalNuevoContrato()">+ Nuevo contrato</button></div></div>
     <div class="card-b chips">${Object.entries(FILTROS_CT).map(([k,v])=>`<button class="chip ${k===F?'on':''}" onclick="irA('contratos',{f:'${k}'})">${v.t}</button>`).join('')}</div>
     <div class="card-b" style="padding:0;overflow-x:auto"><table class="data"><thead><tr>
@@ -3714,6 +3715,54 @@ async function compartirRecibo(){ const b=window.__reciboBlob; if(!b||!navigator
   if(window.__ecBlob) files.push(new File([window.__ecBlob],window.__ecNombre,{type:'application/pdf'}));
   try{ if(navigator.canShare&&!navigator.canShare({files})) return descargarRecibo(); await navigator.share({files,title:'Recibo y estado de cuenta',text:'Recibo de pago y estado de cuenta · ALJIBE'}); }catch(e){} }
 function imprimirRecibo(){ const w=window.open('','_blank'); if(!w) return; const h=document.querySelector('.recibo-prev'); w.document.write(`<html><head><title>Recibo</title><link rel="stylesheet" href="${location.origin}${location.pathname.replace(/[^/]*$/,'')}styles.css"></head><body style="padding:30px">${h?h.innerHTML:''}<script>setTimeout(()=>print(),400)<\/script></body></html>`); w.document.close(); }
+
+/* ============================================================ CARGA MASIVA DE RECIBOS DEL CRM
+   Lo histórico entró sin boleta; lo que hay son los recibos del CRM en
+   PDF. Se arrastran muchos a la vez: cada uno se lee, se busca el pago
+   del contrato con ese monto (y la fecha más cercana) y se cuelga como
+   respaldo. Lo que no cuadra se lista para revisarlo a mano. */
+function modalCargaRecibos(){
+  openModal(`<div class="modal-h"><h3>Cargar recibos del CRM</h3><p>Varios PDF a la vez · cada uno se cuelga del pago que le corresponde</p></div>
+    <div class="modal-b">
+      <div class="field"><label>Recibos (PDF)</label><input id="cr-archivos" type="file" accept="application/pdf" multiple></div>
+      <div class="hint">Se lee contrato, monto, fecha y referencia de cada recibo. Se enlaza al pago del contrato con ese monto y la fecha más cercana que aún no tenga respaldo.</div>
+      <div id="cr-resultado" style="margin-top:12px"></div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
+      <button id="cr-btn" class="btn btn-primary" onclick="cargarRecibosCRM()">Leer y cargar</button></div>`);
+}
+async function cargarRecibosCRM(){
+  const inp=document.getElementById('cr-archivos'); const files=inp&&inp.files?[...inp.files]:[];
+  const out=document.getElementById('cr-resultado'); const btn=document.getElementById('cr-btn');
+  if(!files.length) return toast('Elegí los PDF de los recibos',5000,true);
+  if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se pueden subir archivos',5000,true);
+  btn.disabled=true; const filas=[]; let ok=0;
+  const pinta=()=>{ out.innerHTML=`<table class="data"><thead><tr><th>Archivo</th><th>Leído</th><th>Pago</th><th>Resultado</th></tr></thead><tbody>${filas.map(f=>`<tr><td>${esc(f.archivo)}</td><td>${f.leido}</td><td>${f.pago}</td><td>${f.res}</td></tr>`).join('')}</tbody></table>
+    <div class="hint" style="margin-top:8px">${ok} de ${files.length} colgados</div>`; };
+  for(const f of files){
+    const fila={archivo:f.name,leido:'…',pago:'',res:''}; filas.push(fila); pinta();
+    try{
+      const texto=await textoDePDF(f); const r=interpretarReciboCRM(texto);
+      if(!r||!r.contrato||!r.monto){ fila.leido='<span class="badge b-mora">No parece un recibo del CRM</span>'; fila.res='—'; pinta(); continue; }
+      fila.leido=`${esc(r.contrato)} · ${Q(r.monto)} · ${r.fechaPago?fmtD(r.fechaPago):'sin fecha'} · ref ${esc(r.referencia||'—')} · recibo ${esc(r.reciboCRM||'')}`;
+      const ct=indices().contratosPorNo.get(String(r.contrato));
+      if(!ct){ fila.pago='—'; fila.res='<span class="badge b-mora">Contrato no existe en el sistema</span>'; pinta(); continue; }
+      const cand=(indices().pagosPorContrato.get(String(ct.id))||[]).filter(p=>p.estado!=='rechazado'&&Math.abs(p.monto-r.monto)<0.01&&!adjuntosDe('pago',p.id).some(a=>!/^Recibo /.test(a.descripcion||'')||/CRM/.test(a.descripcion||'')));
+      if(!cand.length){ fila.pago='—'; fila.res=`<span class="badge b-pend">Sin pago de ${Q(r.monto)} pendiente de respaldo en ${esc(r.contrato)}</span>`; pinta(); continue; }
+      const dias=p=>Math.abs(diasEnt(p.fecha||HOY_ISO, r.fechaPago||p.fecha||HOY_ISO));
+      const pago=cand.sort((a,b)=>dias(a)-dias(b))[0];
+      fila.pago=`${fmtD(pago.fecha)} · ${Q(pago.monto)}${dias(pago)>7?` <span class="hint">(${dias(pago)} días de diferencia)</span>`:''}`;
+      const a=await sbAdjuntar('pago', pago.id, f, `Boleta · recibo CRM ${r.reciboCRM||''} · ref ${r.referencia||''}`);
+      if(!a.ok){ fila.res=`<span class="badge b-mora">${esc(a.error)}</span>`; pinta(); continue; }
+      (DB.adjuntos=DB.adjuntos||[]).push({id:a.dato.id,entidad:'pago',entidadId:Number(pago.id),bucket:a.dato.bucket,ruta:a.dato.ruta,nombre:f.name,mime:'application/pdf',bytes:f.size,descripcion:`Boleta · recibo CRM ${r.reciboCRM||''} · ref ${r.referencia||''}`,fecha:HOY_ISO});
+      if(!pago.referencia&&r.referencia){ pago.referencia=r.referencia; }
+      ok++; fila.res='<span class="badge b-ok">Colgado</span>';
+    }catch(e){ fila.res=`<span class="badge b-mora">${esc(e.message||String(e))}</span>`; }
+    pinta();
+  }
+  btn.disabled=false; anotar('pago.boletas_crm', `${ok} de ${files.length} recibos`); pintarBadgeAsuntos();
+  if(typeof vista!=='undefined'&&vista==='contratos') renderContratos();
+}
 
 /* Boleta de un pago ya registrado (histórico o no). */
 function modalBoleta(pagoId){

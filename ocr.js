@@ -38,6 +38,54 @@ async function imagenReducida(archivo) {
   return c;
 }
 
+/* ── PDF con texto (los recibos del CRM): se lee sin OCR ── */
+const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+let _pdfCarga = null;
+function cargarPdfjs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (_pdfCarga) return _pdfCarga;
+  _pdfCarga = new Promise((ok, no) => {
+    const s = document.createElement('script'); s.src = PDFJS_CDN;
+    s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_CDN.replace('pdf.min.js', 'pdf.worker.min.js'); ok(window.pdfjsLib); };
+    s.onerror = () => no(new Error('No se pudo cargar el lector de PDF'));
+    document.head.appendChild(s);
+  });
+  return _pdfCarga;
+}
+async function textoDePDF(archivo) {
+  const lib = await cargarPdfjs();
+  const doc = await lib.getDocument({ data: await archivo.arrayBuffer() }).promise;
+  let t = '';
+  for (let i = 1; i <= Math.min(doc.numPages, 2); i++) {
+    const pg = await doc.getPage(i); const c = await pg.getTextContent();
+    t += c.items.map(x => x.str).join(' ') + '\n';
+  }
+  return t;
+}
+
+/* El recibo del CRM (RECIBO DE PAGO No …): trae todo lo que hace falta
+   para encontrar el pago al que pertenece. */
+function interpretarReciboCRM(texto) {
+  const t = String(texto || '').replace(/\s+/g, ' ');
+  if (!/RECIBO DE PAGO/i.test(t)) return null;
+  const num = (t.match(/RECIBO DE PAGO\s*No\.?\s*(\d{4,10})/i) || [])[1] || null;
+  const contrato = (t.match(/CONTRATO:\s*([A-Z]{2,4}-\d{1,5})/i) || [])[1] || null;
+  const lote = (t.match(/LOTE:\s*([A-Z]{1,2}-?\d{1,3})/i) || [])[1] || null;
+  const montoTxt = (t.match(/POR\s*Q\s*([\d,]+\.\d{2})/i) || t.match(/TOTAL PAGADO\s*([\d,]+\.\d{2})/i) || [])[1];
+  const monto = montoTxt ? Math.round(parseFloat(montoTxt.replace(/,/g, '')) * 100) / 100 : null;
+  const aIso = d => { const m = d && d.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/); return m ? `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` : null; };
+  const fechaRecibo = aIso((t.match(/FECHA:\s*(\d{1,2}\/\d{1,2}\/\d{4})/i) || [])[1]);
+  // la fecha del pago está en la fila de la tabla: «01/84 30/06/2026»
+  const fechaPago = aIso((t.match(/\d{2}\/\d{2,3}\s+(\d{1,2}\/\d{1,2}\/\d{4})/) || [])[1]) || fechaRecibo;
+  const referencia = (t.match(/(?:NO DE REF|referencia|Ref\.?)\s*:?\s*(\d{6,14})/i) || [])[1]
+                  || (t.match(/Bancario \(Q\)\s*[\d,]+\.\d{2}\s*(\d{6,14})/i) || [])[1] || null;
+  const cuota = (t.match(/(\d{2})\/(\d{2,3})\s+\d{1,2}\/\d{1,2}\/\d{4}/) || []);
+  const obligacion = /CUOTA\s*INICIAL/i.test(t) ? 'Cuota inicial' : (/SALDO\s*DEUDOR/i.test(t) ? 'Saldo deudor' : null);
+  const registradoPor = (t.match(/REGISTRADO POR:\s*([A-ZÁÉÍÓÚÑ ]{4,40}?)\./i) || [])[1] || null;
+  return { reciboCRM: num, contrato, lote, monto, fechaRecibo, fechaPago, referencia,
+           cuota: cuota[1] ? `${cuota[1]}/${cuota[2]}` : null, obligacion, registradoPor };
+}
+
 /* Cuentas propias: un número de cuenta nunca es la referencia. */
 const CUENTAS_PROPIAS = () => (typeof CUENTAS_COBRO !== 'undefined' ? CUENTAS_COBRO.map(c => c.numero) : []);
 
@@ -81,13 +129,21 @@ async function leerBoletaEn(input, ids) {
   const archivo = input && input.files && input.files[0]; if (!archivo) return;
   const aviso = ids.aviso ? document.getElementById(ids.aviso) : null;
   const decir = (msg, err) => { if (aviso) { aviso.textContent = msg; aviso.style.color = err ? '#B8452E' : 'var(--green)'; } };
-  if (!/^image\//.test(archivo.type)) { decir('Es un PDF: la referencia se escribe a mano.'); return; }
   decir('Leyendo la boleta…');
   try {
-    const T = await cargarTesseract();
-    const lienzo = await imagenReducida(archivo);
-    const { data } = await T.recognize(lienzo, 'spa', { logger: () => {} });
-    const r = interpretarBoleta(data.text);
+    let r;
+    if (/pdf/i.test(archivo.type) || /\.pdf$/i.test(archivo.name)) {
+      const texto = await textoDePDF(archivo);
+      const crm = interpretarReciboCRM(texto);
+      r = crm ? { referencia: crm.referencia, monto: crm.monto, fecha: crm.fechaPago, motivo: 'recibo del CRM No ' + crm.reciboCRM, crm } : interpretarBoleta(texto);
+      if (!texto.trim()) { decir('El PDF no tiene texto (es un escaneo): la referencia se escribe a mano.', true); return; }
+    } else {
+      const T = await cargarTesseract();
+      const lienzo = await imagenReducida(archivo);
+      const { data } = await T.recognize(lienzo, 'spa', { logger: () => {} });
+      r = interpretarBoleta(data.text);
+    }
+    window.__ultimaLectura = r;
     const ref = ids.ref ? document.getElementById(ids.ref) : null;
     const mon = ids.monto ? document.getElementById(ids.monto) : null;
     const partes = [];
@@ -103,6 +159,7 @@ async function leerBoletaEn(input, ids) {
       partes.push(txt);
     }
     if (!partes.length) { decir('No pude leer la referencia en la foto: escribila a mano.', true); return; }
+    if (r.crm && r.crm.contrato) partes.push('recibo CRM ' + r.crm.reciboCRM + ' de ' + r.crm.contrato);
     decir('Leído de la boleta: ' + partes.join(' · ') + ' — revisá antes de guardar.');
     if (ref && r.referencia && ref.value === r.referencia) ref.classList.add('leido');
   } catch (e) {
@@ -112,3 +169,5 @@ async function leerBoletaEn(input, ids) {
 
 window.leerBoletaEn = leerBoletaEn;
 window.interpretarBoleta = interpretarBoleta;
+window.interpretarReciboCRM = interpretarReciboCRM;
+window.textoDePDF = textoDePDF;
