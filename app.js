@@ -4040,7 +4040,8 @@ async function subirDocumentosMasa(){
         if(r&&r.ok) (DB.adjuntos=DB.adjuntos||[]).push({id:r.dato.id,entidad:'contrato',entidadId:Number(x.ct.id),bucket:r.dato.bucket,ruta:r.dato.ruta,nombre:x.f.name,mime:x.f.type,bytes:x.f.size,descripcion:'Boleta (carga masiva)',fecha:HOY_ISO});
         r=r&&r.ok;
       } else {
-        r=await agregarDocumento(x.ct.id, x.tipo, x.f, null);
+        /* Los DPI escaneados vienen con las dos caras en una hoja: cuenta por dos. */
+        r=await agregarDocumento(x.ct.id, x.tipo, x.f, /^dpi/.test(x.tipo)?'ambas':null);
       }
       const ah=(x.f.__ahorro||window.__ultimoAhorro||0); x.estado=r?`<span class="badge b-ok">Subido</span>${ah?` <span class="hint">−${(ah/1048576).toFixed(1)} MB</span>`:''}`:'<span class="badge b-mora">Falló</span>'; if(r) ok++;
     }catch(e){ x.estado=`<span class="badge b-mora">${esc(e.message||String(e))}</span>`; }
@@ -4089,7 +4090,7 @@ function modalDocumento(id){
         ${reqs.map(r=>`<option value="${r.codigo}" data-caras="${r.caras}">${esc(r.nombre)}${r.obligatorio?' *':''}</option>`).join('')}
       </select></div>
       <div class="field" id="d-caraBox" hidden><label>¿Qué cara?</label>
-        <select id="d-cara"><option value="frente">Frente</option><option value="reverso">Reverso</option></select></div>
+        <select id="d-cara"><option value="ambas">Ambas caras en una hoja</option><option value="frente">Frente</option><option value="reverso">Reverso</option></select></div>
       <div class="field full"><label>Archivo</label>
         <input id="d-archivo" type="file" accept="image/jpeg,image/png,image/webp,application/pdf"></div>
     </div>

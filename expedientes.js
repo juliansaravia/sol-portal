@@ -32,7 +32,8 @@ function faltantesDe(ct) {
   /* Un documento cuenta cuando hay ARCHIVO, no cuando hay fila. El
      portal anotaba nombres (`pendiente:dpi_frente.pdf`) y el expediente
      se daba por completo con papeles que nadie había subido. */
-  const conArchivo = t => docs.filter(d => d.tipo === t && d.bucket && d.ruta).length;
+  /* Un escaneo con las dos caras en una hoja (cara = 'ambas') vale por dos. */
+  const conArchivo = t => docs.filter(d => d.tipo === t && d.bucket && d.ruta).reduce((n, d) => n + (d.cara === 'ambas' ? 2 : 1), 0);
 
   /* Qué se exige lo dice el catálogo de la base. La lista de aquí abajo
      es el respaldo para cuando el portal corre sin conexión. */
