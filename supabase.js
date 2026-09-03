@@ -353,7 +353,42 @@ async function definirContrasena(nueva) {
   return { ok: true };
 }
 
+/* ---------- Una sola sesión por persona ----------
+   Decisión del dueño (3 sept 2026): nadie con el suite abierto en dos
+   navegadores o dispositivos. En Supabase, Authentication → Sessions →
+   «Single session per user» mata las sesiones anteriores al entrar en
+   otro lado; esto es lo que hace que la pantalla vieja se entere: cada
+   30 s, al volver a la pestaña y al fallar la renovación del token se
+   pregunta al servidor si esta sesión sigue existiendo. Si no, afuera.
+   El cierre es LOCAL: un signOut global mataría también la sesión nueva. */
+let _vigilante = null;
+function vigilarSesionUnica() {
+  if (!SB || _vigilante) return;
+  const revisar = async () => {
+    if (document.hidden || window.__saliendo) return;
+    try {
+      const { error } = await SB.auth.getUser();
+      if (error && error.status && (error.status === 401 || error.status === 403))
+        await expulsar('Se cerró esta sesión porque entraste desde otro dispositivo o navegador. Sólo puede haber una sesión abierta a la vez.');
+    } catch (e) { /* sin red no se expulsa a nadie */ }
+  };
+  _vigilante = setInterval(revisar, 30000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) revisar(); });
+  window.addEventListener('focus', revisar);
+  SB.auth.onAuthStateChange((ev) => {
+    if (ev === 'SIGNED_OUT' && SESION.persona && !window.__saliendo)
+      expulsar('Se cerró esta sesión porque entraste desde otro dispositivo o navegador. Sólo puede haber una sesión abierta a la vez.');
+  });
+}
+async function expulsar(motivo) {
+  window.__saliendo = true;
+  try { sessionStorage.setItem('motivoSalida', motivo); } catch (e) {}
+  try { await SB.auth.signOut({ scope: 'local' }); } catch (e) {}
+  location.reload();
+}
+
 async function cerrarSesion() {
+  window.__saliendo = true;
   if (SB) await SB.auth.signOut();
   SESION.persona = SESION.rol = SESION.email = null;
   location.reload();
@@ -365,6 +400,7 @@ const ROL_PORTAL = { cobranza: 'cobrador' };
 const rolDePortal = r => ROL_PORTAL[r] || r;
 
 window.SB = SB;
+window.vigilarSesionUnica = vigilarSesionUnica;
 window.SESION = SESION;
 window.iniciarSesion = iniciarSesion;
 window.cargarSesion = cargarSesion;

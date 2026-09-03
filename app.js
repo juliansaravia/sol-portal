@@ -59,6 +59,8 @@ const C = ()=>document.getElementById('content');
 
 /* ============================================================ AUTENTICACIÓN */
 function renderAuth(reanudando){
+  /* Si esta pantalla aparece porque la sesión se cerró desde otro lado, se dice. */
+  setTimeout(()=>{ try{ const m=sessionStorage.getItem('motivoSalida'); if(m){ sessionStorage.removeItem('motivoSalida'); const e=document.getElementById('au-err'); if(e) e.textContent=m; toast(m, 10000, true); } }catch(e){} }, 400);
   SCREEN='login';
   window.__reanudando=!!reanudando;
   const p=window.PORTAL||'admin', cfg=PORTAL_CFG[p];
@@ -450,6 +452,7 @@ function avisoModoConsulta(){
 }
 function startApp(role){
   ROLE=role; SCREEN='app';
+  if(typeof vigilarSesionUnica==='function' && typeof hayRemoto==='function' && hayRemoto()) vigilarSesionUnica();
   document.getElementById('login').style.display='none';
   document.getElementById('portalCliente').hidden=true;
   document.querySelector('.app').hidden=false;
