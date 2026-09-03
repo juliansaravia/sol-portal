@@ -308,8 +308,9 @@ const LLEGO_POR_CORREO = /[#&?]type=(invite|recovery|signup|magiclink)/.test(loc
    sesión, trae una llave que se canjea AQUÍ, al cargar en el navegador de
    la persona. El escáner de enlaces de Outlook visita el enlace antes que
    ella y, con el esquema viejo, gastaba el token de un solo uso. */
-const ENLACE_TOKEN = (() => { const q = new URLSearchParams(location.search); const t = q.get('token_hash'), tipo = q.get('type');
-  return (t && tipo) ? { token_hash: t, type: tipo } : null; })();
+const ENLACE_TOKEN = (() => { const b = String(location.search || '');
+  const t = (b.match(/[?&]token_hash=([^&]+)/) || [])[1], tipo = (b.match(/[?&]type=([^&]+)/) || [])[1];
+  return (t && tipo) ? { token_hash: decodeURIComponent(t), type: decodeURIComponent(tipo) } : null; })();
 async function canjearEnlace() {
   if (!ENLACE_TOKEN || !SB) return { ok: true, nada: true };
   const { error } = await conLimite(SB.auth.verifyOtp(ENLACE_TOKEN), 20, 'Al abrir el enlace');
