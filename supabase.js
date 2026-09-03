@@ -304,6 +304,22 @@ async function pedirContrasenaNueva(email) {
 const LLEGO_POR_CORREO = /[#&?]type=(invite|recovery|signup|magiclink)/.test(location.hash + location.search)
                       || /[?&]code=[A-Za-z0-9-]/.test(location.search);   // flujo PKCE
 
+/* Enlace con token_hash (plantillas de 3 sept 2026): el correo no trae la
+   sesión, trae una llave que se canjea AQUÍ, al cargar en el navegador de
+   la persona. El escáner de enlaces de Outlook visita el enlace antes que
+   ella y, con el esquema viejo, gastaba el token de un solo uso. */
+const ENLACE_TOKEN = (() => { const q = new URLSearchParams(location.search); const t = q.get('token_hash'), tipo = q.get('type');
+  return (t && tipo) ? { token_hash: t, type: tipo } : null; })();
+async function canjearEnlace() {
+  if (!ENLACE_TOKEN || !SB) return { ok: true, nada: true };
+  const { error } = await conLimite(SB.auth.verifyOtp(ENLACE_TOKEN), 20, 'Al abrir el enlace');
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  if (error) return { ok: false, error: /expired|invalid|not found/i.test(error.message)
+    ? 'Este enlace ya se usó o venció. Pedile a administración que te mande otro.' : error.message };
+  return { ok: true };
+}
+window.LLEGO_POR_CORREO_TOKEN = !!ENLACE_TOKEN;
+
 /* Política de contraseña (ciberseguridad, decisión del dueño 1 sept 2026):
    12+ caracteres, mayúscula, minúscula, número y símbolo, sin el correo
    ni el nombre adentro, y sin las obvias. La misma regla vive en la
@@ -354,7 +370,7 @@ window.iniciarSesion = iniciarSesion;
 window.cargarSesion = cargarSesion;
 window.definirContrasena = definirContrasena;
 window.validarContrasenaFuerte = validarContrasenaFuerte;
-window.LLEGO_POR_CORREO = LLEGO_POR_CORREO;
+window.LLEGO_POR_CORREO = LLEGO_POR_CORREO || !!ENLACE_TOKEN;
 window.cerrarSesion = cerrarSesion;
 window.pedirContrasenaNueva = pedirContrasenaNueva;
 window.hayRemoto = hayRemoto;

@@ -397,6 +397,11 @@ async function confirmar2FA(factorId){
    la sesión de Supabase sigue viva. */
 async function reanudarSesion(){
   if(!hayRemoto()) return false;
+  /* Enlace del correo con token_hash: se canjea antes de leer la sesión. */
+  if(typeof canjearEnlace==='function' && window.LLEGO_POR_CORREO_TOKEN){
+    const c = await canjearEnlace();
+    if(!c.ok){ toast(c.error, 9000, true); const e=document.getElementById('au-err'); if(e) e.textContent=c.error; return false; }
+  }
   const r = await cargarSesion();
   if(!r.ok) return false;
 
