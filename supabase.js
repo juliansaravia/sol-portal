@@ -273,12 +273,25 @@ async function pedirContrasenaNueva(email) {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo))
     return { ok: false, error: 'Escribí un correo válido' };
 
+  /* Microsoft tarda ~11 s en aceptar el correo y el gateway de Supabase
+     corta a los 10 s con 504 «context deadline exceeded»; el servidor de
+     Auth sigue y lo manda igual (visto en los logs del 3 sept 2026:
+     tres 504 y luego el 200 a los 11 s). Ese 504 no es un fallo: se
+     avisa que va en camino y no se reintenta, para no mandar dos. */
+  let r;
   try {
-    await conLimite(SB.auth.resetPasswordForEmail(correo, {
+    r = await conLimite(SB.auth.resetPasswordForEmail(correo, {
       redirectTo: location.origin + location.pathname
     }), 20, 'Al pedir la contraseña');
   } catch (e) {
+    if (/20 segundos|no respondió/i.test(String(e.message))) return { ok: true, lento: true };
     return { ok: false, error: e.message };
+  }
+  const err = r && r.error;
+  if (err) {
+    if (err.status === 504 || /request_timeout|deadline exceeded|timeout/i.test(String(err.code || '') + ' ' + String(err.message || '')))
+      return { ok: true, lento: true };
+    return { ok: false, error: err.message };
   }
   return { ok: true };
 }

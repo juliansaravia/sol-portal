@@ -1966,7 +1966,7 @@ async function restablecerContrasenaDe(id){
   const r=await conBoton(()=>pedirContrasenaNueva(p.email));
   if(!r||!r.ok){ if(r) toast(r.error, 7000, true); return; }
   anotar('equipo.contrasena', p.nombre+' · '+p.email);
-  toast(`Enlace enviado a ${p.email}. Si no le llega, que revise no deseados.`, 7000);
+  toast(r.lento?`El correo va en camino a ${p.email}: el servidor de correo tarda unos segundos más de lo normal. Esperá un minuto antes de volver a mandarlo.`:`Enlace enviado a ${p.email}. Si no le llega, que revise no deseados.`, 9000);
 }
 
 /* Dos maneras, en un solo lugar: mandarle el enlace (elige ella) o
