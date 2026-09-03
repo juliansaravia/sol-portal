@@ -111,10 +111,10 @@ const MATRIZ = {
   },
   financiero: {
     etiqueta: 'Financiero', color: '#3A2318',
-    nota: 'Confirma el dinero y autoriza comisiones. No las concilia ni las factura.',
+    nota: 'Confirma el dinero, autoriza comisiones y arma expedientes: sube contratos y papeles y llena los datos de los clientes. No concilia ni factura.',
     acciones: ['cobranza.ver','pago.confirmar','pago.anular','contable.exportar',
                'comision.ver_todas','comision.pagar',
-               'doc.ver_todos','doc.ver_expedientes','venta.ver_todas','bitacora.ver'],
+               'doc.ver_todos','doc.ver_expedientes','doc.subir','venta.ver_todas','bitacora.ver'],
   },
   confirmacion: {
     etiqueta: 'Confirmación de pagos', color: '#9A8C7E',
@@ -193,7 +193,7 @@ const RLS_DECLARADO = {
   // De db/04_storage.sql · política exp_leer del bucket «expedientes»
   'doc.ver_expedientes': ['admin','gerencia','financiero','confirmacion'],
   'doc.ver_todos':  ['admin','cobranza','confirmacion','financiero','gerencia'],
-  'doc.subir':      ['admin','gerencia','vendedor','cobranza','confirmacion'],
+  'doc.subir':      ['admin','gerencia','vendedor','cobranza','confirmacion','financiero'],
   'doc.borrar':     ['admin'],
   'pago.confirmar': ['admin','financiero','confirmacion'],
 };
