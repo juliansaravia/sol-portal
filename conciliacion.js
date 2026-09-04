@@ -365,20 +365,6 @@ async function confirmarConciliacion(id, ok = true) {
   return k;
 }
 
-async function desaplicarConciliacion(id) {
-  const i = (DB.conciliaciones || []).findIndex(x => mismoId(x.id, id));
-  if (i < 0) return false;
-  if (DB.conciliaciones[i].estado === 'confirmado')
-    throw new Error('Ya fue confirmado — eso se corrige con una anulación, no borrando');
-  if (typeof hayBase === 'function' && hayBase()) {
-    const r = await sbDescartarConciliacion(id, 'Deshecha por quien la propuso');
-    if (!r.ok) { avisar(r.error); return false; }
-  }
-  DB.conciliaciones.splice(i, 1);
-  saveDB();
-  return true;
-}
-
 /* ---------- La corrida completa ---------- */
 
 function correrConciliacion({ desde, hasta } = {}) {

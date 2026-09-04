@@ -74,51 +74,6 @@ function iconoBeneficio(tipo, color) {
   return `<svg viewBox="0 0 24 24" width="17" height="17" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${d}</svg>`;
 }
 
-/* ---------- Monedas ---------- */
-function iconoMonedas() {
-  return `<svg viewBox="0 0 62 34" width="46" height="25" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <circle cx="12" cy="17" r="10" fill="${COT.terracota}" opacity=".45"/>
-    <circle cx="26" cy="17" r="10" fill="${COT.terracota}" opacity=".7"/>
-    <circle cx="40" cy="17" r="10" fill="${COT.terracota}"/></svg>`;
-}
-
-/* ---------- Los meses, uno por cuadrito ----------
-   Ver los meses comunica el plazo mejor que leer el número.
-   Con plazos largos se achica el cuadro para no comerse la página. */
-function rejillaMeses(plazo) {
-  const porFila = plazo > 48 ? 24 : 12;
-  const filas = Math.ceil(plazo / porFila);
-  const paso = 9, lado = 7;
-  let celdas = '';
-  for (let i = 0; i < plazo; i++) {
-    const f = Math.floor(i / porFila), c = i % porFila;
-    celdas += `<rect x="${c * paso}" y="${f * paso}" width="${lado}" height="${lado}" rx="1.4"
-                 fill="${COT.terracota}" opacity="${(0.32 + (i / plazo) * 0.58).toFixed(2)}"/>`;
-  }
-  const ancho = porFila * paso, alto = filas * paso;
-  return `<svg viewBox="0 0 ${ancho} ${alto}" width="${ancho}" height="${alto}"
-     style="max-width:100%" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${celdas}</svg>`;
-}
-
-/* ---------- Comparar plazos ---------- */
-function barrasPlazos(precio, enganche, plazos, elegido) {
-  const planes = plazos.map(p => ({ p, ...planFinanciamiento(precio, enganche, p) }));
-  const max = Math.max(...planes.map(x => x.cuota));
-  const base = planes.find(x => x.p === elegido);
-  return planes.map(x => {
-    // Cuánto se ahorra contra el plazo que se está cotizando.
-    // Es el argumento honesto y el que conviene al negocio: menos
-    // plazo es menos interés para él y menos exposición para nosotros.
-    const ahorro = base ? base.total - x.total : 0;
-    return `<div class="hoja-barra${x.p === elegido ? ' sel' : ''}">
-      <span class="hoja-barra-m">${textoAnios(x.p)}</span>
-      <span class="hoja-barra-p"><span class="hoja-barra-f" style="width:${Math.round(x.cuota / max * 100)}%"></span></span>
-      <span class="hoja-barra-q">${_q(x.cuota)}</span>
-      <span class="hoja-barra-a">${ahorro > 1 ? 'ahorra ' + _q(ahorro) : ''}</span>
-    </div>`;
-  }).join('');
-}
-
 /* ============================================================
    DOCUMENTO 1 · para el cliente
    Presupuesto de alto, en mm:

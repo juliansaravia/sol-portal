@@ -211,33 +211,6 @@ const _Qc = n => 'Q ' + (Math.round(n * 100) / 100).toLocaleString('es-GT', { mi
 
 const LIMITE_ARCHIVO = 400 * 1024;   // 400 KB: más que eso no cabe en el navegador
 
-function adjuntarFactura(liqId, { nombre, tipo, tamaño, contenido, serie, numero, fecha, monto, nit }) {
-  const l = (DB.liquidaciones || []).find(x => mismoId(x.id, liqId));
-  if (!l) throw new Error('No existe esa liquidación');
-  if (l.estado === 'pagada') throw new Error('Ya está pagada: no se le puede cambiar la factura');
-  if (!numero) throw new Error('Falta el número de factura');
-
-  const dif = Math.abs(Number(monto || 0) - l.total);
-  const cabe = contenido && tamaño <= LIMITE_ARCHIVO;
-
-  l.factura = {
-    serie: serie || '', numero, fecha: fecha || HOY_ISO,
-    monto: Number(monto || l.total), nit: nit || '',
-    archivo: nombre || null, tipo: tipo || null, tamaño: tamaño || 0,
-    contenido: cabe ? contenido : null,        // dataURL si cabe
-    url: null,                                  // aquí irá la de Supabase Storage
-    soloFicha: !!(nombre && !cabe),
-    subida: ahora(), subidaPor: usuarioActual(),
-    difMonto: Math.round(dif * 100) / 100
-  };
-  l.estado = 'facturada';
-  l.historial.push({ que: 'Factura adjuntada', quien: usuarioActual(), cuando: ahora(),
-                     detalle: `${serie ? serie + '-' : ''}${numero} · ${_Qc(monto || l.total)}` +
-                              (dif > 0.5 ? ` · OJO: no cuadra con ${_Qc(l.total)}` : '') });
-  saveDB();
-  return l;
-}
-
 /* ---------- El pago ---------- */
 
 function marcarPagada(liqId, { fecha, forma, referencia, cuenta, nota }) {

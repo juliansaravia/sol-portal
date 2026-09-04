@@ -1070,17 +1070,6 @@ function doCompartirPDF(){
   compartirCotizacionPDF(d);
 }
 
-/* Se conserva el envío automático para cuando el hub esté arriba. */
-function doWhatsAppCot(){
-  const d=datosCotizacion();
-  if(!d.telefono){ toast('Anota el teléfono del cliente para poder enviarle el PDF'); return; }
-  if(!window.API_URL){
-    toast('El envío automático necesita el hub desplegado. Por ahora: «Compartir PDF por WhatsApp».', 7000, true);
-    return;
-  }
-  enviarCotizacionWhatsApp(d);
-}
-
 function renderCotizador(){
   const disp=DB.lotes.filter(l=>l.estado==='disponible'&&l.precio>0)
                      .sort((a,b)=>claveDe(a).localeCompare(claveDe(b)));
@@ -2148,37 +2137,6 @@ async function hacerReasignacion(de){
 }
 
 /* ============================================================ LEADS DEL EMBUDO */
-function renderLeads(){
-  const L=(DB.leadsFunnel||[]).slice().reverse();
-  const conv=L.filter(x=>x.estado==='convertido').length;
-  const porOrigen={}; L.forEach(x=>{const k=x.origen||'Sin registrar';porOrigen[k]=(porOrigen[k]||0)+1;});
-  let h=`<div class="kpis">
-    <div class="kpi"><div class="kpi-label">Leads capturados</div><div class="kpi-value">${L.length}</div><div class="kpi-sub">desde el embudo público</div></div>
-    <div class="kpi accent"><div class="kpi-label">Convertidos</div><div class="kpi-value">${conv}</div><div class="kpi-sub">${L.length?Math.round(conv/L.length*100):0}% de conversión</div></div>
-    <div class="kpi"><div class="kpi-label">Sin cerrar</div><div class="kpi-value">${L.length-conv}</div><div class="kpi-sub">para dar seguimiento</div></div>
-  </div>`;
-  if(Object.keys(porOrigen).length){
-    h+=`<div class="card"><div class="card-h"><h2>Por origen</h2></div><div class="card-b">`;
-    const max=Math.max(...Object.values(porOrigen));
-    Object.entries(porOrigen).sort((a,b)=>b[1]-a[1]).forEach(([o,n])=>{
-      h+=`<div class="bar-row"><div class="bar-lbl">${esc(o)}</div>
-        <div class="bar-track"><div class="bar-fill" style="width:${n/max*100}%"></div></div>
-        <div class="bar-val">${n} lead(s)</div></div>`;});
-    h+=`</div></div>`;
-  }
-  h+=`<div class="card"><div class="card-h"><h2>Prospectos</h2></div><div class="card-b" style="padding:0">
-    <table class="data"><thead><tr><th>Nombre</th><th>Teléfono</th><th>Lote</th>
-    <th class="num">Enganche</th><th>Origen</th><th>Fecha</th><th>Estado</th></tr></thead><tbody>`;
-  if(!L.length)h+=`<tr><td colspan="7" class="empty">Aún no hay leads. Se capturan desde <b>comprar.html</b> (el link para redes sociales).</td></tr>`;
-  L.forEach(x=>{h+=`<tr><td><b>${esc(x.nombre)}</b></td><td>${esc(x.telefono)}</td><td>${esc(x.lote)}</td>
-    <td class="num">${Qk(x.enganche||0)}</td><td><span class="pill">${esc(x.origen||'—')}</span></td>
-    <td>${(x.fecha||'').slice(0,10)}</td>
-    <td>${x.estado==='convertido'?`<span class="badge b-ok">Convertido ${esc(x.contrato||'')}</span>`:'<span class="badge b-pend">Por contactar</span>'}</td></tr>`;});
-  h+=`</tbody></table></div></div>
-    <div class="hint">Los leads se guardan aunque el prospecto no termine la solicitud — ahí está el valor del embudo. Al conectar KOMMO, cada uno entra automáticamente a su embudo.</div>`;
-  C().innerHTML=h;
-}
-
 /* ============================================================ APROBACIÓN */
 function renderAprobacion(){
   const pend=DB.contratos.filter(c=>c.estado==='en_aprobacion');

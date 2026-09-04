@@ -150,17 +150,6 @@ function puede(accion, rol) {
   return accionesDe(r).includes(accion);
 }
 
-/** El detalle de una acción, para poder explicarla. */
-function detalleAccion(a) {
-  for (const [grupo, acc] of Object.entries(ACCIONES))
-    if (acc[a]) return { grupo, accion: a, texto: acc[a] };
-  return null;
-}
-
-/**
- * Las separaciones de funciones que no se pueden romper.
- * Si alguien le da las dos a un mismo rol, la pantalla lo marca.
- */
 const INCOMPATIBLES = [
   { a: 'banco.conciliar', b: 'pago.confirmar',
     porque: 'Quien asigna un depósito a un contrato no debe ser quien lo confirma.' },
