@@ -3353,7 +3353,7 @@ function modalNuevoContrato(loteSel,pre){
         ${campo('ocup','Ocupación u oficio','placeholder="Agricultor, comerciante, maestra..."')}
         <div class="field"><label>Ingreso promedio al mes (Q) *</label>
           <input id="n-ingreso" type="number" oninput="prevCarga()"><div class="err" id="e-ingreso"></div></div>
-        <div class="field full"><label>¿Cómo comprueba su ingreso? *</label>
+        <div class="field full"><label>¿Cómo comprueba su ingreso? <span class="hint">(opcional)</span></label>
           <select id="n-fuente" onchange="pistaConstancia()">
             <option value="">— elegir —</option>
             ${CONSTANCIAS.map(c=>`<option value="${c.id}">${c.label}</option>`).join('')}
