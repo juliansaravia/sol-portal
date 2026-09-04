@@ -251,3 +251,78 @@ async function generarFormulario(id){
   toast('Formulario de '+ct.no+' listo: imprimilo o guardalo en PDF, el cliente lo completa y firma');
 }
 function _esAgroTxt(f){ return /agro|agric/i.test(String(f||'')); }
+
+/* ============================================================
+   PLAN DE PAGOS PARA FIRMA
+   Segundo papel del flujo de venta: el vendedor lo imprime, lo firma
+   con el cliente y sube el escaneo como «Plan de pagos firmado». Las
+   fechas siguen la regla de los giros (la primera cuota un mes después
+   de la fecha del contrato, mismo día). Sin base, o antes de generar
+   giros, se calcula igual con el plan del contrato.
+   ============================================================ */
+async function generarPlanPagos(id){
+  const ct=getContrato(id); if(!ct){toast('Contrato no encontrado');return;}
+  const cli=getCliente(ct.clienteId)||{};
+  const l=getLote(ct.clave||ct.lote)||{};
+  const plan=planFinanciamiento(ct.precio, ct.enganche!=null?ct.enganche:ENGANCHE_MIN, ct.plazo||60, ct.tasa);
+  const nombre=`${cli.nombre||''} ${cli.apellido||''}`.trim();
+  const Qn=n=>'Q '+(Math.round(n*100)/100).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const base=new Date((ct.fecha||HOY_ISO)+'T12:00:00');
+  const sumaMeses=(d,n)=>{ const x=new Date(d); const dia=x.getDate(); x.setDate(1); x.setMonth(x.getMonth()+n); const ult=new Date(x.getFullYear(),x.getMonth()+1,0).getDate(); x.setDate(Math.min(dia,ult)); return x; };
+  const iso=d=>d.toISOString().slice(0,10);
+  /* Si ya hay giros en la base, mandan ellos (fechas y montos reales). */
+  const giros=(DB.giros||[]).filter(g=>mismoId(g.contratoId,ct.id)&&!g.condicion).sort((a,b)=>String(a.vence||a.venc).localeCompare(String(b.vence||b.venc)));
+  const cuotas=giros.length?giros.map((g,i)=>({n:g.numero||i+1,f:g.vence||g.venc,m:g.monto}))
+    :Array.from({length:plan.plazo},(_,i)=>({n:i+1,f:iso(sumaMeses(base,i+1)),m:plan.cuota}));
+  const total=cuotas.reduce((s,c)=>s+c.m,0);
+  const filas=cuotas.map(c=>`<tr><td class="c">${c.n}</td><td>${fmtD(c.f)}</td><td class="r">${Qn(c.m)}</td><td></td><td></td></tr>`).join('');
+  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<title>Plan de pagos · ${esc(ct.no)} · ${esc(ct.lote)}</title>
+<style>
+  @page{size:letter;margin:1.4cm 1.6cm}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#000;max-width:19cm;margin:0 auto;padding:14px}
+  h1{font-size:13pt;text-align:center;margin:0 0 4px;letter-spacing:.5px}
+  .sub{text-align:center;font-size:9pt;color:#444;margin-bottom:12px}
+  .res{display:grid;grid-template-columns:repeat(4,1fr);gap:6px 14px;margin:10px 0 14px;font-size:9.5pt}
+  .res b{display:block;font-size:11pt}
+  table{border-collapse:collapse;width:100%}
+  th,td{border:1px solid #777;padding:3px 6px;font-size:9.5pt}
+  th{background:#eee;text-transform:uppercase;font-size:8pt}
+  td.c{text-align:center;width:36px} td.r{text-align:right;width:110px}
+  tfoot td{font-weight:700}
+  .firmas{margin-top:28px;display:grid;grid-template-columns:1fr 1fr;gap:16px 40px;align-items:end;page-break-inside:avoid}
+  .firmas .ln{border-bottom:1px solid #000;height:34px}
+  .firmas .lb{font-size:9.5pt;padding-top:3px}
+  .pie{margin-top:12px;font-size:8.5pt;color:#666}
+  .noprint{text-align:center;margin:18px 0}
+  .noprint button{background:#2E6B4F;color:#fff;border:0;padding:11px 22px;border-radius:8px;font-size:14px;cursor:pointer;font-family:inherit}
+  @media print{.noprint{display:none}body{padding:0} thead{display:table-header-group}}
+</style></head><body>
+<h1>PLAN DE PAGOS · LOTIFICACIÓN LA ESPERANZA</h1>
+<div class="sub">San Miguel Pochuta, Chimaltenango · Contrato ${esc(ct.no)} · Lote ${esc(ct.lote)}${l.area?` · ${esc(String(l.area))} m²`:''}</div>
+<div class="res">
+  <div>Comprador<b>${esc(nombre)||'—'}</b></div>
+  <div>DPI<b>${esc(cli.dpi||'')||'—'}</b></div>
+  <div>Fecha del contrato<b>${fmtD(ct.fecha||HOY_ISO)}</b></div>
+  <div>Vendedor<b>${esc(ct.vendedor||'')||'—'}</b></div>
+  <div>Precio del lote<b>${Qn(ct.precio)}</b></div>
+  <div>Enganche<b>${Qn(plan.enganche)}</b></div>
+  <div>Saldo a financiar<b>${Qn(plan.saldo)}</b></div>
+  <div>Plazo · cuota<b>${cuotas.length} pagos · ${Qn(plan.cuota)}</b></div>
+</div>
+<table><thead><tr><th>No.</th><th>Vence</th><th>Cuota</th><th>Fecha de pago</th><th>Boleta / recibo</th></tr></thead>
+<tbody>${filas}</tbody>
+<tfoot><tr><td colspan="2">Total en cuotas</td><td class="r">${Qn(total)}</td><td colspan="2"></td></tr></tfoot></table>
+<p style="font-size:9pt;margin-top:10px">Las cuotas vencen en la fecha indicada. Los pagos se hacen por depósito o transferencia a la cuenta de la empresa y se envía la boleta al vendedor o a cobranza; cada pago recibe su recibo numerado. El atraso genera mora conforme al contrato.</p>
+<div class="firmas">
+  <div><div class="ln"></div><div class="lb">Firma del comprador · ${esc(nombre)}</div></div>
+  <div><div class="ln"></div><div class="lb">Por Lotificación La Esperanza · ${esc(ct.vendedor||'')}</div></div>
+</div>
+<p class="pie">Plan de pagos · Contrato ${esc(ct.no)} · Generado por el Suite Sol Inmobiliaria el ${fmtD(HOY_ISO)}. Se imprime, se firma con el cliente y el escaneo se sube al expediente como «Plan de pagos firmado».</p>
+<div class="noprint"><button onclick="window.print()">Imprimir / Guardar PDF</button></div>
+</body></html>`;
+  const w=window.open('','_blank');
+  if(!w){toast('Permite las ventanas emergentes para ver el plan de pagos');return;}
+  w.document.write(html); w.document.close();
+  toast('Plan de pagos de '+ct.no+' listo: imprimilo, firmalo con el cliente y subí el escaneo');
+}

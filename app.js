@@ -3114,9 +3114,11 @@ function pintarContrato(){
       return `<div class="aviso-err" style="margin:6px 0">Falta el contrato firmado. ${ct.origen?'Generalo, firmalo y subilo.':'Es un contrato que ya existe: hay que subir el firmado.'}</div>`; })()}
     ${typeof notaExpedienteCompartido==='function'?notaExpedienteCompartido(ct):''}
     ${typeof notaDiferido==='function'?notaDiferido(ct):''}
-    <div class="btn-row">${(typeof generarContrato==='function' && ct.origen && !contratoFirmadoDe(ct))
-        ? `<button class="btn btn-ghost btn-sm" onclick="generarContrato('${ct.id}')">📄 Generar contrato para firma</button>`
-        : ''}
+    <div class="btn-row">${(()=>{ if(!(typeof generarContrato==='function' && ct.origen && !contratoFirmadoDe(ct))) return '';
+        const pre=previosAlContrato(ct);
+        return pre.faltan.length
+          ? `<button class="btn btn-ghost btn-sm" disabled title="Antes del contrato: ${esc(pre.faltan.join(', '))}" onclick="drawerTab='docs';pintarContrato()">📄 Generar contrato · falta ${esc(pre.faltan.join(', '))}</button>`
+          : `<button class="btn btn-ghost btn-sm" onclick="generarContrato('${ct.id}')">📄 Generar contrato para firma</button>`; })()}
       ${!contratoFirmadoDe(ct)?`<button class="btn btn-gold btn-sm" onclick="modalDocumentoTipo('${ct.id}','contrato')">Subir contrato firmado</button>`:''}
       <button class="btn btn-ghost btn-sm" onclick="abrirCliente('${ct.clienteId}')">Ver ficha del cliente</button></div>
     <div class="sect-t">Integrantes del contrato</div>`;
@@ -3162,16 +3164,30 @@ function pintarContrato(){
 
   if(drawerTab==='docs'){
     if(ct.estado!=='anulado'){
-      const reqs=(DB.documentosRequeridos&&DB.documentosRequeridos.length?DB.documentosRequeridos.filter(r=>r.obligatorio):DOCS_REQ()).slice().sort((a,b)=>(a.orden||0)-(b.orden||0));
+      /* El orden es el del flujo de venta: formulario → plan de pagos →
+         boleta del enganche → DPIs → contrato → recibo. Sin los tres
+         primeros no se genera el contrato. */
+      const reqs=(DB.documentosRequeridos&&DB.documentosRequeridos.length?DB.documentosRequeridos.filter(r=>r.obligatorio):DOCS_REQ().filter(r=>r.obligatorio)).slice().sort((a,b)=>ordenFlujo(a.codigo)-ordenFlujo(b.codigo));
+      const pre=previosAlContrato(ct);
       const ds=(typeof documentosExpediente==='function'?documentosExpediente(ct):documentosDe(ct.id)); const conArchivo=t=>ds.filter(d=>d.tipo===t&&d.bucket&&d.ruta).reduce((n,d)=>n+(d.cara==='ambas'?2:1),0);
       const filas=reqs.map(r=>({...r, tiene:conArchivo(r.codigo), ok:conArchivo(r.codigo)>=(r.caras||1)}));
       const completo=filas.every(f=>f.ok);
       h+=`<div class="card" style="margin:0 0 14px;border-left:3px solid ${completo?'var(--green)':'var(--gold)'}"><div class="card-b">
         <b>${ct.estado==='borrador'?(completo?'Expediente completo':'Expediente para enviar a aprobación'):ct.estado==='en_aprobacion'?'En el comité de crédito':(completo?'Expediente completo':'Expediente incompleto')}</b>
         <div class="hint" style="margin:4px 0 10px">${ct.estado==='borrador'?'Sin estos papeles la venta no llega al comité. Subilos desde el celular: la cámara abre sola.':ct.estado==='en_aprobacion'?'Se aprueba o se deniega desde el portal interno.':'Un expediente por lote: contrato y plan firmados, formulario, DPI, DPI del pariente y boleta del enganche. Subilos desde el celular.'}</div>
-        ${filas.map(f=>`<div class="check-row ${f.ok?'hecho':''}"><div class="check-ico">${f.ok?'✓':'○'}</div>
-          <div class="check-txt"><b>${esc(f.nombre)}</b><div class="hint">${f.caras>1?`${f.tiene} de ${f.caras} caras`:(f.ok?'subido':'falta')}</div></div>
-          <div class="check-acc">${f.codigo==='formulario'&&typeof generarFormulario==='function'?`<button class="btn btn-ghost btn-sm" onclick="generarFormulario('${ct.id}')" title="Prellenado con los datos del suite">Generar</button> `:''}${f.ok?'':`<button class="btn btn-gold btn-sm" onclick="modalDocumentoTipo('${ct.id}','${f.codigo}')">Subir</button>`}</div></div>`).join('')}
+        ${filas.map((f,i)=>{ const gen={formulario:'generarFormulario',plan_pagos:'generarPlanPagos'}[f.codigo];
+          const esContrato=f.codigo==='contrato', bloqueado=esContrato&&pre.faltan.length>0;
+          const pista=f.caras>1?`${f.tiene} de ${f.caras} caras`
+            :f.ok?'subido'
+            :bloqueado?`antes: ${pre.faltan.join(', ')}`
+            :f.codigo==='boleta_enganche'?(pre.enganche>0?`al subirla se registra el enganche de ${Q(pre.enganche)} y sale el recibo`:'enganche Q0 por promoción: subí el comprobante o el vale')
+            :gen?'generalo, imprimilo, firmalo con el cliente y subí el escaneo':'falta';
+          const acc=f.ok?''
+            :esContrato?(ct.origen&&typeof generarContrato==='function'?`<button class="btn btn-ghost btn-sm" ${bloqueado?'disabled':''} onclick="generarContrato('${ct.id}')">Generar</button> `:'')+`<button class="btn btn-gold btn-sm" ${bloqueado?'disabled':''} onclick="modalDocumentoTipo('${ct.id}','contrato')">Subir firmado</button>`
+            :(gen&&typeof window[gen]==='function'?`<button class="btn btn-ghost btn-sm" onclick="${gen}('${ct.id}')" title="Prellenado con los datos del suite">Generar</button> `:'')+`<button class="btn btn-gold btn-sm" onclick="modalDocumentoTipo('${ct.id}','${f.codigo}')">${gen?'Subir firmado':'Subir'}</button>`;
+          return `<div class="check-row ${f.ok?'hecho':''}${bloqueado?' bloqueado':''}"><div class="check-ico">${f.ok?'✓':bloqueado?'🔒':String(i+1)}</div>
+          <div class="check-txt"><b>${esc(f.nombre)}</b><div class="hint">${esc(pista)}</div></div>
+          <div class="check-acc">${acc}</div></div>`; }).join('')}
         ${ct.estado==='borrador'?`<div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" ${completo?'':'disabled title="Falta expediente"'} onclick="doEnviarAprobacion('${ct.id}')">Enviar a aprobación →</button></div>`:''}
       </div></div>`;
     }
@@ -3548,6 +3564,24 @@ const DOCS_REQ = () => (typeof DB !== 'undefined' && DB.documentosRequeridos && 
      {codigo:'plan_pagos', nombre:'Plan de pagos firmado',caras:1, obligatorio:true},
      {codigo:'boleta_enganche', nombre:'Boleta del enganche', caras:1, obligatorio:true},
      {codigo:'recibo_enganche', nombre:'Recibo del primer pago', caras:1, obligatorio:false}];
+
+/* Orden del flujo de venta. Lo que no esté acá va al final. */
+const ORDEN_FLUJO=['formulario','plan_pagos','boleta_enganche','dpi','dpi_pariente','contrato','recibo_enganche'];
+const ordenFlujo=c=>{ const i=ORDEN_FLUJO.indexOf(c); return i<0?99:i; };
+/** Qué falta antes de generar el contrato: formulario y plan firmados y la
+ *  boleta del enganche. La boleta también vale si el pago ya la tiene
+ *  colgada (entró por cobranza) o el recibo ya salió. Contratos
+ *  históricos (sin origen) no se generan: no se les exige nada. */
+function previosAlContrato(ct){
+  const ds=(typeof documentosExpediente==='function'?documentosExpediente(ct):documentosDe(ct.id))||[];
+  const hay=t=>ds.some(d=>d.tipo===t&&d.bucket&&d.ruta);
+  const pagos=(DB.pagos||[]).filter(p=>mismoId(p.contratoId,ct.id)&&p.estado!=='rechazado');
+  const boleta=hay('boleta_enganche')||pagos.some(p=>adjuntosDe('pago',p.id).length||reciboDe(p.id));
+  const plan=planFinanciamiento(ct.precio, ct.enganche!=null?ct.enganche:ENGANCHE_MIN, ct.plazo||60, ct.tasa);
+  const faltan=[];
+  if(ct.origen){ if(!hay('formulario')) faltan.push('formulario firmado'); if(!hay('plan_pagos')) faltan.push('plan de pagos firmado'); if(!boleta) faltan.push('boleta del enganche'); }
+  return { faltan, boleta, enganche: plan.enganche };
+}
 
 /* ============================================================ RECIBO DE PAGO
    Formal, numerado y digital, como el del CRM pero automático: se emite
@@ -4100,7 +4134,8 @@ async function verAdjunto(id){
 }
 function modalDocumentoTipo(id,tipo){ modalDocumento(id); const sel=document.getElementById('d-tipo'); if(sel){ sel.value=tipo; if(typeof docCaras==='function') docCaras(); } }
 function modalDocumento(id){
-  const reqs=DOCS_REQ();
+  const reqs=DOCS_REQ().slice().sort((a,b)=>ordenFlujo(a.codigo)-ordenFlujo(b.codigo));
+  window.__docContrato=id;
   openModal(`<div class="modal-h"><h3>Subir respaldo</h3><p>Expediente del contrato</p></div>
     <div class="modal-b"><div class="form-grid">
       <div class="field"><label>¿Qué documento es?</label><select id="d-tipo" onchange="docCaras()">
@@ -4109,7 +4144,11 @@ function modalDocumento(id){
       <div class="field" id="d-caraBox" hidden><label>¿Qué cara?</label>
         <select id="d-cara"><option value="ambas">Ambas caras en una hoja</option><option value="frente">Frente</option><option value="reverso">Reverso</option></select></div>
       <div class="field full"><label>Archivo</label>
-        <input id="d-archivo" type="file" accept="image/jpeg,image/png,image/webp,application/pdf"></div>
+        <input id="d-archivo" type="file" accept="image/jpeg,image/png,image/webp,application/pdf"
+               onchange="if(v('d-tipo')==='boleta_enganche'&&typeof leerBoletaEn==='function')leerBoletaEn(this,{ref:'d-ref',monto:'d-monto',aviso:'d-leido'})"></div>
+      <div class="field" id="d-engBox" hidden><label>Monto de la boleta (enganche) *</label><input id="d-monto" type="number" step="0.01" min="0"></div>
+      <div class="field" id="d-refBox" hidden><label>Boleta / referencia</label><input id="d-ref" placeholder="No. de boleta o transferencia"></div>
+      <div class="field full" id="d-engNota" hidden><div class="hint" id="d-leido">Al subirla el suite registra el enganche como pago, cuelga esta boleta y emite el recibo. Finanzas lo confirma contra el banco.</div></div>
     </div>
     <div class="hint">Foto o PDF. El DPI va por las dos caras — el reverso trae la dirección.
       Queda en un expediente privado: no hay enlace público a un DPI.</div></div>
@@ -4122,6 +4161,11 @@ function docCaras(){
   const op=sel.options[sel.selectedIndex];
   const caja=document.getElementById('d-caraBox');
   if(caja) caja.hidden = !(op && +op.dataset.caras > 1);
+  /* La boleta del enganche pide monto y referencia: con eso se registra el pago. */
+  const esBol=sel.value==='boleta_enganche';
+  ['d-engBox','d-refBox','d-engNota'].forEach(k=>{ const e=document.getElementById(k); if(e) e.hidden=!esBol; });
+  if(esBol){ const m=document.getElementById('d-monto'); const ct=window.__docContrato&&getContrato(window.__docContrato);
+    if(m&&!m.value&&ct){ const pl=planFinanciamiento(ct.precio, ct.enganche!=null?ct.enganche:ENGANCHE_MIN, ct.plazo||60, ct.tasa); if(pl.enganche>0) m.value=pl.enganche; } }
 }
 async function guardarDoc(id){
   const codigo=v('d-tipo');
@@ -4131,9 +4175,32 @@ async function guardarDoc(id){
   const caja=document.getElementById('d-caraBox');
   const cara=(caja&&!caja.hidden)?v('d-cara'):null;
 
+  /* Boleta del enganche: sin monto no hay pago que registrar. */
+  const esBol=codigo==='boleta_enganche', monto=esBol?+v('d-monto')||0:0, ref=esBol?v('d-ref'):'';
+  const ctDoc=getContrato(id);
+  const yaPago=esBol&&(DB.pagos||[]).some(p=>mismoId(p.contratoId,id)&&p.estado!=='rechazado');
+  if(esBol&&!yaPago&&monto<=0&&!confirm('Sin monto la boleta sólo queda en el expediente y el enganche NO se registra como pago. ¿Subirla así?')) return;
+
   const r=await conBoton(()=>agregarDocumento(id,codigo,archivo,cara));
   if(!r) return;
-  closeModal(); toast('Documento subido ✓'); drawerTab='docs'; pintarContrato();
+  closeModal(); drawerTab='docs';
+  if(esBol&&monto>0&&!yaPago&&typeof hayBase==='function'&&hayBase()&&typeof sbEngancheDesdeDocumento==='function'&&r.id){
+    toast('Boleta subida ✓ · registrando el enganche…');
+    const e=await sbEngancheDesdeDocumento(r.id, monto, ref, null);
+    if(!e.ok){ toast('La boleta quedó en el expediente, pero el enganche no se registró: '+e.error, 9000, true); pintarContrato(); return; }
+    const d=e.dato||{};
+    if(d.ok===false){ toast('Ese contrato ya tenía un pago registrado; la boleta quedó en el expediente', 7000); pintarContrato(); return; }
+    (DB.pagos=DB.pagos||[]).push({ id:d.pago_id, contratoId:Number(ctDoc?ctDoc.id:id), monto, fecha:HOY_ISO, forma:'Transferencia bancaria', referencia:ref||'', estado:'registrado', cuota:d.cuota||1 });
+    (DB.adjuntos=DB.adjuntos||[]).push({ id:d.adjunto_id, entidad:'pago', entidadId:d.pago_id, bucket:r.bucket, ruta:r.ruta, nombre:r.nombre, mime:r.mime, bytes:r.bytes, descripcion:'Boleta '+(ref||'')+' · enganche (expediente)', fecha:HOY_ISO });
+    (DB.recibos=DB.recibos||[]).push({ id:d.recibo_id, numero:d.recibo_numero, pagoId:d.pago_id, contratoId:Number(ctDoc?ctDoc.id:id), monto, fecha:HOY_ISO, adjuntoId:null });
+    if(typeof reindexar==='function') reindexar();
+    anotar('pago.boleta', (ctDoc||{}).no+' · enganche '+Q(monto));
+    pintarContrato(); if(typeof pintarBadgeAsuntos==='function') pintarBadgeAsuntos();
+    toast('Enganche de '+Q(monto)+' registrado ✓ · recibo No '+String(d.recibo_numero).padStart(6,'0'));
+    if(typeof emitirYCompartirRecibo==='function') emitirYCompartirRecibo(d.pago_id);
+    return;
+  }
+  toast('Documento subido ✓'); pintarContrato();
 }
 
 /* Abrir un documento es pedir una URL firmada que caduca a los dos

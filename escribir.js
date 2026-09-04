@@ -316,6 +316,14 @@ async function sbLiberarDiferido(contrato_id, vence, cuotas) {
     oExplota(await SB.rpc('liberar_diferido', { p_contrato_id: Number(contrato_id), p_vence: vence, p_cuotas: Number(cuotas || 1) })));
 }
 
+/** La boleta del enganche subida al expediente registra el pago, la cuelga
+ *  del pago y emite el recibo (migración 42). El vendedor sólo puede en su
+ *  contrato; Finanzas confirma el pago contra el banco después. */
+async function sbEngancheDesdeDocumento(documento_id, monto, referencia, fecha) {
+  return escribir('registrar el enganche', async () =>
+    oExplota(await SB.rpc('enganche_desde_documento', { p_documento_id: Number(documento_id), p_monto: Number(monto),
+      p_referencia: referencia || null, p_fecha: fecha || null })));
+}
 /** La referencia de un pago que entró sin ella (boleta compartida). */
 async function sbReferenciaPago(pago_id, referencia) {
   return escribir('anotar la referencia', async () => {
@@ -994,7 +1002,7 @@ async function sbReciboAdjunto(recibo_id, adjunto_id) {
    ============================================================ */
 Object.assign(window, {
   hayBase, escribir, traducirError,
-  sbCrearCliente, sbActualizarCliente, sbVincularExpediente, sbReferenciaPago, sbContadoDiferido, sbLiberarDiferido,
+  sbCrearCliente, sbActualizarCliente, sbVincularExpediente, sbReferenciaPago, sbContadoDiferido, sbLiberarDiferido, sbEngancheDesdeDocumento,
   sbCrearContrato, sbEstadoContrato, sbReasignarContratos,
   sbRegistrarPago, sbConfirmarPago, sbBorrarPago,
   sbMarcarCobrada, sbMarcarNoCobrada, sbDesmarcarCuota,
