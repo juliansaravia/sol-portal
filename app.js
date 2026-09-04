@@ -3341,6 +3341,11 @@ function modalNuevoContrato(loteSel,pre){
   const campo=(id,label,extra,ancho)=>{ const req=((typeof CAMPOS_VENTA!=='undefined'?CAMPOS_VENTA:[]).find(c=>c.id===id)||{}).req!==false;
     return `<div class="field ${ancho||''}">
     <label>${label}${req?' *':''}</label><input id="n-${id}" ${extra||''}><div class="err" id="e-${id}"></div></div>`; };
+  /* La dirección va en cuatro partes obligatorias; el departamento se elige de la lista. */
+  const direccion=(pref,titulo)=>`<div class="field full" style="margin-bottom:-6px"><label>${titulo} *</label><div class="hint">Número de casa, calle, municipio y departamento: sin los cuatro no se acepta.</div></div>`
+    +PARTES_DIRECCION.map(pt=>pt.tipo==='depto'
+      ?`<div class="field"><label>${pt.label} *</label><select id="n-${pref}_${pt.suf}"><option value="">— elegir —</option>${DEPARTAMENTOS.map(x=>`<option ${x==='Chimaltenango'?'selected':''}>${x}</option>`).join('')}</select><div class="err" id="e-${pref}_${pt.suf}"></div></div>`
+      :campo(`${pref}_${pt.suf}`,pt.label,`placeholder="${esc(pt.ph||'')}"`)).join('');
   openModal(`<div class="modal-h"><h3>Nueva venta</h3>
       <p>Sin el expediente completo no se puede cerrar — sin teléfono no hay a quién cobrarle</p></div>
     <div class="modal-b">
@@ -3361,7 +3366,7 @@ function modalNuevoContrato(loteSel,pre){
         ${campo('dpi','DPI (CUI)','placeholder="13 dígitos" inputmode="numeric"')}
         ${campo('tel','Teléfono celular','placeholder="5555 5555" inputmode="numeric"')}
         ${campo('mail','Correo electrónico','type="email" placeholder="nombre@correo.com"','full')}
-        ${campo('dir','Dirección de residencia','placeholder="Aldea, municipio, departamento"','full')}
+        ${direccion('dir','Dirección de residencia')}
       </div>
 
       <div class="sect-t" style="margin-top:18px">Ocupación e ingresos</div>
@@ -3387,7 +3392,7 @@ function modalNuevoContrato(loteSel,pre){
         ${campo('pnom','Nombre')}
         ${campo('ptel','Teléfono celular','placeholder="5555 5555" inputmode="numeric"')}
         ${campo('pmail','Correo','type="email"','full')}
-        ${campo('pdir','Dirección','','full')}
+        ${direccion('pdir','Dirección del pariente o fiador')}
       </div>
       <div id="n-errores"></div>
     </div>
@@ -3462,9 +3467,9 @@ async function crearContrato(){
 
   const ct=await conBoton(()=>nuevoContrato({lote:v('n-lote'),nombre:`${d.nom} ${d.ape}`.trim(),dpi:validaDPI(d.dpi).valor,
     telefono:validaTel(d.tel).valor,email:validaMail(d.mail).valor,
-    direccion:d.dir, ocupacion:d.ocup, ingresoMensual:+String(d.ingreso).replace(/[^\d.]/g,''),
+    direccion:direccionCompleta(d,'dir'), ocupacion:d.ocup, ingresoMensual:+String(d.ingreso).replace(/[^\d.]/g,''),
     constancia:d.fuente, pesoConstancia:pesoConstancia(d.fuente),
-    pariente:{nombre:d.pnom, telefono:validaTel(d.ptel).valor, email:validaMail(d.pmail).valor, direccion:d.pdir},
+    pariente:{nombre:d.pnom, telefono:validaTel(d.ptel).valor, email:validaMail(d.pmail).valor, direccion:direccionCompleta(d,'pdir')},
     vendedor:v('n-vend'),enganche:+v('n-res')||ENGANCHE_MIN,
     plazo:+v('n-plz')||60,origen:'Campo'}));
   if(!ct) return;                     // no se creó · el motivo ya se mostró
@@ -4232,22 +4237,43 @@ async function guardarIntegrante(id){
 }
 function modalEditarCliente(id){
   const c=getCliente(id);
+  /* Con la base, el cliente trae `tel`/`correo`; la semilla, `telefono`/`email`. */
+  const tel=c.telefono||c.tel||'', mail=c.email||c.correo||'';
+  const dp=partesDireccion(c.direccion);
+  const incompleta=!!String(c.direccion||'').trim()&&!dp.depto;
   openModal(`<div class="modal-h"><h3>Editar cliente</h3><p>${esc(c.nombre)} ${esc(c.apellido)}</p></div>
     <div class="modal-b"><div class="form-grid">
       <div class="field"><label>Nombres</label><input id="c-nom" value="${esc(c.nombre)}"></div>
       <div class="field"><label>Apellidos</label><input id="c-ape" value="${esc(c.apellido)}"></div>
       <div class="field"><label>DPI (CUI)</label><input id="c-dpi" value="${esc(c.dpi)}"></div>
-      <div class="field"><label>Teléfono</label><input id="c-tel" value="${esc(c.telefono)}"></div>
-      <div class="field full"><label>Correo</label><input id="c-mail" value="${esc(c.email)}"></div>
-      <div class="field full"><label>Dirección</label><input id="c-dir" value="${esc(c.direccion)}"></div>
-    </div></div>
+      <div class="field"><label>Teléfono</label><input id="c-tel" value="${esc(tel)}"></div>
+      <div class="field full"><label>Correo</label><input id="c-mail" value="${esc(mail)}"></div>
+      <div class="field full" style="margin-bottom:-6px"><label>Dirección *</label><div class="hint">${incompleta?'La dirección guardada no trae las cuatro partes: completala.':'Número de casa, calle, municipio y departamento: sin los cuatro no se guarda.'}</div></div>
+      ${PARTES_DIRECCION.map(pt=>pt.tipo==='depto'
+        ?`<div class="field"><label>${pt.label} *</label><select id="c-dir_${pt.suf}"><option value="">— elegir —</option>${DEPARTAMENTOS.map(x=>`<option ${x===dp.depto?'selected':''}>${x}</option>`).join('')}</select><div class="err" id="e-c-dir_${pt.suf}"></div></div>`
+        :`<div class="field"><label>${pt.label} *</label><input id="c-dir_${pt.suf}" value="${esc(dp[pt.suf]||'')}" placeholder="${esc(pt.ph||'')}"><div class="err" id="e-c-dir_${pt.suf}"></div></div>`).join('')}
+    </div><div id="c-errores"></div></div>
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarCliente('${id}')">Guardar</button></div>`);
 }
-function guardarCliente(id){
-  const c=getCliente(id);
+async function guardarCliente(id){
+  const c=getCliente(id); if(!c) return;
+  const d={}; PARTES_DIRECCION.forEach(pt=>{ d['dir_'+pt.suf]=v('c-dir_'+pt.suf); });
+  document.querySelectorAll('#modal .err').forEach(e=>e.textContent='');
+  const vd=validaDireccion(d,'dir');
+  if(!vd.ok){
+    PARTES_DIRECCION.forEach(pt=>{ if(!String(d['dir_'+pt.suf]||'').trim()){ const e=document.getElementById('e-c-dir_'+pt.suf); if(e) e.textContent='Falta'; } });
+    const caja=document.getElementById('c-errores'); if(caja) caja.innerHTML=`<div class="aviso-err">Dirección incompleta: falta ${esc(vd.faltan.join(', '))}.</div>`;
+    return toast('La dirección necesita número de casa, calle, municipio y departamento',6000,true);
+  }
+  const datos={ nombre:`${v('c-nom')} ${v('c-ape')}`.trim(), dpi:v('c-dpi'), telefono:v('c-tel'), email:v('c-mail'),
+                direccion:direccionCompleta(d,'dir'), ocupacion:c.ocupacion };
+  if(typeof hayBase==='function'&&hayBase()){
+    /* Antes esto sólo cambiaba la pantalla: la base no se enteraba. */
+    const r=await conBoton(()=>sbActualizarCliente(c.id,datos)); if(!r||!r.ok){ if(r) toast(r.error,7000,true); return; }
+  }
   c.nombre=v('c-nom');c.apellido=v('c-ape');c.dpi=v('c-dpi');
-  c.telefono=v('c-tel');c.email=v('c-mail');c.direccion=v('c-dir');
+  c.telefono=v('c-tel');c.tel=v('c-tel');c.email=v('c-mail');c.correo=v('c-mail');c.direccion=datos.direccion;
   saveDB(); closeModal(); toast('Cliente actualizado ✓'); abrirCliente(id);
   if(vista==='clientes')renderClientes();
 }

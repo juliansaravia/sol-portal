@@ -186,8 +186,8 @@ async function sbActualizarCliente(id, datos) {
     }).eq('id', id).select().single());
 
     const c = DB.clientes.find(x => mismoId(x.id, id));
-    if (c) Object.assign(c, { nombre: fila.nombre, dpi: fila.dpi, tel: fila.telefono,
-                              correo: fila.email, direccion: fila.direccion, ocupacion: fila.ocupacion });
+    if (c) Object.assign(c, { nombre: fila.nombre, dpi: fila.dpi, tel: fila.telefono, telefono: fila.telefono,
+                              correo: fila.email, email: fila.email, direccion: fila.direccion, ocupacion: fila.ocupacion });
     return fila;
   });
 }

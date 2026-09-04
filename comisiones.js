@@ -296,7 +296,13 @@ const CAMPOS_VENTA = [
   { id:'dpi',      label:'DPI (CUI)',                   grupo:'comprador', req:true, tipo:'dpi' },
   { id:'tel',      label:'Teléfono celular',            grupo:'comprador', req:true, tipo:'tel' },
   { id:'mail',     label:'Correo electrónico',          grupo:'comprador', req:true, tipo:'mail' },
-  { id:'dir',      label:'Dirección de residencia',     grupo:'comprador', req:true, ancho:'full' },
+  /* Dirección en cuatro partes (4 sept 2026): sin número de casa, calle,
+     municipio y departamento no se acepta, ni la del comprador ni la del
+     fiador. Se guarda como un solo texto separado por comas. */
+  { id:'dir_casa',  label:'Número de casa o lote',            grupo:'comprador', req:true },
+  { id:'dir_calle', label:'Calle, avenida, zona o aldea',     grupo:'comprador', req:true },
+  { id:'dir_muni',  label:'Municipio',                        grupo:'comprador', req:true },
+  { id:'dir_depto', label:'Departamento',                     grupo:'comprador', req:true, tipo:'depto' },
   { id:'ocup',     label:'Ocupación u oficio',          grupo:'ingresos',  req:true },
   { id:'ingreso',  label:'Ingreso promedio al mes (Q)', grupo:'ingresos',  req:true, tipo:'monto' },
   /* Opcional (4 sept 2026): la constancia de ingresos no es parte del expediente estándar. */
@@ -304,8 +310,43 @@ const CAMPOS_VENTA = [
   { id:'pnom',     label:'Nombre del pariente',         grupo:'pariente',  req:true },
   { id:'ptel',     label:'Teléfono celular del pariente',grupo:'pariente', req:true, tipo:'tel' },
   { id:'pmail',    label:'Correo del pariente',         grupo:'pariente',  req:true, tipo:'mail' },
-  { id:'pdir',     label:'Dirección del pariente',      grupo:'pariente',  req:true, ancho:'full' },
+  { id:'pdir_casa',  label:'Número de casa o lote del pariente', grupo:'pariente', req:true },
+  { id:'pdir_calle', label:'Calle, avenida, zona o aldea del pariente', grupo:'pariente', req:true },
+  { id:'pdir_muni',  label:'Municipio del pariente',           grupo:'pariente',  req:true },
+  { id:'pdir_depto', label:'Departamento del pariente',        grupo:'pariente',  req:true, tipo:'depto' },
 ];
+
+/* ---------- Dirección ---------- */
+const DEPARTAMENTOS = ['Alta Verapaz','Baja Verapaz','Chimaltenango','Chiquimula','El Progreso','Escuintla','Guatemala',
+  'Huehuetenango','Izabal','Jalapa','Jutiapa','Petén','Quetzaltenango','Quiché','Retalhuleu','Sacatepéquez','San Marcos',
+  'Santa Rosa','Sololá','Suchitepéquez','Totonicapán','Zacapa'];
+const PARTES_DIRECCION = [
+  { suf:'casa',  label:'Número de casa o lote',        ph:'Casa 12 · Lote 5, manzana B' },
+  { suf:'calle', label:'Calle, avenida, zona o aldea', ph:'3a calle 4-20, zona 2 · Aldea El Rosario' },
+  { suf:'muni',  label:'Municipio',                    ph:'San Miguel Pochuta' },
+  { suf:'depto', label:'Departamento',                 tipo:'depto' },
+];
+const validaDepto = v => DEPARTAMENTOS.includes(String(v || '').trim())
+  ? { ok:true, valor:String(v).trim() } : { ok:false, msg:'Elegí el departamento de la lista' };
+/** Las cuatro partes en un texto: «Casa 12, 3a calle zona 2, San Miguel Pochuta, Chimaltenango». */
+function direccionCompleta(datos, pref) {
+  return PARTES_DIRECCION.map(p => String(datos[`${pref}_${p.suf}`] || '').trim().replace(/,/g, ' ').replace(/\s+/g, ' ')).join(', ');
+}
+/** Lo contrario: de un texto guardado a sus partes. Una dirección vieja
+ *  (texto libre) cae entera en «calle» para que la completen. */
+function partesDireccion(texto) {
+  const t = String(texto || '').trim();
+  const partes = t ? t.split(',').map(x => x.trim()) : [];
+  if (partes.length === 4 && DEPARTAMENTOS.includes(partes[3])) return { casa:partes[0], calle:partes[1], muni:partes[2], depto:partes[3] };
+  return { casa:'', calle:t, muni:'', depto:'' };
+}
+/** ¿Trae casa, calle, municipio y departamento? Devuelve qué falta. */
+function validaDireccion(datos, pref) {
+  const faltan = PARTES_DIRECCION.filter(p => !String(datos[`${pref}_${p.suf}`] || '').trim()).map(p => p.label.toLowerCase());
+  const d = datos[`${pref}_depto`];
+  if (d && !validaDepto(d).ok) faltan.push('departamento de la lista');
+  return { ok: faltan.length === 0, faltan };
+}
 
 /* ---------- Validaciones ---------- */
 
@@ -357,6 +398,7 @@ function validarVenta(datos) {
     if (c.tipo === 'tel')   r = validaTel(v);
     if (c.tipo === 'dpi')   r = validaDPI(v);
     if (c.tipo === 'mail')  r = validaMail(v);
+    if (c.tipo === 'depto') r = validaDepto(v);
     if (c.tipo === 'monto' && !(Number(String(v).replace(/[^\d.]/g,'')) > 0))
       r = { ok:false, msg:'Anota un monto mayor que cero' };
     if (!r.ok) errores.push({ campo:c.id, msg:`${c.label}: ${r.msg}` });
