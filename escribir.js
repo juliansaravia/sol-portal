@@ -293,6 +293,17 @@ async function sbRegistrarPago(contrato_id, { monto, forma, cuenta, referencia, 
   });
 }
 
+/** Contado al 50%: lo pendiente queda como saldo al desmembrar (40). */
+async function sbContadoDiferido(contrato_id, saldo) {
+  return escribir('marcar el saldo al desmembrar', async () =>
+    oExplota(await SB.rpc('contado_diferido', { p_contrato_id: Number(contrato_id), p_saldo: saldo == null ? null : Number(saldo) })));
+}
+/** Se desmembró: el saldo pasa a vencer en esa fecha, en 1 o varias cuotas. */
+async function sbLiberarDiferido(contrato_id, vence, cuotas) {
+  return escribir('liberar el saldo diferido', async () =>
+    oExplota(await SB.rpc('liberar_diferido', { p_contrato_id: Number(contrato_id), p_vence: vence, p_cuotas: Number(cuotas || 1) })));
+}
+
 /** La referencia de un pago que entró sin ella (boleta compartida). */
 async function sbReferenciaPago(pago_id, referencia) {
   return escribir('anotar la referencia', async () => {
@@ -971,7 +982,7 @@ async function sbReciboAdjunto(recibo_id, adjunto_id) {
    ============================================================ */
 Object.assign(window, {
   hayBase, escribir, traducirError,
-  sbCrearCliente, sbActualizarCliente, sbVincularExpediente, sbReferenciaPago,
+  sbCrearCliente, sbActualizarCliente, sbVincularExpediente, sbReferenciaPago, sbContadoDiferido, sbLiberarDiferido,
   sbCrearContrato, sbEstadoContrato, sbReasignarContratos,
   sbRegistrarPago, sbConfirmarPago, sbBorrarPago,
   sbMarcarCobrada, sbMarcarNoCobrada, sbDesmarcarCuota,

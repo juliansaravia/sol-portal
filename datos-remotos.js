@@ -74,7 +74,7 @@ async function cargarDesdeSupabase() {
     const [lotes, contratos, clientes, pagos, equipo, documentos, comisiones, adjuntos, recibos, liquidaciones, requeridos] = await Promise.all([
       todas('v_inventario', 'proyecto_id,proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado'),
       conRespaldo('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,origen,banco,boleta,lote_id,cliente_id,persona_id',
-                  'expediente_de'),
+                  'expediente_de,modalidad'),
       todas('cliente', 'id,nombre,dpi,nit,telefono,email,direccion,ocupacion'),
       todas('pago', 'id,contrato_id,giro_id,monto,fecha_pago,forma_pago,referencia,estado'),
       /* `auth_uid` viene para saber quién ya puede entrar. No se guarda
@@ -208,6 +208,8 @@ async function cargarDesdeSupabase() {
         origen: c.origen || '',
         // Lotes comprados juntos: el expediente vive en otro contrato (32)
         expedienteDe: c.expediente_de || null,
+        // 'contado_diferido' = pagó al contado el 50%, el resto al desmembrar (40)
+        modalidad: c.modalidad || null,
         banco: c.banco || '',
         boleta: c.boleta || '',
         obligaciones: []
@@ -241,7 +243,9 @@ async function cargarDesdeSupabase() {
       const dest = ct.obligaciones.find(x => x.id === g.obligacion_id);
       if (dest) dest.giros.push({
         n: g.numero, vence: _fecha(g.vencimiento),
-        monto: _num(g.monto), estado: g.estado, abonado: _num(g.abonado)
+        monto: _num(g.monto), estado: g.estado, abonado: _num(g.abonado),
+        // 'desmembracion': no vence hasta que se libere (40)
+        condicion: g.condicion || null
       });
     }
     for (const ct of DB.contratos) {
@@ -332,7 +336,7 @@ async function cargarCartera() {
   try {
     const [obligaciones, giros] = await Promise.all([
       todas('obligacion', 'id,contrato_id,tipo,descripcion,monto_total,orden'),
-      todas('giro', 'id,obligacion_id,numero,vencimiento,monto,estado,abonado')
+      conRespaldo('giro', 'id,obligacion_id,numero,vencimiento,monto,estado,abonado', 'condicion')
     ]);
 
     const porContrato = new Map(DB.contratos.map(c => [c.id, c]));

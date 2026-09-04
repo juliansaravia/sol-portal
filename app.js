@@ -2243,6 +2243,7 @@ function renderCobranza(){
   <div class="hint" style="margin-bottom:14px">Fuente: <b>${M.fuente}</b>. El portal calcula la mora por su cuenta y no coincide — hasta que reproduzca la lógica del CRM, manda el modelo.
     ${disc.length?` · <a href="#" onclick="verCuadreMora();return false;"><b>${disc.length} contrato(s) no cuadran</b></a>`:''}</div>`;
 
+  h+=seccionDiferidos(activos);
   // Los que nunca han pagado: van primero, son otro problema
   if(M.nuncaPagaron.length){
     h+=`<div class="card"><div class="card-h"><h2>Ventas que nunca pagaron una cuota · ${M.nuncaPagaron.length}</h2>
@@ -3112,6 +3113,7 @@ function pintarContrato(){
          una venta hecha en el portal genera su contrato para firmar. */
       return `<div class="aviso-err" style="margin:6px 0">Falta el contrato firmado. ${ct.origen?'Generalo, firmalo y subilo.':'Es un contrato que ya existe: hay que subir el firmado.'}</div>`; })()}
     ${typeof notaExpedienteCompartido==='function'?notaExpedienteCompartido(ct):''}
+    ${typeof notaDiferido==='function'?notaDiferido(ct):''}
     <div class="btn-row">${(typeof generarContrato==='function' && ct.origen && !contratoFirmadoDe(ct))
         ? `<button class="btn btn-ghost btn-sm" onclick="generarContrato('${ct.id}')">📄 Generar contrato para firma</button>`
         : ''}
@@ -3208,7 +3210,7 @@ function filasEstadoCuenta(ct){
     o.giros.forEach(g=>{
       const antes=restante; restante=r2(restante-g.monto);
       filas.push({obl:o.desc,n:g.n,de:o.nGiros,venc:g.venc,cuota:g.monto,
-                  debido:antes,final:Math.max(0,restante),estado:g.estado});
+                  debido:antes,final:Math.max(0,restante),estado:g.estado,condicion:g.condicion||null});
     });
   });
   return {filas,totalPlan,plan};
@@ -3217,7 +3219,7 @@ function estadoCuentaHTML(ct,ec,completo){
   const {filas,totalPlan,plan}=filasEstadoCuenta(ct);
   const pagado=filas.filter(f=>f.estado==='pagado').reduce((s,f)=>s+f.cuota,0);
   const pend=Math.max(0,totalPlan-pagado);
-  const prox=filas.find(f=>f.estado!=='pagado');
+  const prox=filas.find(f=>f.estado!=='pagado'&&!f.condicion);
   const venc=filas.filter(f=>f.estado==='vencido');
   const pct=totalPlan?Math.round(pagado/totalPlan*100):0;
   const mora=calcularMora(ct);
@@ -3256,7 +3258,7 @@ function estadoCuentaHTML(ct,ec,completo){
     const ic={pagado:'✓',vencido:'!',parcial:'≈'}[f.estado]||'';
     h+=`<tr class="${cls}">
       <td><b>${f.n}</b><span class="ec-de">/${f.de}</span><div class="ec-obl">${f.obl}</div></td>
-      <td>${fmtD(f.venc)}</td>
+      <td>${(f.condicion?'Al desmembrar':fmtD(f.venc))}</td>
       <td class="num">${Q(f.debido)}</td>
       <td class="num"><b>${Q(f.cuota)}</b></td>
       <td class="num">${Q(f.final)}</td>
@@ -3292,7 +3294,7 @@ function verEstadoCuenta(id){
 function enviarEC(id){
   const ct=getContrato(id); const {filas,totalPlan,plan}=filasEstadoCuenta(ct);
   const pagado=filas.filter(f=>f.estado==='pagado').reduce((s,f)=>s+f.cuota,0);
-  const prox=filas.find(f=>f.estado!=='pagado');
+  const prox=filas.find(f=>f.estado!=='pagado'&&!f.condicion);
   const cli=getCliente(ct.clienteId);
   const txt=`*Estado de cuenta · ${ct.no}*\n${nombreCliente(ct.clienteId)} · Lote ${ct.lote}\n\n`+
     `Total del plan: ${Q(totalPlan)}\nPagado: ${Q(pagado)}\n*Saldo: ${Q(totalPlan-pagado)}*\n`+
@@ -3641,7 +3643,7 @@ async function estadoCuentaPDF(ct){
   const J=window.jspdf&&window.jspdf.jsPDF; if(!J||!ct) return null;
   const {filas,totalPlan,plan}=filasEstadoCuenta(ct); const cli=getCliente(ct.clienteId);
   const pagado=filas.filter(f=>f.estado==='pagado').reduce((s,f)=>s+f.cuota,0);
-  const pend=Math.max(0,totalPlan-pagado), prox=filas.find(f=>f.estado!=='pagado'), venc=filas.filter(f=>f.estado==='vencido');
+  const pend=Math.max(0,totalPlan-pagado), prox=filas.find(f=>f.estado!=='pagado'&&!f.condicion), venc=filas.filter(f=>f.estado==='vencido');
   const doc=new J({unit:'pt',format:'letter'}); const W=612, M=48; let y=44;
   const logo=await logoAljibe(); if(logo){ try{ doc.addImage(logo,'JPEG',M,y,54,54); }catch(e){} }
   doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.text('ESTADO DE CUENTA',W-M,y+18,{align:'right'});
@@ -3670,7 +3672,7 @@ async function estadoCuentaPDF(ct){
     const est={pagado:['Pagada',46,107,79],vencido:['Vencida',184,69,46],parcial:['Parcial',138,95,18]}[f.estado]||['Pendiente',110,110,110];
     if(idx%2) { doc.setFillColor(250,251,250); doc.rect(M,y,W-2*M,16,'F'); }
     doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(0);
-    doc.text(`${f.n}/${f.de}`,cols[0]+4,y+11); doc.text(String(f.obl||'').slice(0,18),cols[1]+4,y+11); doc.text(fmtD(f.venc),cols[2]+4,y+11);
+    doc.text(`${f.n}/${f.de}`,cols[0]+4,y+11); doc.text(String(f.obl||'').slice(0,18),cols[1]+4,y+11); doc.text((f.condicion?'Al desmembrar':fmtD(f.venc)),cols[2]+4,y+11);
     doc.text(Q(f.cuota),cols[3]+4,y+11); doc.text(Q(f.final),cols[4]+4,y+11);
     doc.setTextColor(est[1],est[2],est[3]); doc.setFont('helvetica','bold'); doc.text(est[0],cols[5]+4,y+11); doc.setTextColor(0);
     y+=16;
@@ -4420,4 +4422,74 @@ function pintarVinculos(){
   return `<div style="margin:6px 0 10px;padding:8px 10px;background:var(--tint);border-radius:8px;font-size:12.5px">
     <b>Lotes comprados juntos</b> (un solo papel para varios lotes): los archivos van al principal y respaldan a los demás.
     ${V.map((g,i)=>`<div style="margin-top:4px"><label><input type="checkbox" ${g.ok?'checked':''} ${g.ya?'disabled':''} onchange="window.__vinculos[${i}].ok=this.checked"> ${esc(g.principal.no)} · ${esc(g.principal.lote)} + ${g.otros.map(c=>esc(c.lote)).join(' + ')} · ${esc(nombreCliente(g.principal.clienteId))}${g.ya?' <span class="hint">(ya vinculados)</span>':' · se vinculan al subir'}</label></div>`).join('')}</div>`;
+}
+
+
+/* ============================================================ CONTADO AL 50% · SALDO AL DESMEMBRAR
+   Decisión del dueño (4 sept 2026): clientes que pagaron al contado pero,
+   por no estar desmembrados los lotes, sólo se les aceptó el 50%. Ese
+   resto no es mora: se cobra cuando la empresa desmembre y lo pida. Se
+   marcan a mano desde la ficha; la base lo sostiene (migración 40). */
+const PUEDE_DIFERIR = () => ['admin','gerencia','financiero'].includes(ROLE);
+function notaDiferido(ct){
+  if(!ct||ct.estado!=='aprobado') return '';
+  const ec=estadoCuenta(ct);
+  if(ct.modalidad==='contado_diferido'){
+    return `<div class="hint" style="margin:6px 0;padding:8px 10px;background:#FFF6DE;border-radius:8px;color:#5C4A12"><b>Contado al 50%.</b> Pagó ${Q(ec.recaudado||0)}; quedan <b>${Q(ec.diferido||0)}</b> pendientes de la desmembración. No cuenta como mora.
+      ${(PUEDE_DIFERIR()||ROLE==='cobranza')?`<a href="#" onclick="modalLiberarDiferido('${ct.id}');return false;"><b>Desmembrado: cobrar ahora</b></a>`:''}</div>`;
+  }
+  if(ct.modalidad==='desmembrado') return `<div class="hint" style="margin:6px 0">Saldo al desmembrar liberado: ya está en cobranza normal.</div>`;
+  return PUEDE_DIFERIR()?`<div class="hint" style="margin:6px 0">¿Pagó al contado el 50% y el resto espera la desmembración? <a href="#" onclick="modalContadoDiferido('${ct.id}');return false;">Marcar saldo al desmembrar</a></div>`:'';
+}
+function modalContadoDiferido(id){
+  const ct=getContrato(id); if(!ct) return; const ec=estadoCuenta(ct);
+  const saldo=Math.max(0,Math.round((ct.precio-(ec.recaudado||0))*100)/100);
+  openModal(`<div class="modal-h"><h3>Saldo al desmembrar</h3><p>${esc(ct.no)} · ${esc(ct.lote)} · ${esc(nombreCliente(ct.clienteId))}</p></div>
+    <div class="modal-b">
+      <div class="form-grid">
+        <div class="field"><label>Precio de venta</label><input value="${Q(ct.precio)}" readonly style="background:var(--tint)"></div>
+        <div class="field"><label>Pagado (confirmado)</label><input value="${Q(ec.recaudado||0)}" readonly style="background:var(--tint)"></div>
+        <div class="field full"><label>Saldo que espera la desmembración (Q)</label><input id="cd-saldo" type="number" step="0.01" value="${saldo}"></div>
+      </div>
+      <div class="hint">Las cuotas pendientes se reemplazan por una sola por este saldo, sin fecha: no aparece en mora, en la agenda ni en los recordatorios. Cuando se desmembre, desde la ficha o desde Cobranza se libera con fecha y en las cuotas que se acuerden.</div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarContadoDiferido('${id}')">Marcar</button></div>`);
+}
+async function guardarContadoDiferido(id){
+  const saldo=+v('cd-saldo'); if(!(saldo>0)) return toast('El saldo tiene que ser mayor que cero',4000,true);
+  if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se puede marcar',5000,true);
+  const r=await conBoton(()=>sbContadoDiferido(id, saldo)); if(!r||!r.ok) return;
+  anotar('contrato.contado_diferido', (getContrato(id)||{}).no+' · '+Q(saldo));
+  closeModal(); toast('Marcado: '+Q(saldo)+' quedan al desmembrar, fuera de la mora'); await traerCartera(); if(typeof pintarContrato==='function') pintarContrato();
+}
+function modalLiberarDiferido(id){
+  const ct=getContrato(id); if(!ct) return; const ec=estadoCuenta(ct);
+  openModal(`<div class="modal-h"><h3>Desmembrado: cobrar el saldo</h3><p>${esc(ct.no)} · ${esc(ct.lote)} · ${esc(nombreCliente(ct.clienteId))} · ${Q(ec.diferido||0)}</p></div>
+    <div class="modal-b"><div class="form-grid">
+      <div class="field"><label>Primera cuota vence *</label><input id="ld-fecha" type="date" value="${isoMas(HOY_ISO,30)}"></div>
+      <div class="field"><label>¿En cuántas cuotas?</label><select id="ld-cuotas">${[1,2,3,4,6,12].map(n=>`<option value="${n}">${n===1?'Una sola':n+' cuotas mensuales'}</option>`).join('')}</select></div>
+    </div><div class="hint">Desde ese día el saldo entra a la cobranza normal: agenda, recordatorios por WhatsApp y mora si se atrasa.</div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarLiberarDiferido('${id}')">Liberar y cobrar</button></div>`);
+}
+async function guardarLiberarDiferido(id){
+  const fecha=v('ld-fecha'); if(!fecha) return toast('Falta la fecha',4000,true);
+  if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se puede liberar',5000,true);
+  const r=await conBoton(()=>sbLiberarDiferido(id, fecha, +v('ld-cuotas')||1)); if(!r||!r.ok) return;
+  anotar('contrato.desmembrado', (getContrato(id)||{}).no+' · desde '+fecha+' en '+(v('ld-cuotas')||1)+' cuota(s)');
+  closeModal(); toast('Saldo liberado: ya está en cobranza'); await traerCartera(); if(typeof vista!=='undefined'&&vista==='cobranza') renderCobranza(); else if(typeof pintarContrato==='function') pintarContrato();
+}
+function seccionDiferidos(activos){
+  const dif=(activos||[]).filter(c=>c.modalidad==='contado_diferido').map(c=>({c,ec:estadoCuenta(c)}));
+  if(!dif.length) return '';
+  const total=dif.reduce((t,x)=>t+(x.ec.diferido||0),0);
+  return `<div class="card"><div class="card-h"><h2>Saldo al desmembrar · ${dif.length} · ${Qk(total)}</h2>
+      <div class="hint">Pagaron al contado el 50%; el resto se cobra cuando se desmembre. No es mora.</div></div>
+    <div class="card-b" style="padding:0"><table class="data"><thead><tr><th>Cliente</th><th>Lote</th><th>Contrato</th><th class="num">Pagado</th><th class="num">Al desmembrar</th><th></th></tr></thead><tbody>
+    ${dif.map(({c,ec})=>{ const cli=getCliente(c.clienteId)||{}; const tel=String(cli.tel||cli.telefono||'').replace(/\D/g,'');
+      return `<tr><td><b>${esc(nombreCliente(c.clienteId))}</b>${tel?` · <a href="https://wa.me/${tel.length===8?'502'+tel:tel}" target="_blank" rel="noopener">WhatsApp</a>`:''}</td><td>${esc(c.lote)}</td><td><a href="#" onclick="abrirContrato('${c.id}');return false;">${esc(c.no)}</a></td>
+        <td class="num">${Q(ec.recaudado||0)}</td><td class="num"><b>${Q(ec.diferido||0)}</b></td>
+        <td>${(PUEDE_DIFERIR()||ROLE==='cobranza')?`<button class="btn btn-gold btn-sm" onclick="modalLiberarDiferido('${c.id}')">Cobrar ahora</button>`:''}</td></tr>`; }).join('')}
+    </tbody></table></div></div>`;
 }

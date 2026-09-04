@@ -639,7 +639,7 @@ function estadoCuenta(ct) {
   const montoVencido = vencidos.reduce((s, g) => s + g.monto, 0);
   const rec = recaudadoDe(ct);
   const saldo = Math.max(0, totalGiros - rec);
-  const prox = giros.find(g => g.estado === 'pendiente' || g.estado === 'vencido' || g.estado === 'parcial');
+  const prox = giros.find(g => !g.condicion && (g.estado === 'pendiente' || g.estado === 'vencido' || g.estado === 'parcial'));
   const pct = totalGiros ? Math.min(100, Math.round(rec / totalGiros * 100)) : 0;
   const of = moraOficialDe(ct);
 
@@ -676,7 +676,9 @@ function estadoCuenta(ct) {
     enMora:       hayModelo ? !!of : vencidos.length > 0,
     cuotasPagadasModelo: of ? of.cuotasPag : null,
     fuenteMora: hayModelo ? 'Modelo Financiero' : 'giros de la base',
-    recaudado: rec, saldo, prox, pct
+    recaudado: rec, saldo, prox, pct,
+    /* Lo que espera la desmembración: no es mora ni próxima cuota (40) */
+    diferido: giros.filter(g => g.condicion).reduce((t, g) => t + (g.monto - (g.abonado || 0)), 0)
   };
 }
 
@@ -1069,6 +1071,7 @@ function calendarioDeCartera() {
     const total = giros.length;
     giros.forEach((g, i) => {
       if (g.estado === 'pagado') return;          // ya se cobró, no se agenda
+      if (g.condicion) return;                     // saldo al desmembrar: no vence todavía
       /* La base dice `vence`; la semilla de demostración, `venc`. Con una
          sola de las dos, la agenda salía vacía en la otra. */
       const vence = g.vence || g.venc; if (!vence) return;
