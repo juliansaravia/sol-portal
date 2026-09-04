@@ -321,6 +321,25 @@ async function canjearEnlace() {
 }
 window.LLEGO_POR_CORREO_TOKEN = !!ENLACE_TOKEN;
 
+/* El código de seis dígitos del correo (plantillas sin enlace, 3 sept
+   2026). No sabemos si vino de una invitación, un cambio de contraseña o
+   un enlace de entrada: se prueban los tipos en orden. */
+async function canjearCodigo(email, codigo) {
+  if (!SB) return { ok: false, error: 'El portal no está conectado a la base' };
+  const correo = String(email || '').trim().toLowerCase(), token = String(codigo || '').replace(/\D/g, '');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) return { ok: false, error: 'Escribí tu correo' };
+  if (!/^\d{6,8}$/.test(token)) return { ok: false, error: 'El código tiene seis dígitos' };
+  let ultimo = 'Código incorrecto o vencido';
+  for (const type of ['recovery', 'invite', 'magiclink', 'signup', 'email']) {
+    const { error } = await conLimite(SB.auth.verifyOtp({ email: correo, token, type }), 20, 'Al verificar el código');
+    if (!error) { window.LLEGO_POR_CORREO = true; window.__contrasenaDefinida = false; return { ok: true }; }
+    ultimo = error.message || ultimo;
+    if (/rate limit|too many/i.test(ultimo)) break;
+  }
+  return { ok: false, error: /expired|invalid|not found/i.test(ultimo) ? 'Código incorrecto o vencido. Pedile a administración uno nuevo.' : ultimo };
+}
+window.canjearCodigo = canjearCodigo;
+
 /* Política de contraseña (ciberseguridad, decisión del dueño 1 sept 2026):
    12+ caracteres, mayúscula, minúscula, número y símbolo, sin el correo
    ni el nombre adentro, y sin las obvias. La misma regla vive en la

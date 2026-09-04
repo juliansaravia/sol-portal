@@ -87,6 +87,7 @@ function renderAuth(reanudando){
       <div class="login-foot">
         <div id="au-err" class="err" style="min-height:18px;margin:8px 0 4px;color:#C0492B;font-weight:600"></div>
         <div class="hint">¿Olvidaste tu contraseña? Solo administración puede restablecerla: pedísela a Julián.</div>
+        <div class="hint" style="margin-top:8px"><a href="#" onclick="pantallaCodigoCorreo();return false;"><b>Tengo un código</b></a> de administración (invitación o contraseña nueva).</div>
         <br>Si el correo no te llega, pídele a administración que te reenvíe la invitación.</div></div>`;
     setTimeout(()=>document.getElementById('au-email')?.focus(),50);
     return;
@@ -263,6 +264,32 @@ async function activar2FAyEntrar(factorId){
 }
 
 /* ---------- Elegir contraseña al llegar por el correo ---------- */
+/* El código de seis dígitos que llegó por correo (sin enlace): se escribe
+   aquí y sigue el mismo camino que el enlace: contraseña propia y 2FA. */
+function pantallaCodigoCorreo(correo){
+  SCREEN='login'; const L=document.getElementById('login'); L.style.display='flex';
+  L.innerHTML=`<div class="login-box" style="max-width:420px">
+    <div class="login-marca"><span class="brand-mark"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 30l16-14 16 14"/><path d="M12 26v12h24V26"/><path d="M24 6v4M9 11l2.8 2.8M39 11l-2.8 2.8M4 24h4M40 24h4"/></svg></span>
+      <span><span class="brand-name">SOL</span><span class="brand-sub">Inmobiliaria</span></span></div>
+    <div class="login-sub">Tengo un código</div>
+    <p class="login-hint">El correo de administración trae un código de seis dígitos. Escribilo aquí con tu correo.</p>
+    <div class="field" style="text-align:left;margin-bottom:12px"><label>Correo</label><input id="cc-email" type="email" autocomplete="username" value="${esc(correo||'')}"></div>
+    <div class="field" style="text-align:left;margin-bottom:12px"><label>Código</label>
+      <input id="cc-cod" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="000000" style="letter-spacing:6px;text-align:center" onkeydown="if(event.key==='Enter')canjearCodigoUI()"></div>
+    <button id="cc-btn" class="btn btn-primary" style="width:100%" onclick="canjearCodigoUI()">Continuar</button>
+    <div id="cc-err" class="err" style="min-height:18px;margin-top:8px;color:#C0492B;font-weight:600"></div>
+    <div class="hint" style="margin-top:10px"><a href="#" onclick="renderAuth();return false;">Volver a entrar con contraseña</a></div>
+  </div>`;
+  setTimeout(()=>{ const i=document.getElementById(correo?'cc-cod':'cc-email'); if(i&&i.focus) i.focus(); }, 60);
+}
+async function canjearCodigoUI(){
+  const err=document.getElementById('cc-err'); const btn=document.getElementById('cc-btn'); if(btn){ btn.disabled=true; btn.textContent='Verificando…'; }
+  const r=await canjearCodigo(v('cc-email'), v('cc-cod'));
+  if(btn){ btn.disabled=false; btn.textContent='Continuar'; }
+  if(!r.ok){ err.textContent=r.error; return; }
+  toast('Código correcto · ahora elegí tu contraseña', 4000);
+  const ok=await reanudarSesion(); if(ok===false) renderAuth();
+}
 async function pantallaNuevaContrasena(nombre, temporal){
   SCREEN='login';
   const L=document.getElementById('login'); L.style.display='flex';
