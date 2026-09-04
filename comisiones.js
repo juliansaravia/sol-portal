@@ -299,7 +299,8 @@ const CAMPOS_VENTA = [
   { id:'dir',      label:'Dirección de residencia',     grupo:'comprador', req:true, ancho:'full' },
   { id:'ocup',     label:'Ocupación u oficio',          grupo:'ingresos',  req:true },
   { id:'ingreso',  label:'Ingreso promedio al mes (Q)', grupo:'ingresos',  req:true, tipo:'monto' },
-  { id:'fuente',   label:'¿Cómo comprueba su ingreso?', grupo:'ingresos',  req:true, tipo:'lista' },
+  /* Opcional (4 sept 2026): la constancia de ingresos no es parte del expediente estándar. */
+  { id:'fuente',   label:'¿Cómo comprueba su ingreso?', grupo:'ingresos',  req:false, tipo:'lista' },
   { id:'pnom',     label:'Nombre del pariente',         grupo:'pariente',  req:true },
   { id:'ptel',     label:'Teléfono celular del pariente',grupo:'pariente', req:true, tipo:'tel' },
   { id:'pmail',    label:'Correo del pariente',         grupo:'pariente',  req:true, tipo:'mail' },

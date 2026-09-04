@@ -3322,8 +3322,9 @@ function modalNuevoContrato(loteSel,pre){
   pre=pre||{};
   const disp=DB.lotes.filter(l=>l.estado==='disponible'&&l.precio>0);
   const nom=(pre.nombre||'').split(' ');
-  const campo=(id,label,extra,ancho)=>`<div class="field ${ancho||''}">
-    <label>${label} *</label><input id="n-${id}" ${extra||''}><div class="err" id="e-${id}"></div></div>`;
+  const campo=(id,label,extra,ancho)=>{ const req=((typeof CAMPOS_VENTA!=='undefined'?CAMPOS_VENTA:[]).find(c=>c.id===id)||{}).req!==false;
+    return `<div class="field ${ancho||''}">
+    <label>${label}${req?' *':''}</label><input id="n-${id}" ${extra||''}><div class="err" id="e-${id}"></div></div>`; };
   openModal(`<div class="modal-h"><h3>Nueva venta</h3>
       <p>Sin el expediente completo no se puede cerrar — sin teléfono no hay a quién cobrarle</p></div>
     <div class="modal-b">
