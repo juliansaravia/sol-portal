@@ -687,7 +687,11 @@ select.chip{appearance:auto;padding:6px 10px}
 html{-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%}
 button,a,.chip,.tab-item,.nav-item,.btn{touch-action:manipulation}
 .oculto-visual{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}
-.tomar-foto{display:flex;gap:10px;flex-wrap:wrap}.tomar-foto label{flex:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;text-align:center}
+.tomar-foto{display:flex;gap:10px;flex-wrap:wrap}
+/* Son etiquetas dentro de .field: se les quita el estilo de rótulo y se les da el de botón. */
+.field .tomar-foto label{flex:1;display:inline-flex !important;align-items:center;justify-content:center;cursor:pointer;text-align:center;margin:0;font-weight:600;text-transform:none;letter-spacing:0}
+.field .tomar-foto label.btn-primary{color:#fff}
+.field .tomar-foto label.btn-ghost{color:var(--ink)}
 @media(max-width:760px){
   *,*::before,*::after{transition:none !important;animation:none !important}
   .modal,.drawer,.sidebar.abierta,.toast,.card,.kpi,.tarjeta,.search-results{box-shadow:none}
