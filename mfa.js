@@ -87,10 +87,21 @@ async function confirmarSegundoFactor(factorId, codigo) {
     factorId, challengeId: reto.id, code: limpio
   });
   if (error) return { ok: false, error: codigoNoCuadra(error.message) };
+
+  /* Un solo factor por persona. Si había otro verificado (un teléfono
+     anterior, o el mismo enrolado dos veces), se quita: si quedan dos, la
+     app muestra dos entradas y el código de una no sirve para la otra. */
+  try {
+    const { data: lista } = await SB.auth.mfa.listFactors();
+    for (const f of (lista?.totp || []).filter(f => f.status === 'verified' && f.id !== factorId))
+      await SB.auth.mfa.unenroll({ factorId: f.id });
+  } catch (e) { console.warn('[2fa] no se pudo limpiar factores viejos:', e.message); }
   return { ok: true };
 }
 
-/** El código que se pide al entrar, cuando ya hay un factor enrolado. */
+/** El código que se pide al entrar, cuando ya hay un factor enrolado.
+    Si la cuenta tiene más de un factor verificado (pasó: jventas, 3 sept
+    2026), se prueba con cada uno, del más nuevo al más viejo. */
 async function verificarSegundoFactor(codigo) {
   if (!SB) return { ok: false, error: 'sin conexión' };
   const limpio = String(codigo || '').replace(/\D/g, '');
@@ -98,17 +109,26 @@ async function verificarSegundoFactor(codigo) {
 
   const { data, error: eLista } = await SB.auth.mfa.listFactors();
   if (eLista) return { ok: false, error: eLista.message };
-  const factor = (data.totp || []).find(f => f.status === 'verified');
-  if (!factor) return { ok: false, error: 'No hay ningún segundo factor enrolado.' };
+  const factores = (data.totp || []).filter(f => f.status === 'verified')
+    .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  if (!factores.length) return { ok: false, error: 'No hay ningún segundo factor enrolado.' };
 
-  const { data: reto, error: eReto } = await SB.auth.mfa.challenge({ factorId: factor.id });
-  if (eReto) return { ok: false, error: eReto.message };
-
-  const { error } = await SB.auth.mfa.verify({
-    factorId: factor.id, challengeId: reto.id, code: limpio
-  });
-  if (error) return { ok: false, error: codigoNoCuadra(error.message) };
-  return { ok: true };
+  let ultimo = 'Código rechazado';
+  for (const factor of factores) {
+    const { data: reto, error: eReto } = await SB.auth.mfa.challenge({ factorId: factor.id });
+    if (eReto) { ultimo = eReto.message; continue; }
+    const { error } = await SB.auth.mfa.verify({ factorId: factor.id, challengeId: reto.id, code: limpio });
+    if (!error) {
+      /* Entró con este: los demás sobran y sólo confunden. */
+      for (const f of factores) if (f.id !== factor.id) { try { await SB.auth.mfa.unenroll({ factorId: f.id }); } catch (e) {} }
+      return { ok: true };
+    }
+    ultimo = error.message;
+  }
+  const msg = codigoNoCuadra(ultimo);
+  return { ok: false, error: factores.length > 1
+    ? msg + ' Esta cuenta tenía ' + factores.length + ' factores registrados; se probó con todos. Si en Authenticator hay dos entradas de Sol Inmobiliaria, probá con la otra.'
+    : msg };
 }
 
 /* El reloj del teléfono desfasado es la causa número uno de que un
