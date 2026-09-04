@@ -39,6 +39,22 @@ async function imagenReducida(archivo) {
 }
 
 /* ── PDF con texto (los recibos del CRM): se lee sin OCR ── */
+/* jsPDF pesa 350 KB: en un teléfono barato se carga sólo cuando alguien
+   hace un recibo, un estado de cuenta o comprime un PDF escaneado. */
+const JSPDF_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+let _jspdfCarga = null;
+function cargarJsPDF() {
+  if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+  if (typeof document === 'undefined') return Promise.resolve(null);
+  if (_jspdfCarga) return _jspdfCarga;
+  _jspdfCarga = new Promise(ok => {
+    const s = document.createElement('script'); s.src = JSPDF_CDN;
+    s.onload = () => ok(window.jspdf && window.jspdf.jsPDF || null);
+    s.onerror = () => { _jspdfCarga = null; ok(null); };
+    document.head.appendChild(s);
+  });
+  return _jspdfCarga;
+}
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
 let _pdfCarga = null;
 function cargarPdfjs() {
@@ -215,7 +231,7 @@ async function _comprimirImagen(archivo, avisar) {
   return f;
 }
 async function _comprimirPDF(archivo, avisar) {
-  const J = window.jspdf && window.jspdf.jsPDF; if (!J) return archivo;
+  const J = await cargarJsPDF(); if (!J) return archivo;
   const lib = await cargarPdfjs();
   const doc = await lib.getDocument({ data: await archivo.arrayBuffer() }).promise;
   /* Si trae texto de verdad, es un PDF generado, no un escaneo: dejarlo. */

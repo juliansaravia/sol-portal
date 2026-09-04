@@ -3,11 +3,18 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<meta name="theme-color" content="#F7F8F7" />
+<meta name="theme-color" content="#2E6B4F" />
+<link rel="manifest" href="manifest-admin.webmanifest" />
+<link rel="icon" href="assets/icono.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="assets/icono-180.png" />
+<link rel="preconnect" href="https://wdykbczkihveccgujqfc.supabase.co" crossorigin />
+<meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SOL Suite" />
 <title>Sol Inmobiliaria · Portal Interno</title>
 <link rel="stylesheet" href="styles.css" />
+<script>/* Un Chrome muy viejo no entiende el código del portal: se le pide actualizar en vez de dejarlo en blanco. */try{new Function('var a={};a?.b??0;');}catch(e){document.addEventListener('DOMContentLoaded',function(){document.body.innerHTML='<div style="font-family:sans-serif;padding:36px 24px;text-align:center;line-height:1.5"><h2 style="color:#2E6B4F">Hay que actualizar el navegador</h2><p>Este teléfono tiene una versión vieja de Chrome. Abrí <b>Play Store</b>, buscá <b>Chrome</b>, tocá <b>Actualizar</b> y volvé a entrar.</p></div>';});}</script>
+<script>if('serviceWorker' in navigator&&/^https:/.test(location.protocol))addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});</script>
 </head>
 <body>
 
@@ -90,7 +97,6 @@
 <script src="datos-julio.js"></script>
 <script src="permisos.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="config-supabase.js"></script>
 <script src="supabase.js"></script>
 <script src="mfa.js"></script>

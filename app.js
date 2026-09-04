@@ -3642,7 +3642,7 @@ function reciboHTML(d,numero){
     <p class="pie">${esc(d.emisor)} · Cuenta monetaria Banrural ${d.cuenta?d.cuenta.numero:''} · Generado por Suite Sol Inmobiliaria</p></div>`;
 }
 async function reciboPDF(d,numero){
-  const J=window.jspdf&&window.jspdf.jsPDF; if(!J) return null;
+  const J=await cargarJsPDF(); if(!J){ toast('No se pudo cargar el generador de PDF: revisá la señal',6000,true); return null; }
   const doc=new J({unit:'pt',format:'letter'}); const W=612, M=56; let y=50;
   const logo=await logoAljibe(); if(logo){ try{ doc.addImage(logo,'JPEG',M,y,80,80); }catch(e){} }
   y+=110;
@@ -3681,7 +3681,7 @@ function nombreRecibo(d, numero){
    con el recibo después de cada cobro, y a pedido desde la ficha. */
 function nombreEstadoCuenta(ct){ return `Estado de cuenta ${String(ct.no||'').replace(/[^\w.-]+/g,'-')} al ${HOY_ISO}.pdf`; }
 async function estadoCuentaPDF(ct){
-  const J=window.jspdf&&window.jspdf.jsPDF; if(!J||!ct) return null;
+  if(!ct) return null; const J=await cargarJsPDF(); if(!J) return null;
   const {filas,totalPlan,plan}=filasEstadoCuenta(ct); const cli=getCliente(ct.clienteId);
   const pagado=filas.filter(f=>f.estado==='pagado').reduce((s,f)=>s+f.cuota,0);
   const pend=Math.max(0,totalPlan-pagado), prox=filas.find(f=>f.estado!=='pagado'&&!f.condicion), venc=filas.filter(f=>f.estado==='vencido');
@@ -4140,7 +4140,7 @@ async function verAdjunto(id){
 function modalDocumentoTipo(id,tipo){ modalDocumento(id); const sel=document.getElementById('d-tipo'); if(sel){ sel.value=tipo; if(typeof docCaras==='function') docCaras(); } }
 function modalDocumento(id){
   const reqs=DOCS_REQ().slice().sort((a,b)=>ordenFlujo(a.codigo)-ordenFlujo(b.codigo));
-  window.__docContrato=id;
+  window.__docContrato=id; window.__docArchivo=null;
   openModal(`<div class="modal-h"><h3>Subir respaldo</h3><p>Expediente del contrato</p></div>
     <div class="modal-b"><div class="form-grid">
       <div class="field"><label>¿Qué documento es?</label><select id="d-tipo" onchange="docCaras()">
@@ -4149,8 +4149,11 @@ function modalDocumento(id){
       <div class="field" id="d-caraBox" hidden><label>¿Qué cara?</label>
         <select id="d-cara"><option value="ambas">Ambas caras en una hoja</option><option value="frente">Frente</option><option value="reverso">Reverso</option></select></div>
       <div class="field full"><label>Archivo</label>
-        <input id="d-archivo" type="file" accept="image/jpeg,image/png,image/webp,application/pdf"
-               onchange="if(v('d-tipo')==='boleta_enganche'&&typeof leerBoletaEn==='function')leerBoletaEn(this,{ref:'d-ref',monto:'d-monto',aviso:'d-leido'})"></div>
+        <div class="tomar-foto">
+          <label class="btn btn-primary" for="d-foto">📷 Tomar foto<input id="d-foto" class="oculto-visual" type="file" accept="image/*" capture="environment" onchange="docElegido(this)"></label>
+          <label class="btn btn-ghost" for="d-archivo">Elegir archivo<input id="d-archivo" class="oculto-visual" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onchange="docElegido(this)"></label>
+        </div>
+        <div class="hint" id="d-elegido" style="margin-top:6px">Ningún archivo elegido todavía.</div></div>
       <div class="field" id="d-engBox" hidden><label>Monto de la boleta (enganche) *</label><input id="d-monto" type="number" step="0.01" min="0"></div>
       <div class="field" id="d-refBox" hidden><label>Boleta / referencia</label><input id="d-ref" placeholder="No. de boleta o transferencia"></div>
       <div class="field full" id="d-engNota" hidden><div class="hint" id="d-leido">Al subirla el suite registra el enganche como pago, cuelga esta boleta y emite el recibo. Finanzas lo confirma contra el banco.</div></div>
@@ -4160,6 +4163,14 @@ function modalDocumento(id){
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarDoc('${id}')">Subir</button></div>`);
   docCaras();
+}
+/* Dos entradas (cámara o archivo): vale la última que eligió. */
+function docElegido(inp){
+  const f=inp&&inp.files&&inp.files[0]; if(!f) return;
+  const otro=document.getElementById(inp.id==='d-foto'?'d-archivo':'d-foto'); if(otro) otro.value='';
+  window.__docArchivo=f;
+  const e=document.getElementById('d-elegido'); if(e) e.textContent='Elegido: '+f.name+' · '+(f.size/1048576).toFixed(1)+' MB';
+  if(v('d-tipo')==='boleta_enganche'&&typeof leerBoletaEn==='function') leerBoletaEn(inp,{ref:'d-ref',monto:'d-monto',aviso:'d-leido'});
 }
 function docCaras(){
   const sel=document.getElementById('d-tipo'); if(!sel)return;
@@ -4174,9 +4185,9 @@ function docCaras(){
 }
 async function guardarDoc(id){
   const codigo=v('d-tipo');
-  const entrada=document.getElementById('d-archivo');
-  const archivo=entrada&&entrada.files&&entrada.files[0];
-  if(!archivo){toast('Elige el archivo a subir');return;}
+  const foto=document.getElementById('d-foto'), entrada=document.getElementById('d-archivo');
+  const archivo=(foto&&foto.files&&foto.files[0])||(entrada&&entrada.files&&entrada.files[0])||window.__docArchivo||null;
+  if(!archivo){toast('Tomá la foto o elegí el archivo a subir');return;}
   const caja=document.getElementById('d-caraBox');
   const cara=(caja&&!caja.hidden)?v('d-cara'):null;
 
