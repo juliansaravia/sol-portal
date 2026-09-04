@@ -136,20 +136,32 @@ async function idDeCuenta(descripcion) {
    ============================================================ */
 async function sbCrearCliente(datos) {
   return escribir('crear el cliente', async () => {
-    const fila = oExplota(await SB.from('cliente').insert({
-      nombre: datos.nombre,
-      dpi: datos.dpi || null,
-      nit: datos.nit || null,
-      telefono: datos.telefono || null,
-      email: datos.email || null,
-      direccion: datos.direccion || null,
-      ocupacion: datos.ocupacion || null
-    }).select('id,nombre,dpi,nit,telefono,email,direccion,ocupacion').single());
+    /* Por la función crear_cliente() (41): el vendedor puede insertar pero
+       no leer un cliente que aún no tiene contrato suyo, y el insert con
+       RETURNING lo rechazaba como «sin permiso». Si la 41 no ha corrido
+       todavía, se cae al insert directo de siempre. */
+    const cuerpo = { nombre: datos.nombre, dpi: datos.dpi || null, nit: datos.nit || null, telefono: datos.telefono || null,
+                     email: datos.email || null, direccion: datos.direccion || null, ocupacion: datos.ocupacion || null,
+                     pariente: datos.pariente && datos.pariente.nombre ? datos.pariente : null };
+    let fila;
+    const r = await SB.rpc('crear_cliente', { p: cuerpo });
+    if (!r.error) fila = r.data;
+    else if (r.error.code === '42883' || /function .*crear_cliente/i.test(r.error.message || '') || r.error.code === 'PGRST202') {
+      fila = oExplota(await SB.from('cliente').insert({
+        nombre: datos.nombre,
+        dpi: datos.dpi || null,
+        nit: datos.nit || null,
+        telefono: datos.telefono || null,
+        email: datos.email || null,
+        direccion: datos.direccion || null,
+        ocupacion: datos.ocupacion || null
+      }).select('id,nombre,dpi,nit,telefono,email,direccion,ocupacion').single());
+    } else throw r.error;
 
     /* El pariente o fiador que se anota al vender es la referencia 1 del
        formulario. Antes se perdía: sólo vivía en el navegador. */
     const par = datos.pariente;
-    if (par && par.nombre) {
+    if (par && par.nombre && r.error) {
       const { error: eRef } = await SB.from('referencia_personal').insert({
         cliente_id: fila.id, orden: 1, nombre: par.nombre, telefono: par.telefono || null,
         parentesco: 'Pariente o fiador', direccion: par.direccion || null, email: par.email || null
