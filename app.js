@@ -3174,7 +3174,7 @@ function pintarContrato(){
       const completo=filas.every(f=>f.ok);
       h+=`<div class="card" style="margin:0 0 14px;border-left:3px solid ${completo?'var(--green)':'var(--gold)'}"><div class="card-b">
         <b>${ct.estado==='borrador'?(completo?'Expediente completo':'Expediente para enviar a aprobación'):ct.estado==='en_aprobacion'?'En el comité de crédito':(completo?'Expediente completo':'Expediente incompleto')}</b>
-        <div class="hint" style="margin:4px 0 10px">${ct.estado==='borrador'?'Sin estos papeles la venta no llega al comité. Subilos desde el celular: la cámara abre sola.':ct.estado==='en_aprobacion'?'Se aprueba o se deniega desde el portal interno.':'Un expediente por lote: contrato y plan firmados, formulario, DPI, DPI del pariente y boleta del enganche. Subilos desde el celular.'}</div>
+        <div class="hint" style="margin:4px 0 10px">${ct.estado==='borrador'?'Sin estos papeles la venta no llega al comité. Formulario, plan, contrato y DPI van <b>escaneados en PDF</b> (Google Drive o Adobe Scan), no en foto.':ct.estado==='en_aprobacion'?'Se aprueba o se deniega desde el portal interno.':'Un expediente por lote: contrato y plan firmados, formulario, DPI, DPI del pariente y boleta del enganche. Subilos desde el celular.'}</div>
         ${filas.map((f,i)=>{ const gen={formulario:'generarFormulario',plan_pagos:'generarPlanPagos'}[f.codigo];
           const esContrato=f.codigo==='contrato', bloqueado=esContrato&&pre.faltan.length>0;
           const pista=f.caras>1?`${f.tiene} de ${f.caras} caras`
@@ -3570,6 +3570,14 @@ const DOCS_REQ = () => (typeof DB !== 'undefined' && DB.documentosRequeridos && 
      {codigo:'boleta_enganche', nombre:'Boleta del enganche', caras:1, obligatorio:true},
      {codigo:'recibo_enganche', nombre:'Recibo del primer pago', caras:1, obligatorio:false}];
 
+/* Papeles que el vendedor sube escaneados en PDF (no fotos). La boleta
+   del enganche queda fuera: casi siempre es una captura del banco. */
+const PAPELES_PDF=['formulario','plan_pagos','contrato','dpi','dpi_pariente'];
+function exigePdfEscaneado(tipo){
+  const rol=String((typeof SESION!=='undefined'&&SESION.persona&&SESION.persona.rol)||(window.__user&&window.__user.role)||'');
+  const esVendedor=rol==='vendedor'||(window.PORTAL==='vendedor'&&!/admin|gerencia|financiero/.test(rol));
+  return esVendedor&&PAPELES_PDF.includes(tipo);
+}
 /* Orden del flujo de venta. Lo que no esté acá va al final. */
 const ORDEN_FLUJO=['formulario','plan_pagos','boleta_enganche','dpi','dpi_pariente','contrato','recibo_enganche'];
 const ordenFlujo=c=>{ const i=ORDEN_FLUJO.indexOf(c); return i<0?99:i; };
@@ -4150,10 +4158,11 @@ function modalDocumento(id){
         <select id="d-cara"><option value="ambas">Ambas caras en una hoja</option><option value="frente">Frente</option><option value="reverso">Reverso</option></select></div>
       <div class="field full"><label>Archivo</label>
         <div class="tomar-foto">
-          <label class="btn btn-primary" for="d-foto">📷 Tomar foto<input id="d-foto" class="oculto-visual" type="file" accept="image/*" capture="environment" onchange="docElegido(this)"></label>
-          <label class="btn btn-ghost" for="d-archivo">Elegir archivo<input id="d-archivo" class="oculto-visual" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onchange="docElegido(this)"></label>
+          <label class="btn btn-primary" id="d-fotoBtn" for="d-foto">📷 Tomar foto<input id="d-foto" class="oculto-visual" type="file" accept="image/*" capture="environment" onchange="docElegido(this)"></label>
+          <label class="btn btn-ghost" id="d-archivoBtn" for="d-archivo"><span id="d-archivoTxt">Elegir archivo</span><input id="d-archivo" class="oculto-visual" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onchange="docElegido(this)"></label>
         </div>
-        <div class="hint" id="d-elegido" style="margin-top:6px">Ningún archivo elegido todavía.</div></div>
+        <div class="hint" id="d-elegido" style="margin-top:6px">Ningún archivo elegido todavía.</div>
+        <div class="aviso-info" id="d-pdfNota" hidden style="margin-top:8px"><b>Escaneado en PDF, no foto.</b> En Android: Google Drive → <b>+</b> → <b>Escanear</b>. En iPhone: Notas → cámara → <b>Escanear documentos</b>. Compartí el PDF y elegilo aquí.</div></div>
       <div class="field" id="d-engBox" hidden><label>Monto de la boleta (enganche) *</label><input id="d-monto" type="number" step="0.01" min="0"></div>
       <div class="field" id="d-refBox" hidden><label>Boleta / referencia</label><input id="d-ref" placeholder="No. de boleta o transferencia"></div>
       <div class="field full" id="d-engNota" hidden><div class="hint" id="d-leido">Al subirla el suite registra el enganche como pago, cuelga esta boleta y emite el recibo. Finanzas lo confirma contra el banco.</div></div>
@@ -4170,6 +4179,7 @@ function docElegido(inp){
   const otro=document.getElementById(inp.id==='d-foto'?'d-archivo':'d-foto'); if(otro) otro.value='';
   window.__docArchivo=f;
   const e=document.getElementById('d-elegido'); if(e) e.textContent='Elegido: '+f.name+' · '+(f.size/1048576).toFixed(1)+' MB';
+  if(exigePdfEscaneado(v('d-tipo'))&&f.type!=='application/pdf'){ inp.value=''; window.__docArchivo=null; if(e) e.textContent='Ese archivo es una imagen: este documento va escaneado en PDF.'; toast('Este documento va escaneado en PDF, no como foto',6000,true); return; }
   if(v('d-tipo')==='boleta_enganche'&&typeof leerBoletaEn==='function') leerBoletaEn(inp,{ref:'d-ref',monto:'d-monto',aviso:'d-leido'});
 }
 function docCaras(){
@@ -4177,6 +4187,14 @@ function docCaras(){
   const op=sel.options[sel.selectedIndex];
   const caja=document.getElementById('d-caraBox');
   if(caja) caja.hidden = !(op && +op.dataset.caras > 1);
+  /* Papel del expediente de un vendedor: sólo PDF escaneado, sin cámara. */
+  const pdf=exigePdfEscaneado(sel.value);
+  const fb=document.getElementById('d-fotoBtn'), ab=document.getElementById('d-archivoBtn'), at=document.getElementById('d-archivoTxt'), fa=document.getElementById('d-archivo'), nota=document.getElementById('d-pdfNota');
+  if(fb) fb.hidden=pdf;
+  if(ab){ ab.classList.toggle('btn-primary',pdf); ab.classList.toggle('btn-ghost',!pdf); }
+  if(at) at.textContent=pdf?'📄 Elegir el PDF escaneado':'Elegir archivo';
+  if(fa) fa.accept=pdf?'application/pdf':'image/jpeg,image/png,image/webp,application/pdf';
+  if(nota) nota.hidden=!pdf;
   /* La boleta del enganche pide monto y referencia: con eso se registra el pago. */
   const esBol=sel.value==='boleta_enganche';
   ['d-engBox','d-refBox','d-engNota'].forEach(k=>{ const e=document.getElementById(k); if(e) e.hidden=!esBol; });

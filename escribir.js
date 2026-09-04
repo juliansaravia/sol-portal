@@ -521,6 +521,11 @@ const TOPE = { expedientes: 10485760, contratos: 20971520, boletas: 5242880, fac
  */
 async function sbSubirDocumento(contrato_id, codigo, archivo, cara) {
   return escribir('subir el documento', async () => {
+    /* Los papeles del expediente que sube un vendedor van escaneados en
+       PDF, no en foto (regla del 4 sept 2026; la base lo exige igual). */
+    if (archivo && typeof exigePdfEscaneado === 'function' && exigePdfEscaneado(codigo) && archivo.type !== 'application/pdf')
+      throw new Error('Este documento tiene que ir escaneado en PDF, no como foto. '
+                    + 'Escanealo con Google Drive (+ → Escanear), Adobe Scan o Notas en iPhone y subí el PDF.');
     if (typeof comprimirParaSubir === 'function') archivo = await comprimirParaSubir(archivo);
     if (!archivo) throw new Error('No se eligió ningún archivo.');
 

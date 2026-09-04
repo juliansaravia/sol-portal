@@ -719,3 +719,5 @@ button,a,.chip,.tab-item,.nav-item,.btn{touch-action:manipulation}
   .pay-item,.money-row,.prio-row{padding-top:12px;padding-bottom:12px}
   .hint{font-size:13px}
 }
+/* Aviso informativo (instrucciones, no error) */
+.aviso-info{background:var(--info-soft);color:#2F4761;border-left:3px solid var(--info);padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.45}
