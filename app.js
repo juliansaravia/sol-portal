@@ -226,9 +226,15 @@ async function pintarEstado2FA(){
    como un agente, que no puede leer un Authenticator). */
 function exige2FA(){ return !!(SESION && SESION.rol && SESION.rol!=='consulta' && SESION.exige2fa!==false); }
 async function pantallaEnrolar2FA(nombre){
+  /* entrar() y reanudarSesion() pueden llegar aquí casi a la vez. Dos
+     enrolamientos seguidos dejan en pantalla el QR de un factor y el
+     botón con el id del otro (o de uno ya borrado): el código correcto
+     daba 422. Sólo pasa el primero. */
+  if(window.__enrolando) return; window.__enrolando=true;
   SCREEN='login';
   const L=document.getElementById('login'); L.style.display='flex';
   const r=await enrolarSegundoFactor();
+  window.__enrolando=false;
   if(!r.ok){ L.innerHTML=`<div class="login-box" style="max-width:420px"><div class="login-sub">Segundo factor</div>
       <p class="login-hint" style="color:#C0492B">${esc(r.error)}</p>
       <button class="btn btn-ghost" onclick="cerrarSesion()">Salir</button></div>`; return; }
@@ -237,7 +243,7 @@ async function pantallaEnrolar2FA(nombre){
       <span><span class="brand-name">SOL</span><span class="brand-sub">Inmobiliaria</span></span></div>
     <div class="login-sub">Último paso${nombre?', '+esc(String(nombre).split(' ')[0]):''}</div>
     <p class="login-hint">Activá tu segundo factor. Sin esto no se entra: protege los datos de los clientes.</p>
-    <div style="text-align:center;margin:4px 0 12px"><img src="${r.qr}" alt="Código para escanear" style="width:196px;height:196px"></div>
+    <div style="text-align:center;margin:4px 0 12px"><img id="mfa-qr" alt="Código para escanear" style="width:196px;height:196px"></div>
     <div class="hint" style="text-align:left;margin-bottom:12px">1 · Instalá <b>Microsoft Authenticator</b> (gratis) en tu teléfono.<br>
       2 · Abrilo, tocá <b>+</b> → <b>Cuenta de trabajo o escuela</b> → <b>Escanear código QR</b>.<br>
       3 · Escribí abajo el código de seis dígitos que te muestra.<br>
@@ -249,6 +255,8 @@ async function pantallaEnrolar2FA(nombre){
     <div id="mfa-err" class="err" style="min-height:18px;margin-top:8px;color:#C0492B;font-weight:600"></div>
     <div class="hint" style="margin-top:10px"><a href="#" onclick="cerrarSesion();return false;">Salir y hacerlo después</a> · sin segundo factor no vas a poder entrar.</div>
   </div>`;
+  /* El QR es un SVG con comillas: va por propiedad, no dentro del atributo. */
+  const qr=document.getElementById('mfa-qr'); if(qr) qr.src=r.qr;
   setTimeout(()=>{ const i=document.getElementById('mfa-nuevo'); if(i&&i.focus) i.focus(); }, 60);
 }
 async function activar2FAyEntrar(factorId){
