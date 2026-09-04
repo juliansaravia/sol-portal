@@ -3233,7 +3233,8 @@ function estadoCuentaHTML(ct,ec,completo){
       </div>
       <div class="ec-hero-r">
         ${prox?`<div class="ec-next"><span>Próxima cuota</span><b>${Q(prox.cuota)}</b><i>vence ${fmtD(prox.venc)}</i></div>`
-              :`<div class="ec-next ok"><span>Plan</span><b>Liquidado</b><i>sin saldo</i></div>`}
+              :(ec&&ec.diferido>0?`<div class="ec-next"><span>Saldo al desmembrar</span><b>${Q(ec.diferido)}</b><i>se cobra al desmembrar · no es mora</i></div>`
+              :`<div class="ec-next ok"><span>Plan</span><b>Liquidado</b><i>sin saldo</i></div>`)}
         ${venc.length?`<div class="ec-mora"><span>${venc.length} cuota(s) vencida(s)</span><b>${Q(venc.reduce((s,f)=>s+f.cuota,0))}</b>
           ${mora.total>0?`<i style="display:block;font-size:11.5px;color:#f3cfc8;font-style:normal;margin-top:4px">+ ${Q(mora.total)} de mora (${(TASA_MORA*100).toFixed(0)}% mensual)</i>`:''}</div>`:''}
       </div>
