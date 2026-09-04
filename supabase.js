@@ -85,7 +85,7 @@ function conLimite(promesa, segundos, queHacia) {
 }
 
 /* Quién está usando el portal ahora mismo. */
-const SESION = { persona: null, rol: null, email: null, modoConsulta: true, debeCambiar: false };
+const SESION = { persona: null, rol: null, email: null, modoConsulta: true, debeCambiar: false, exige2fa: true };
 
 /** ¿Está configurado el acceso remoto? Si no, el portal corre con datos locales. */
 const hayRemoto = () => SB !== null;
@@ -175,6 +175,8 @@ async function cargarSesion(usuarioYaConocido) {
     /* Administración le asignó una contraseña temporal: al entrar elige la suya. */
     SESION.debeCambiar = !!(user.user_metadata && user.user_metadata.debe_cambiar);
     SESION.modoConsulta = p.modo_consulta !== false;
+    /* Excepción por persona (39): false = entra sin Authenticator */
+    SESION.exige2fa = p.exige_2fa !== false;
     return { ok: true, persona: SESION.persona };
   }
   if (!rapida.error && !rapida.data) return {

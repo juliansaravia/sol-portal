@@ -406,6 +406,11 @@ async function guardarPersona(datos){
   if (typeof hayBase === 'function' && hayBase()) {
     const r = await sbGuardarPersona(datos);
     if (!r.ok) { avisar(r.error); return null; }
+    /* Sin segundo factor: se borran los factores que tenga para que no pida código. */
+    if (datos.exige2fa === false && r.dato && r.dato.id && typeof SB !== 'undefined' && SB) {
+      const q = await SB.rpc('quitar_segundo_factor', { p_persona_id: Number(r.dato.id) });
+      if (q.error) avisar('La excepción quedó guardada, pero no se pudieron borrar sus factores: ' + q.error.message);
+    }
     return DB.equipo.find(x => mismoId(x.id, r.dato.id)) || null;
   }
   if(datos.id){ const p=DB.equipo.find(x=>mismoId(x.id,datos.id)); if(p) Object.assign(p,datos); }

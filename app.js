@@ -167,7 +167,7 @@ async function entrar(){
      teléfono. El token que Supabase acaba de dar es aal1; hasta que no
      suba a aal2, las políticas de la base le niegan los expedientes y
      los libros. */
-  if(typeof faltaSegundoFactor==='function' && await faltaSegundoFactor()){
+  if(exige2FA() && typeof faltaSegundoFactor==='function' && await faltaSegundoFactor()){
     pedirCodigo2FA();
     return;
   }
@@ -224,7 +224,7 @@ async function pintarEstado2FA(){
    Authenticator. La invitación deja a la persona con contraseña Y
    segundo factor. Exento sólo «consulta» (externos de solo lectura,
    como un agente, que no puede leer un Authenticator). */
-function exige2FA(){ return !!(SESION && SESION.rol && SESION.rol!=='consulta'); }
+function exige2FA(){ return !!(SESION && SESION.rol && SESION.rol!=='consulta' && SESION.exige2fa!==false); }
 async function pantallaEnrolar2FA(nombre){
   SCREEN='login';
   const L=document.getElementById('login'); L.style.display='flex';
@@ -449,7 +449,7 @@ async function reanudarSesion(){
 
      renderAuth() ya dejó la pantalla de login puesta; devolver false la
      mantiene, y el modal ahora se dibuja encima de ella. */
-  if(typeof faltaSegundoFactor==='function' && await faltaSegundoFactor()){
+  if(exige2FA() && typeof faltaSegundoFactor==='function' && await faltaSegundoFactor()){
     pedirCodigo2FA();
     return 'codigo';
   }
@@ -1951,6 +1951,10 @@ function modalPersona(id){
       <div class="field"><label>Teléfono</label><input id="e-tel" value="${esc(p?p.telefono:'')}"></div>
       <div class="field"><label>Correo</label><input id="e-mail" value="${esc(p?p.email:'')}"></div>
       <div class="field full"><label>Nota</label><input id="e-nota" value="${esc(p?(p.nota||''):'')}" placeholder="Ej. ya no labora en la empresa"></div>
+      <div class="field"><label>Segundo factor (Authenticator)</label><select id="e-2fa">
+        <option value="1" ${!p||p.exige2fa!==false?'selected':''}>Se le exige · como a todos</option>
+        <option value="0" ${p&&p.exige2fa===false?'selected':''}>No se le pide · excepción</option></select>
+        <div class="hint">Al quitarlo se borran sus factores enrolados y entra sólo con contraseña.</div></div>
       <div class="field"><label>¿Es externo?</label><select id="e-ext" onchange="document.getElementById('e-extBox').hidden=this.value!=='1'">
         <option value="0" ${!p||!p.externo?'selected':''}>No · es del equipo</option>
         <option value="1" ${p&&p.externo?'selected':''}>Sí · proveedor o consultor</option></select></div>
@@ -1972,7 +1976,7 @@ async function guardarEquipo(id){
   const antes=id?(DB.equipo.find(x=>mismoId(x.id,id))||{}).nombre:null;
   const r=await conBoton(()=>guardarPersona({id:id||undefined,nombre:nom,codigo:v('e-cod').trim().toUpperCase(),
     rol:v('e-rol'),activo:v('e-act')==='1',telefono:v('e-tel'),email:v('e-mail'),nota:v('e-nota').trim(),
-    vendedorHasta:v('e-vhasta')||null,
+    vendedorHasta:v('e-vhasta')||null, exige2fa:v('e-2fa')!=='0',
     externo:v('e-ext')==='1', organizacion:v('e-org').trim()||null, accesoHasta:v('e-hasta')||null}));
   if(!r) return;
   if(antes&&antes!==nom) await reasignarContratos(antes,nom);   // mantiene el historial ligado

@@ -81,7 +81,7 @@ async function cargarDesdeSupabase() {
          el identificador, solo si lo tiene: la pantalla no necesita más
          y el uid de nadie tiene por qué andar dando vueltas. */
       conRespaldo('persona', 'id,nombre,codigo,rol,email,telefono,activo',
-                  'auth_uid,externo,organizacion,acceso_hasta,vendedor_hasta'),
+                  'auth_uid,externo,organizacion,acceso_hasta,vendedor_hasta,exige_2fa'),
       /* Las columnas del respaldo llegaron con 14_documentos.sql. Si esa
          migración todavía no se corrió, se piden las de siempre: el portal
          funciona igual, solo que sin distinguir archivo de anotación.
@@ -173,7 +173,9 @@ async function cargarDesdeSupabase() {
       externo: !!p.externo, organizacion: p.organizacion || null,
       accesoHasta: _fecha(p.acceso_hasta),
       // Hasta cuándo fue vendedor, si cambió de puesto (26_vendedor_hasta.sql)
-      vendedorHasta: _fecha(p.vendedor_hasta) || null
+      vendedorHasta: _fecha(p.vendedor_hasta) || null,
+      // Excepción de segundo factor (39)
+      exige2fa: p.exige_2fa !== false
     }));
 
     DB.contratos = contratos.map(c => {

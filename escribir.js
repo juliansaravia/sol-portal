@@ -595,6 +595,7 @@ async function sbGuardarPersona(datos) {
     if (datos.email !== undefined) campos.email = String(datos.email || '').trim() || null;
     if (datos.activo !== undefined) campos.activo = !!datos.activo;
     if (datos.vendedorHasta !== undefined) campos.vendedor_hasta = datos.vendedorHasta || null;
+    if (datos.exige2fa !== undefined) campos.exige_2fa = !!datos.exige2fa;
     if (datos.externo !== undefined) {
       campos.externo = !!datos.externo;
       campos.organizacion = datos.externo ? (datos.organizacion || null) : null;
@@ -615,7 +616,7 @@ async function sbGuardarPersona(datos) {
        en producción. Se quita SOLO esa columna, se reintenta, y se dice
        qué migración falta. Hasta tres veces, por si faltan varias. */
     const MIGRACION_DE = {
-      vendedor_hasta: '26_vendedor_hasta.sql',
+      vendedor_hasta: '26_vendedor_hasta.sql', exige_2fa: '39_excepcion_2fa.sql',
       externo: '23_externos.sql', organizacion: '23_externos.sql', acceso_hasta: '23_externos.sql'
     };
     for (let i = 0; i < 3 && r.error; i++) {
@@ -637,7 +638,7 @@ async function sbGuardarPersona(datos) {
     const mapeada = { id: fila.id, nombre: fila.nombre, codigo: fila.codigo,
                       rol: rolDePortal(fila.rol), email: fila.email,
                       tel: fila.telefono, activo: fila.activo,
-                      vendedorHasta: fila.vendedor_hasta || null,
+                      vendedorHasta: fila.vendedor_hasta || null, exige2fa: fila.exige_2fa !== false,
                       externo: !!fila.externo, organizacion: fila.organizacion || null,
                       accesoHasta: fila.acceso_hasta || null };
     if (p) Object.assign(p, mapeada); else DB.equipo.push(mapeada);
