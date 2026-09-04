@@ -977,7 +977,7 @@ function renderVender(){
   const ETQ={borrador:['Falta expediente','b-pend'],en_aprobacion:['En comité','b-info'],aprobado:['Aprobada','b-ok'],anulado:['Denegada / anulada','b-mora']};
   let h=`<div class="card"><div class="card-b" style="text-align:center;padding:26px 20px">
     <h2 style="color:var(--ink);font-size:19px;margin-bottom:6px">Registrá una venta</h2>
-    <p class="hint" style="margin-bottom:16px">Lote, comprador y pariente. Después el expediente, y se envía al comité.</p>
+    <p class="hint" style="margin-bottom:16px">Lote, comprador y pariente. Después el expediente en orden: formulario → plan de pagos → boleta del enganche → DPI → contrato. Con todo eso se envía al comité.</p>
     <button class="btn btn-primary btn-lg" onclick="modalNuevoContrato()">＋ Ingresar venta</button>
     </div></div>`;
   const grupos=[['borrador','Por completar'],['en_aprobacion','En el comité'],['aprobado','Aprobadas'],['anulado','Denegadas']];
@@ -3111,7 +3111,9 @@ function pintarContrato(){
       /* Los contratos históricos (sin origen: vinieron de la carga masiva)
          ya están firmados en papel: no se genera otro, se sube ese. Sólo
          una venta hecha en el portal genera su contrato para firmar. */
-      return `<div class="aviso-err" style="margin:6px 0">Falta el contrato firmado. ${ct.origen?'Generalo, firmalo y subilo.':'Es un contrato que ya existe: hay que subir el firmado.'}</div>`; })()}
+      const pre=previosAlContrato(ct);
+      if(ct.origen&&pre.faltan.length) return `<div class="aviso-info" style="margin:6px 0">El contrato se genera cuando estén ${esc(pre.faltan.join(', '))}. Seguí el orden en la pestaña Documentos.</div>`;
+      return `<div class="aviso-err" style="margin:6px 0">Falta el contrato firmado. ${ct.origen?'Generalo, firmalo y subilo escaneado en PDF.':'Es un contrato que ya existe: hay que subir el firmado.'}</div>`; })()}
     ${typeof notaExpedienteCompartido==='function'?notaExpedienteCompartido(ct):''}
     ${typeof notaDiferido==='function'?notaDiferido(ct):''}
     <div class="btn-row">${(()=>{ if(!(typeof generarContrato==='function' && ct.origen && !contratoFirmadoDe(ct))) return '';
@@ -3119,7 +3121,7 @@ function pintarContrato(){
         return pre.faltan.length
           ? `<button class="btn btn-ghost btn-sm" disabled title="Antes del contrato: ${esc(pre.faltan.join(', '))}" onclick="drawerTab='docs';pintarContrato()">📄 Generar contrato · falta ${esc(pre.faltan.join(', '))}</button>`
           : `<button class="btn btn-ghost btn-sm" onclick="generarContrato('${ct.id}')">📄 Generar contrato para firma</button>`; })()}
-      ${!contratoFirmadoDe(ct)?`<button class="btn btn-gold btn-sm" onclick="modalDocumentoTipo('${ct.id}','contrato')">Subir contrato firmado</button>`:''}
+      ${!contratoFirmadoDe(ct)&&!(ct.origen&&previosAlContrato(ct).faltan.length)?`<button class="btn btn-gold btn-sm" onclick="modalDocumentoTipo('${ct.id}','contrato')">Subir contrato firmado</button>`:''}
       <button class="btn btn-ghost btn-sm" onclick="abrirCliente('${ct.clienteId}')">Ver ficha del cliente</button></div>
     <div class="sect-t">Integrantes del contrato</div>`;
     const ints=ct.integrantes||[];
@@ -3174,7 +3176,7 @@ function pintarContrato(){
       const completo=filas.every(f=>f.ok);
       h+=`<div class="card" style="margin:0 0 14px;border-left:3px solid ${completo?'var(--green)':'var(--gold)'}"><div class="card-b">
         <b>${ct.estado==='borrador'?(completo?'Expediente completo':'Expediente para enviar a aprobación'):ct.estado==='en_aprobacion'?'En el comité de crédito':(completo?'Expediente completo':'Expediente incompleto')}</b>
-        <div class="hint" style="margin:4px 0 10px">${ct.estado==='borrador'?'Sin estos papeles la venta no llega al comité. Formulario, plan, contrato y DPI van <b>escaneados en PDF</b> (Google Drive o Adobe Scan), no en foto.':ct.estado==='en_aprobacion'?'Se aprueba o se deniega desde el portal interno.':'Un expediente por lote: contrato y plan firmados, formulario, DPI, DPI del pariente y boleta del enganche. Subilos desde el celular.'}</div>
+        <div class="hint" style="margin:4px 0 10px">${ct.estado==='borrador'?'Sin estos papeles la venta no llega al comité. Formulario, plan, contrato y DPI van <b>escaneados en PDF</b> (Google Drive o Adobe Scan), no en foto.':ct.estado==='en_aprobacion'?'Se aprueba o se deniega desde el portal interno.':'Un expediente por lote: formulario, plan de pagos, boleta del enganche, DPI del titular, DPI del pariente y contrato firmado. Los papeles van escaneados en PDF.'}</div>
         ${filas.map((f,i)=>{ const gen={formulario:'generarFormulario',plan_pagos:'generarPlanPagos'}[f.codigo];
           const esContrato=f.codigo==='contrato', bloqueado=esContrato&&pre.faltan.length>0;
           const pista=f.caras>1?`${f.tiene} de ${f.caras} caras`
@@ -3347,13 +3349,15 @@ function modalNuevoContrato(loteSel,pre){
       ?`<div class="field"><label>${pt.label} *</label><select id="n-${pref}_${pt.suf}"><option value="">— elegir —</option>${DEPARTAMENTOS.map(x=>`<option ${x==='Chimaltenango'?'selected':''}>${x}</option>`).join('')}</select><div class="err" id="e-${pref}_${pt.suf}"></div></div>`
       :campo(`${pref}_${pt.suf}`,pt.label,`placeholder="${esc(pt.ph||'')}"`)).join('');
   openModal(`<div class="modal-h"><h3>Nueva venta</h3>
-      <p>Sin el expediente completo no se puede cerrar — sin teléfono no hay a quién cobrarle</p></div>
+      <p>Lote, comprador y pariente. Los papeles van después, en orden: formulario, plan de pagos, boleta del enganche, DPI y contrato.</p></div>
     <div class="modal-b">
       <div class="sect-t">El lote</div>
       <div class="form-grid">
         <div class="field"><label>Lote *</label><select id="n-lote" onchange="prevPlan()">${disp.map(l=>`<option value="${esc(claveDe(l))}" ${claveDe(l)===loteSel||l.codigo===loteSel?'selected':''}>${l.codigo}${l.fase?` · ${l.fase}`:''} · ${l.area} m² · ${Qk(l.precio)}</option>`).join('')}</select></div>
-        <div class="field"><label>Vendedor</label><select id="n-vend">${vendedores().map(x=>`<option>${esc(x.nombre)}</option>`).join('')}</select></div>
-        <div class="field"><label>Enganche (Q)</label><input id="n-res" type="number" value="${pre.enganche||ENGANCHE_MIN}" oninput="prevPlan()"></div>
+        ${ROLE==='vendedor'
+          ? `<div class="field"><label>Vendedor</label><input id="n-vend" value="${esc((window.__user&&window.__user.name)||'')}" readonly style="background:var(--tint)"></div>`
+          : `<div class="field"><label>Vendedor</label><select id="n-vend">${vendedores().map(x=>`<option>${esc(x.nombre)}</option>`).join('')}</select></div>`}
+        <div class="field"><label>Enganche (Q) <span class="hint">(0 si es promoción)</span></label><input id="n-res" type="number" min="0" value="${pre.enganche!=null?pre.enganche:ENGANCHE_MIN}" oninput="prevPlan()"></div>
         <div class="field"><label>Plazo (meses)</label><select id="n-plz" onchange="prevPlan()">
           ${PLAZOS.map(p=>`<option value="${p}" ${p===(pre.plazo||60)?'selected':''}>${p} meses</option>`).join('')}</select></div>
       </div>
@@ -3397,7 +3401,7 @@ function modalNuevoContrato(loteSel,pre){
       <div id="n-errores"></div>
     </div>
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="crearContrato()">Generar contrato</button></div>`);
+      <button class="btn btn-primary" onclick="crearContrato()">Guardar la venta</button></div>`);
   prevPlan();
 }
 
@@ -3470,7 +3474,9 @@ async function crearContrato(){
     direccion:direccionCompleta(d,'dir'), ocupacion:d.ocup, ingresoMensual:+String(d.ingreso).replace(/[^\d.]/g,''),
     constancia:d.fuente, pesoConstancia:pesoConstancia(d.fuente),
     pariente:{nombre:d.pnom, telefono:validaTel(d.ptel).valor, email:validaMail(d.pmail).valor, direccion:direccionCompleta(d,'pdir')},
-    vendedor:v('n-vend'),enganche:+v('n-res')||ENGANCHE_MIN,
+    /* El vendedor vende a su nombre, siempre. El enganche puede ser 0 (promoción): vacío es el mínimo. */
+    vendedor:ROLE==='vendedor'?((window.__user&&window.__user.name)||v('n-vend')):v('n-vend'),
+    enganche:v('n-res')===''?ENGANCHE_MIN:Math.max(0,+v('n-res')||0),
     plazo:+v('n-plz')||60,origen:'Campo'}));
   if(!ct) return;                     // no se creó · el motivo ya se mostró
 

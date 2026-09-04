@@ -53,6 +53,8 @@ function faltantesDe(ct) {
   const enPago = r => r.codigo === 'boleta_enganche' && pagosCt.some(p => (typeof adjuntosDe === 'function' ? adjuntosDe('pago', p.id) : []).length);
   const conRecibo = r => r.codigo === 'recibo_enganche' && (DB.recibos || []).some(x => mismoId(x.contratoId || x.contrato_id, ct.id) || pagosCt.some(p => mismoId(x.pagoId || x.pago_id, p.id)));
 
+  /* Lo que falta se lista en el orden del flujo de venta. */
+  if (typeof ordenFlujo === 'function') reqs.sort((a, b) => ordenFlujo(a.codigo) - ordenFlujo(b.codigo));
   const f = [];
   if (!c.tel)                         f.push({ que: 'teléfono',   grave: true });
   if (!c.ocupacion)                   f.push({ que: 'ocupación',  grave: false });

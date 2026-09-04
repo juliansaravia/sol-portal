@@ -823,8 +823,10 @@ function contactoDe(numeroContrato) {
   if (!ct) return null;
   const cl = getCliente(ct.clienteId) || {};
   return {
-    tel:       cl.tel || ct.tel || '',
-    correo:    cl.correo || '',
+    /* La base trae `tel`/`correo`; lo creado en el portal, `telefono`/`email`.
+       Leer sólo uno hacía que una venta recién ingresada dijera «falta teléfono». */
+    tel:       cl.tel || cl.telefono || ct.tel || '',
+    correo:    cl.correo || cl.email || '',
     ocupacion: cl.ocupacion || '',
     dpi:       cl.dpi || ct.dpi || '',
     direccion: cl.direccion || ''
@@ -886,7 +888,11 @@ async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, res
     fecha: fecha || HOY_ISO, precio: l.precio, estado: historico ? 'aprobado' : 'borrador',
     vendedor: vendedor || 'Compra en línea', firma: 'firmado',
     origen: historico ? null : (origen || 'Campo'), integrantes: [], recaudadoBase: 0, fuente: historico ? 'Carga masiva' : 'Suite',
-    ingresoDeclarado: ingresoMensual || null, constancia: constancia || null
+    ingresoDeclarado: ingresoMensual || null, constancia: constancia || null,
+    /* Igual que lo que devuelve la base: el plan, el formulario y el
+       portón del contrato leen estos dos campos del contrato. */
+    enganche: enganche !== undefined ? enganche : (reserva !== undefined ? reserva : ENGANCHE_MIN),
+    plazo: plazo || girosSaldo || 60
   };
   ct.obligaciones = crearObligaciones(ct, 0, {
     enganche: enganche !== undefined ? enganche : reserva,
