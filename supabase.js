@@ -359,7 +359,7 @@ function validarContrasenaFuerte(c, pistas) {
   if (/^(password|contrasena|contraseña|123456\d*|qwerty\w*|admin\d*|solinmobiliaria\d*)[!.]?$/i.test(c)) faltan.push('nada obvio');
   for (const p of (pistas || [])) {
     const t = String(p || '').split('@')[0].toLowerCase();
-    if (t.length >= 4 && c.toLowerCase().includes(t)) { faltan.push('no puede contener tu nombre o correo'); break; }
+    if (t.length >= 4 && c.toLowerCase().includes(t)) { faltan.push('no puede contener el nombre ni el correo de la persona'); break; }
   }
   return { ok: faltan.length === 0, faltan };
 }
