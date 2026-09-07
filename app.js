@@ -3377,7 +3377,12 @@ function closeDrawer(){document.getElementById('drawer').hidden=true;document.ge
 /* ============================================================ MODALES */
 function modalNuevoContrato(loteSel,pre){
   pre=pre||{};
-  const disp=DB.lotes.filter(l=>l.estado==='disponible'&&l.precio>0);
+  /* La lista sale por fase y en orden natural de código (M-06 entre M-05 y
+     M-07), no en el orden en que la base devolvió los lotes: los que se
+     agregaron después quedaban al final y parecían no existir. */
+  const ordenFase=f=>/FASE\s*1/i.test(f||'')?0:/FASE\s*2/i.test(f||'')?1:2;
+  const disp=DB.lotes.filter(l=>l.estado==='disponible'&&l.precio>0)
+    .sort((a,b)=>ordenFase(a.fase)-ordenFase(b.fase)||String(a.fase||'').localeCompare(String(b.fase||''))||String(a.codigo).localeCompare(String(b.codigo),undefined,{numeric:true}));
   const nom=(pre.nombre||'').split(' ');
   const campo=(id,label,extra,ancho)=>{ const req=((typeof CAMPOS_VENTA!=='undefined'?CAMPOS_VENTA:[]).find(c=>c.id===id)||{}).req!==false;
     return `<div class="field ${ancho||''}">
@@ -3392,7 +3397,7 @@ function modalNuevoContrato(loteSel,pre){
     <div class="modal-b">
       <div class="sect-t">El lote</div>
       <div class="form-grid">
-        <div class="field"><label>Lote *</label><select id="n-lote" onchange="precioDeLista();prevPlan()">${disp.map(l=>`<option value="${esc(claveDe(l))}" ${claveDe(l)===loteSel||l.codigo===loteSel?'selected':''}>${l.codigo}${l.fase?` · ${l.fase}`:''} · ${l.area} m² · ${Qk(l.precio)}</option>`).join('')}</select></div>
+        <div class="field"><label>Lote * <span class="hint">${disp.length} disponibles</span></label><select id="n-lote" onchange="precioDeLista();prevPlan()">${(()=>{ const fases=[...new Set(disp.map(l=>l.fase||''))]; const op=l=>`<option value="${esc(claveDe(l))}" ${claveDe(l)===loteSel||l.codigo===loteSel?'selected':''}>${l.codigo} · ${l.area} m² · ${Qk(l.precio)}</option>`; return fases.length>1?fases.map(f=>`<optgroup label="${esc(f||'Sin fase')}">${disp.filter(l=>(l.fase||'')===f).map(op).join('')}</optgroup>`).join(''):disp.map(op).join(''); })()}</select></div>
         ${ROLE==='vendedor'
           ? `<div class="field"><label>Vendedor</label><input id="n-vend" value="${esc((window.__user&&window.__user.name)||'')}" readonly style="background:var(--tint)"></div>`
           : `<div class="field"><label>Vendedor</label><select id="n-vend">${vendedores().map(x=>`<option>${esc(x.nombre)}</option>`).join('')}</select></div>`}
