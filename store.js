@@ -810,6 +810,27 @@ const adjuntosDe = (entidad, id) => (DB.adjuntos || []).filter(a => a.entidad ==
    archivo no cuenta: el papel tiene que estar subido. */
 const contratoFirmadoDe = ct => documentosDe(ct.id).find(d => d.tipo === 'contrato' && d.bucket && d.ruta) || null;
 
+/* ---------- Qué papeles se le piden a cada contrato (4 sept 2026) ----------
+   · DPI del pariente: sólo a las ventas del portal desde el 16 de
+     septiembre de 2026. Los contratos históricos no lo traen y no se
+     les exige.
+   · Plan de pagos firmado: no aplica al contado (pagó todo, o el 50%
+     con el resto al desmembrar): no hay cuotas que firmar. */
+const EXIGE_DPI_PARIENTE_DESDE = '2026-09-16';
+function esContado(ct) {
+  if (!ct) return false;
+  if (['contado', 'contado_diferido', 'desmembrado'].includes(String(ct.modalidad || ''))) return true;
+  const plan = ct.plan || planFinanciamiento(ct.precio, ct.enganche != null ? ct.enganche : ENGANCHE_MIN, ct.plazo || 60, ct.tasa);
+  return !!plan && plan.saldo <= 0;
+}
+function requeridosPara(ct, reqs) {
+  return (reqs || []).filter(r => {
+    if (r.codigo === 'dpi_pariente') return !!ct.origen && String(ct.fecha || '') >= EXIGE_DPI_PARIENTE_DESDE;
+    if (r.codigo === 'plan_pagos')   return !esContado(ct);
+    return true;
+  });
+}
+
 /* El contacto del titular de un contrato.
 
    Vivía en data-contactos.js — la foto del CRM de julio, que no se
@@ -836,7 +857,7 @@ function contactoDe(numeroContrato) {
 
 /* ---------- Mutaciones ---------- */
 async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, reserva, enganche, plazo, girosSaldo, origen,
-                         direccion, ocupacion, ingresoMensual, constancia, pesoConstancia, pariente, fecha, historico }) {
+                         direccion, ocupacion, ingresoMensual, constancia, pesoConstancia, pariente, fecha, historico, modalidad }) {
   const l = getLote(lote);
   if (!l) { avisar('No se encontró el lote ' + lote); return null; }
 
@@ -855,7 +876,7 @@ async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, res
       lote: l, cliente_id: cli.id, persona_id: vend ? vend.id : null,
       enganche: enganche !== undefined ? enganche : (reserva !== undefined ? reserva : ENGANCHE_MIN),
       plazo: plazo || girosSaldo || 60, origen: origen || 'Campo', estado: 'borrador',
-      fecha: fecha || undefined, historico: !!historico
+      fecha: fecha || undefined, historico: !!historico, modalidad: modalidad || null
     });
     if (!r.ok) { avisar(r.error); return null; }
 
@@ -865,7 +886,8 @@ async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, res
       vendedor: vendedor || '', fecha: r.dato.fecha,
       precio: Number(r.dato.precio_venta), enganche: Number(r.dato.enganche),
       plazo: r.dato.plazo_meses, tasa: Number(r.dato.tasa_mensual),
-      estado: r.dato.estado, obligaciones: [], origen: historico ? null : (origen || 'Campo'), fuente: historico ? 'Carga masiva' : 'Suite'
+      estado: r.dato.estado, obligaciones: [], origen: historico ? null : (origen || 'Campo'), fuente: historico ? 'Carga masiva' : 'Suite',
+      modalidad: modalidad || null
     };
     DB.contratos.push(ct);
     l.estado = 'reservado';
@@ -893,7 +915,7 @@ async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, res
     /* Igual que lo que devuelve la base: el plan, el formulario y el
        portón del contrato leen estos dos campos del contrato. */
     enganche: enganche !== undefined ? enganche : (reserva !== undefined ? reserva : ENGANCHE_MIN),
-    plazo: plazo || girosSaldo || 60
+    plazo: plazo || girosSaldo || 60, modalidad: modalidad || null
   };
   ct.obligaciones = crearObligaciones(ct, 0, {
     enganche: enganche !== undefined ? enganche : reserva,

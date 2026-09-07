@@ -37,7 +37,7 @@ function faltantesDe(ct) {
 
   /* Qué se exige lo dice el catálogo de la base. La lista de aquí abajo
      es el respaldo para cuando el portal corre sin conexión. */
-  const reqs = (typeof DB !== 'undefined' && DB.documentosRequeridos && DB.documentosRequeridos.length)
+  let reqs = (typeof DB !== 'undefined' && DB.documentosRequeridos && DB.documentosRequeridos.length)
     ? DB.documentosRequeridos.filter(r => r.obligatorio)
     : [{ codigo:'formulario', nombre:'Formulario de solicitud', caras:1 },
        { codigo:'dpi', nombre:'DPI del titular', caras:2 },
@@ -53,7 +53,9 @@ function faltantesDe(ct) {
   const enPago = r => r.codigo === 'boleta_enganche' && pagosCt.some(p => (typeof adjuntosDe === 'function' ? adjuntosDe('pago', p.id) : []).length);
   const conRecibo = r => r.codigo === 'recibo_enganche' && (DB.recibos || []).some(x => mismoId(x.contratoId || x.contrato_id, ct.id) || pagosCt.some(p => mismoId(x.pagoId || x.pago_id, p.id)));
 
-  /* Lo que falta se lista en el orden del flujo de venta. */
+  /* Lo que falta se lista en el orden del flujo de venta, y sólo lo que
+     este contrato debe traer (histórico sin DPI del pariente; contado sin plan). */
+  if (typeof requeridosPara === 'function') reqs = requeridosPara(ct, reqs);
   if (typeof ordenFlujo === 'function') reqs.sort((a, b) => ordenFlujo(a.codigo) - ordenFlujo(b.codigo));
   const f = [];
   if (!c.tel)                         f.push({ que: 'teléfono',   grave: true });

@@ -3208,7 +3208,7 @@ function pintarContrato(){
       /* El orden es el del flujo de venta: formulario → plan de pagos →
          boleta del enganche → DPIs → contrato → recibo. Sin los tres
          primeros no se genera el contrato. */
-      const reqs=(DB.documentosRequeridos&&DB.documentosRequeridos.length?DB.documentosRequeridos.filter(r=>r.obligatorio):DOCS_REQ().filter(r=>r.obligatorio)).slice().sort((a,b)=>ordenFlujo(a.codigo)-ordenFlujo(b.codigo));
+      const reqs=requeridosPara(ct,(DB.documentosRequeridos&&DB.documentosRequeridos.length?DB.documentosRequeridos.filter(r=>r.obligatorio):DOCS_REQ().filter(r=>r.obligatorio))).slice().sort((a,b)=>ordenFlujo(a.codigo)-ordenFlujo(b.codigo));
       const pre=previosAlContrato(ct);
       const ds=(typeof documentosExpediente==='function'?documentosExpediente(ct):documentosDe(ct.id)); const conArchivo=t=>ds.filter(d=>d.tipo===t&&d.bucket&&d.ruta).reduce((n,d)=>n+(d.cara==='ambas'?2:1),0);
       const filas=reqs.map(r=>({...r, tiene:conArchivo(r.codigo), ok:conArchivo(r.codigo)>=(r.caras||1)}));
@@ -3221,7 +3221,7 @@ function pintarContrato(){
           const pista=f.caras>1?`${f.tiene} de ${f.caras} caras`
             :f.ok?'subido'
             :bloqueado?`antes: ${pre.faltan.join(', ')}`
-            :f.codigo==='boleta_enganche'?(pre.enganche>0?`al subirla se registra el enganche de ${Q(pre.enganche)} y sale el recibo`:'enganche Q0 por promoción: subí el comprobante o el vale')
+            :f.codigo==='boleta_enganche'?(esContado(ct)?`pago al contado: al subir la boleta se registra el pago de ${Q(pre.enganche)} y sale el recibo`:pre.enganche>0?`al subirla se registra el enganche de ${Q(pre.enganche)} y sale el recibo`:'enganche Q0 por promoción: subí el comprobante o el vale')
             :gen?'generalo, imprimilo, firmalo con el cliente y subí el escaneo':'falta';
           const acc=f.ok?''
             :esContrato?(ct.origen&&typeof generarContrato==='function'?`<button class="btn btn-ghost btn-sm" ${bloqueado?'disabled':''} onclick="generarContrato('${ct.id}')">Generar</button> `:'')+`<button class="btn btn-gold btn-sm" ${bloqueado?'disabled':''} onclick="modalDocumentoTipo('${ct.id}','contrato')">Subir firmado</button>`
@@ -3398,7 +3398,8 @@ function modalNuevoContrato(loteSel,pre){
           : `<div class="field"><label>Vendedor</label><select id="n-vend">${vendedores().map(x=>`<option>${esc(x.nombre)}</option>`).join('')}</select></div>`}
         <div class="field"><label>Enganche (Q) <span class="hint">(0 si es promoción)</span></label><input id="n-res" type="number" min="0" value="${pre.enganche!=null?pre.enganche:ENGANCHE_MIN}" oninput="prevPlan()"></div>
         <div class="field"><label>Plazo (meses)</label><select id="n-plz" onchange="prevPlan()">
-          ${PLAZOS.map(p=>`<option value="${p}" ${p===(pre.plazo||60)?'selected':''}>${p} meses</option>`).join('')}</select></div>
+          ${PLAZOS.map(p=>`<option value="${p}" ${p===(pre.plazo||60)?'selected':''}>${p} meses</option>`).join('')}
+          <option value="0">Al contado · sin cuotas</option></select></div>
       </div>
       <div id="n-prev" class="prev-plan"></div>
 
@@ -3486,8 +3487,12 @@ function prevCarga(){
 
 function prevPlan(){
   const l=getLote(v('n-lote')); if(!l)return;
-  const p=planFinanciamiento(l.precio,+v('n-res')||0,+v('n-plz')||60);
   const el=document.getElementById('n-prev'); if(!el)return;
+  /* Al contado: paga el precio completo de una, no hay cuotas ni plan que firmar. */
+  const res=document.getElementById('n-res'), contado=v('n-plz')==='0';
+  if(res){ res.readOnly=contado; res.style.background=contado?'var(--tint)':''; if(contado) res.value=l.precio; }
+  if(contado){ el.innerHTML=`<div class="pp-row"><span>Pago al contado</span><b class="pp-big">${Q(l.precio)}</b></div><div class="hint">Sin cuotas: no lleva plan de pagos firmado. Si pagó el 50% y el resto espera la desmembración, se marca después en la ficha.</div>`; return; }
+  const p=planFinanciamiento(l.precio,+v('n-res')||0,+v('n-plz')||60);
   el.innerHTML=`<div class="pp-row"><span>Saldo a financiar</span><b>${Q(p.saldo)}</b></div>
     <div class="pp-row"><span>Cuota mensual</span><b class="pp-big">${Q(p.cuota)}</b></div>
     <div class="pp-row"><span>Total del plan</span><b>${Q(p.total)}</b></div>`;
@@ -3515,8 +3520,8 @@ async function crearContrato(){
     pariente:{nombre:d.pnom, telefono:validaTel(d.ptel).valor, email:validaMail(d.pmail).valor, direccion:direccionCompleta(d,'pdir')},
     /* El vendedor vende a su nombre, siempre. El enganche puede ser 0 (promoción): vacío es el mínimo. */
     vendedor:ROLE==='vendedor'?((window.__user&&window.__user.name)||v('n-vend')):v('n-vend'),
-    enganche:v('n-res')===''?ENGANCHE_MIN:Math.max(0,+v('n-res')||0),
-    plazo:+v('n-plz')||60,origen:'Campo'}));
+    enganche:v('n-plz')==='0'?getLote(v('n-lote')).precio:(v('n-res')===''?ENGANCHE_MIN:Math.max(0,+v('n-res')||0)),
+    plazo:v('n-plz')==='0'?1:(+v('n-plz')||60),origen:'Campo',modalidad:v('n-plz')==='0'?'contado':null}));
   if(!ct) return;                     // no se creó · el motivo ya se mostró
 
   const carga=cargaSobreIngreso(planFinanciamiento(getLote(v('n-lote')).precio,+v('n-res')||0,+v('n-plz')||60).cuota,
@@ -3635,7 +3640,7 @@ function previosAlContrato(ct){
   const boleta=hay('boleta_enganche')||pagos.some(p=>adjuntosDe('pago',p.id).length||reciboDe(p.id));
   const plan=planFinanciamiento(ct.precio, ct.enganche!=null?ct.enganche:ENGANCHE_MIN, ct.plazo||60, ct.tasa);
   const faltan=[];
-  if(ct.origen){ if(!hay('formulario')) faltan.push('formulario firmado'); if(!hay('plan_pagos')) faltan.push('plan de pagos firmado'); if(!boleta) faltan.push('boleta del enganche'); }
+  if(ct.origen){ if(!hay('formulario')) faltan.push('formulario firmado'); if(!esContado(ct)&&!hay('plan_pagos')) faltan.push('plan de pagos firmado'); if(!boleta) faltan.push(esContado(ct)?'boleta del pago':'boleta del enganche'); }
   return { faltan, boleta, enganche: plan.enganche };
 }
 

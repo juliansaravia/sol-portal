@@ -201,7 +201,7 @@ async function sbActualizarCliente(id, datos) {
    pero si algún día dejaran de coincidir, la que manda es la de
    la base: es la que ve la contabilidad.
    ============================================================ */
-async function sbCrearContrato({ lote, cliente_id, persona_id, enganche, plazo, origen, banco, boleta, estado, fecha, historico }) {
+async function sbCrearContrato({ lote, cliente_id, persona_id, enganche, plazo, origen, banco, boleta, estado, fecha, historico, modalidad }) {
   return escribir('crear el contrato', async () => {
     if (!lote || !lote.id) throw new Error('No se identificó el lote.');
     if (!lote.proyecto_id) throw new Error('El lote no trae proyecto. Recarga la página.');
@@ -219,6 +219,8 @@ async function sbCrearContrato({ lote, cliente_id, persona_id, enganche, plazo, 
       enganche: enganche,
       plazo_meses: plazo,
       tasa_mensual: lote.tasa || TASA_MENSUAL,
+      /* 'contado' cuando pagó todo de una: sin cuotas ni plan firmado (40_saldo_al_desmembrar.sql trae la columna). */
+      ...(modalidad ? { modalidad } : {}),
       /* Nace en borrador: el vendedor arma el expediente (DPI de ambos
          lados, DPI del pariente, contrato y plan de pagos firmados) y
          sólo entonces lo envía a aprobación. Decisión del dueño (1 sept
