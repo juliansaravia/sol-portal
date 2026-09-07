@@ -4288,8 +4288,20 @@ async function verDocumento(docId){
   if(!d.bucket||!d.ruta)
     return toast('Ese documento se anotó pero nunca se subió el archivo',6000,true);
   const r=await sbVerDocumento(d.bucket,d.ruta);
-  if(!r.ok) return toast(r.error,6000,true);
+  if(!r.ok) return toast(await explicarNoEncontrado(r.error,d.bucket,d.ruta),9000,true);
   window.open(r.dato,'_blank','noopener');
+}
+/* «Object not found» lo devuelve Storage tanto cuando el archivo no está
+   como cuando el rol no puede verlo. Se distingue listando la carpeta:
+   si el archivo aparece, es permiso; si no, la subida no llegó. */
+async function explicarNoEncontrado(error,bucket,ruta){
+  if(!/not found|no encontrado/i.test(String(error||''))) return error;
+  try{
+    const carpeta=String(ruta).split('/').slice(0,-1).join('/'), nombre=String(ruta).split('/').pop();
+    const {data}=await SB.storage.from(bucket).list(carpeta,{limit:200,search:nombre.slice(0,40)});
+    if(data&&data.some(f=>f.name===nombre)) return 'El archivo existe, pero tu rol no tiene permiso para abrirlo desde el almacén «'+bucket+'». Avisá a administración.';
+    return 'El archivo no está en el almacén: la fila del documento quedó, pero la subida no terminó. Hay que subirlo de nuevo.';
+  }catch(e){ return error; }
 }
 function modalIntegrante(id){
   const cargos=['Titular','Cotitular','Fiador','Beneficiario','Representante'];

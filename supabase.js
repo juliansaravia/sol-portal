@@ -384,22 +384,42 @@ async function definirContrasena(nueva) {
    pregunta al servidor si esta sesión sigue existiendo. Si no, afuera.
    El cierre es LOCAL: un signOut global mataría también la sesión nueva. */
 let _vigilante = null;
+/* Sólo se expulsa cuando la sesión de verdad fue revocada (alguien entró
+   con el mismo usuario en otro lado): eso se sabe porque el refresco del
+   token falla con «invalid refresh token». Un 401 suelto no basta: al
+   volver a la pestaña después de un rato el token de acceso ya venció y
+   getUser() da 401 mientras el SDK todavía no lo renovó. Antes eso
+   sacaba a la gente a media faena. */
+const MOTIVO_OTRA_SESION = 'Se cerró esta sesión porque entraste desde otro dispositivo o navegador. Sólo puede haber una sesión abierta a la vez.';
+async function sesionRevocada() {
+  try {
+    const { data, error } = await SB.auth.refreshSession();
+    if (!error && data && data.session) return false;
+    const msg = String((error && error.message) || '').toLowerCase();
+    if (/refresh token|revoked|session_not_found|not found/.test(msg)) return true;
+    /* Otra cosa (red, 5xx, tiempo de espera): no se decide con eso. */
+    return false;
+  } catch (e) { return false; }
+}
 function vigilarSesionUnica() {
   if (!SB || _vigilante) return;
+  let revisando = false;
   const revisar = async () => {
-    if (document.hidden || window.__saliendo) return;
+    if (document.hidden || window.__saliendo || revisando) return;
+    revisando = true;
     try {
-      const { error } = await SB.auth.getUser();
-      if (error && error.status && (error.status === 401 || error.status === 403))
-        await expulsar('Se cerró esta sesión porque entraste desde otro dispositivo o navegador. Sólo puede haber una sesión abierta a la vez.');
+      const { data, error } = await SB.auth.getUser();
+      const sinUsuario = (error && error.status && (error.status === 401 || error.status === 403)) || (!error && !(data && data.user));
+      if (sinUsuario && await sesionRevocada()) await expulsar(MOTIVO_OTRA_SESION);
     } catch (e) { /* sin red no se expulsa a nadie */ }
+    finally { revisando = false; }
   };
-  _vigilante = setInterval(revisar, 30000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) revisar(); });
-  window.addEventListener('focus', revisar);
-  SB.auth.onAuthStateChange((ev) => {
-    if (ev === 'SIGNED_OUT' && SESION.persona && !window.__saliendo)
-      expulsar('Se cerró esta sesión porque entraste desde otro dispositivo o navegador. Sólo puede haber una sesión abierta a la vez.');
+  _vigilante = setInterval(revisar, 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(revisar, 1500); });
+  SB.auth.onAuthStateChange(async (ev) => {
+    if (ev !== 'SIGNED_OUT' || !SESION.persona || window.__saliendo) return;
+    /* El SDK también emite SIGNED_OUT en tropiezos pasajeros: se confirma. */
+    if (await sesionRevocada()) expulsar(MOTIVO_OTRA_SESION);
   });
 }
 async function expulsar(motivo) {
