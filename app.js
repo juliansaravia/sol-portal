@@ -3444,7 +3444,10 @@ function modalNuevoContrato(loteSel,pre){
       <div id="n-prev" class="prev-plan"></div>
       ${puedeHistorico?`<label class="hint" style="display:flex;gap:8px;align-items:flex-start;margin:10px 0 0;cursor:pointer"><input type="checkbox" id="n-hist" onchange="ventaHistorica(this.checked)" ${pre.historico?'checked':''} style="margin-top:3px">
         <span><b>Contrato histórico</b>: ya está firmado en papel y vigente. Queda aprobado con el lote vendido; sólo se exige nombre y apellido del cliente, lo demás se guarda si se tiene. El contrato firmado se sube después como documento.</span></label>
-      <div class="form-grid" id="n-histCampos" hidden><div class="field"><label>Fecha del contrato <span class="ast">*</span></label><input id="n-fecha" type="date" value="${HOY_ISO}"></div></div>`:''}
+      <div class="form-grid" id="n-histCampos" hidden>
+        <div class="field"><label>Fecha del contrato <span class="ast">*</span></label><input id="n-fecha" type="date" value="${HOY_ISO}"></div>
+        <div class="field"><label>Número del contrato <span class="hint">(el del papel, ej. RES-006)</span></label><input id="n-numero" placeholder="Vacío: el suite le da el siguiente" style="text-transform:uppercase"></div>
+      </div>`:''}
 
       <div class="sect-t" style="margin-top:18px">El comprador</div>
       <div class="form-grid">
@@ -3589,7 +3592,7 @@ async function crearContrato(){
     direccion:d.dir_depto?direccionCompleta(d,'dir'):'', ocupacion:d.ocup, ingresoMensual:+String(d.ingreso).replace(/[^\d.]/g,''),
     constancia:d.fuente, pesoConstancia:pesoConstancia(d.fuente),
     pariente:d.pnom?{nombre:d.pnom, telefono:validaTel(d.ptel).valor, email:validaMail(d.pmail).valor, direccion:d.pdir_depto?direccionCompleta(d,'pdir'):''}:null,
-    fecha:historico?v('n-fecha'):undefined, historico,
+    fecha:historico?v('n-fecha'):undefined, historico, numero:historico?v('n-numero').trim().toUpperCase()||undefined:undefined,
     /* El vendedor vende a su nombre, siempre. El enganche puede ser 0 (promoción): vacío es el mínimo. */
     vendedor:ROLE==='vendedor'?((window.__user&&window.__user.name)||v('n-vend')):v('n-vend'),
     precio:precioVentaElegido(),

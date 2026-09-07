@@ -857,7 +857,7 @@ function contactoDe(numeroContrato) {
 
 /* ---------- Mutaciones ---------- */
 async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, reserva, enganche, plazo, girosSaldo, origen,
-                         direccion, ocupacion, ingresoMensual, constancia, pesoConstancia, pariente, fecha, historico, modalidad, precio }) {
+                         direccion, ocupacion, ingresoMensual, constancia, pesoConstancia, pariente, fecha, historico, modalidad, precio, numero }) {
   const l = getLote(lote);
   if (!l) { avisar('No se encontró el lote ' + lote); return null; }
 
@@ -877,7 +877,8 @@ async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, res
       enganche: enganche !== undefined ? enganche : (reserva !== undefined ? reserva : ENGANCHE_MIN),
       plazo: plazo || girosSaldo || 60, origen: origen || 'Campo', estado: 'borrador',
       fecha: fecha || undefined, historico: !!historico, modalidad: modalidad || null,
-      precio: precio > 0 ? precio : undefined
+      precio: precio > 0 ? precio : undefined,
+      numero: numero || undefined
     });
     if (!r.ok) { avisar(r.error); return null; }
 
@@ -908,7 +909,7 @@ async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, res
 
   DB.meta.correlativo++;
   const ct = {
-    id: uid(), no: 'SD-' + DB.meta.correlativo, lote, clienteId: cli.id,
+    id: uid(), no: numero || ('SD-' + DB.meta.correlativo), lote, clienteId: cli.id,
     fecha: fecha || HOY_ISO, precio: precio > 0 ? precio : l.precio, estado: historico ? 'aprobado' : 'borrador',
     vendedor: vendedor || 'Compra en línea', firma: 'firmado',
     origen: historico ? null : (origen || 'Campo'), integrantes: [], recaudadoBase: 0, fuente: historico ? 'Carga masiva' : 'Suite',

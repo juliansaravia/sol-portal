@@ -201,12 +201,14 @@ async function sbActualizarCliente(id, datos) {
    pero si algún día dejaran de coincidir, la que manda es la de
    la base: es la que ve la contabilidad.
    ============================================================ */
-async function sbCrearContrato({ lote, cliente_id, persona_id, enganche, plazo, origen, banco, boleta, estado, fecha, historico, modalidad, precio }) {
+async function sbCrearContrato({ lote, cliente_id, persona_id, enganche, plazo, origen, banco, boleta, estado, fecha, historico, modalidad, precio, numero: numeroPropio }) {
   return escribir('crear el contrato', async () => {
     if (!lote || !lote.id) throw new Error('No se identificó el lote.');
     if (!lote.proyecto_id) throw new Error('El lote no trae proyecto. Recarga la página.');
 
-    const numero = oExplota(await SB.rpc('siguiente_contrato', { p_proyecto_id: lote.proyecto_id }));
+    /* Un contrato histórico conserva el número del papel (RES-006); si no
+       se anota, el suite le da el siguiente de la serie del proyecto. */
+    const numero = numeroPropio || oExplota(await SB.rpc('siguiente_contrato', { p_proyecto_id: lote.proyecto_id }));
 
     const fila = oExplota(await SB.from('contrato').insert({
       proyecto_id: lote.proyecto_id,
