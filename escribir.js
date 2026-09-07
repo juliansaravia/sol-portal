@@ -201,7 +201,7 @@ async function sbActualizarCliente(id, datos) {
    pero si algún día dejaran de coincidir, la que manda es la de
    la base: es la que ve la contabilidad.
    ============================================================ */
-async function sbCrearContrato({ lote, cliente_id, persona_id, enganche, plazo, origen, banco, boleta, estado, fecha, historico, modalidad }) {
+async function sbCrearContrato({ lote, cliente_id, persona_id, enganche, plazo, origen, banco, boleta, estado, fecha, historico, modalidad, precio }) {
   return escribir('crear el contrato', async () => {
     if (!lote || !lote.id) throw new Error('No se identificó el lote.');
     if (!lote.proyecto_id) throw new Error('El lote no trae proyecto. Recarga la página.');
@@ -215,7 +215,8 @@ async function sbCrearContrato({ lote, cliente_id, persona_id, enganche, plazo, 
       persona_id: persona_id || null,
       numero,
       fecha: fecha || new Date().toISOString().slice(0, 10),
-      precio_venta: lote.precio,
+      /* El precio de venta puede diferir del de lista (descuento, promoción). */
+      precio_venta: precio > 0 ? precio : lote.precio,
       enganche: enganche,
       plazo_meses: plazo,
       tasa_mensual: lote.tasa || TASA_MENSUAL,

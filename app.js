@@ -1254,7 +1254,7 @@ function cotCompartir(){
 }
 function cotVender(){
   if(cot.lote==='__libre'){toast('Elige un lote real para crear la venta');return;}
-  modalNuevoContrato(cot.lote,{enganche:cot.enganche,plazo:cot.plazo,nombre:cot.cliente});
+  modalNuevoContrato(cot.lote,{enganche:cot.enganche,plazo:cot.plazo,nombre:cot.cliente,precio:cot.precio});
 }
 
 /* ============================================================ AGENDA DE COBRANZA */
@@ -3392,10 +3392,11 @@ function modalNuevoContrato(loteSel,pre){
     <div class="modal-b">
       <div class="sect-t">El lote</div>
       <div class="form-grid">
-        <div class="field"><label>Lote *</label><select id="n-lote" onchange="prevPlan()">${disp.map(l=>`<option value="${esc(claveDe(l))}" ${claveDe(l)===loteSel||l.codigo===loteSel?'selected':''}>${l.codigo}${l.fase?` · ${l.fase}`:''} · ${l.area} m² · ${Qk(l.precio)}</option>`).join('')}</select></div>
+        <div class="field"><label>Lote *</label><select id="n-lote" onchange="precioDeLista();prevPlan()">${disp.map(l=>`<option value="${esc(claveDe(l))}" ${claveDe(l)===loteSel||l.codigo===loteSel?'selected':''}>${l.codigo}${l.fase?` · ${l.fase}`:''} · ${l.area} m² · ${Qk(l.precio)}</option>`).join('')}</select></div>
         ${ROLE==='vendedor'
           ? `<div class="field"><label>Vendedor</label><input id="n-vend" value="${esc((window.__user&&window.__user.name)||'')}" readonly style="background:var(--tint)"></div>`
           : `<div class="field"><label>Vendedor</label><select id="n-vend">${vendedores().map(x=>`<option>${esc(x.nombre)}</option>`).join('')}</select></div>`}
+        <div class="field"><label>Precio de venta (Q) <span class="hint" id="n-precioLista"></span></label><input id="n-precio" type="number" min="0" step="0.01" value="${pre.precio!=null?pre.precio:''}" oninput="prevPlan()"></div>
         <div class="field"><label>Enganche (Q) <span class="hint">(0 si es promoción)</span></label><input id="n-res" type="number" min="0" value="${pre.enganche!=null?pre.enganche:ENGANCHE_MIN}" oninput="prevPlan()"></div>
         <div class="field"><label>Plazo (meses)</label><select id="n-plz" onchange="prevPlan()">
           ${PLAZOS.map(p=>`<option value="${p}" ${p===(pre.plazo||60)?'selected':''}>${p} meses</option>`).join('')}
@@ -3442,7 +3443,23 @@ function modalNuevoContrato(loteSel,pre){
     </div>
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="crearContrato()">Guardar la venta</button></div>`);
-  prevPlan();
+  if(pre.precio==null) precioDeLista(); else prevPlan();
+}
+/* El precio de venta nace del precio de lista del lote y se puede cambiar
+   a mano (descuento, promoción, negociación). Si difiere, se ve y queda
+   anotado en la bitácora del contrato. */
+function precioDeLista(){
+  const l=getLote(v('n-lote')); const inp=document.getElementById('n-precio'); if(!l||!inp) return;
+  inp.value=l.precio||''; prevPlan();
+}
+function precioVentaElegido(){
+  const l=getLote(v('n-lote'))||{}; const p=+v('n-precio'); return p>0?p:(l.precio||0);
+}
+function _pistaPrecio(){
+  const l=getLote(v('n-lote'))||{}; const e=document.getElementById('n-precioLista'); if(!e) return;
+  const p=precioVentaElegido();
+  e.textContent = l.precio&&Math.abs(p-l.precio)>0.005 ? `lista ${Q(l.precio)} · ${p<l.precio?'descuento':'sobreprecio'} de ${Q(Math.abs(p-l.precio))}` : (l.precio?'precio de lista':'');
+  e.style.color = l.precio&&Math.abs(p-l.precio)>0.005 ? '#8A5F12' : '';
 }
 
 /* Qué documento sirve de constancia, según lo que la persona haga. */
@@ -3476,7 +3493,7 @@ function pistaConstancia(){
 function prevCarga(){
   const el=document.getElementById('n-carga'); if(!el)return;
   const l=getLote(v('n-lote')); if(!l){el.innerHTML='';return;}
-  const p=planFinanciamiento(l.precio,+v('n-res')||0,+v('n-plz')||60);
+  const p=planFinanciamiento(precioVentaElegido(),+v('n-res')||0,+v('n-plz')||60);
   const r=cargaSobreIngreso(p.cuota,+v('n-ingreso')||0);
   if(!r){el.innerHTML='';return;}
   const color=r.nivel==='riesgoso'?'var(--mora)':(r.nivel==='ajustado'?'#b8860b':'var(--green)');
@@ -3489,10 +3506,11 @@ function prevPlan(){
   const l=getLote(v('n-lote')); if(!l)return;
   const el=document.getElementById('n-prev'); if(!el)return;
   /* Al contado: paga el precio completo de una, no hay cuotas ni plan que firmar. */
-  const res=document.getElementById('n-res'), contado=v('n-plz')==='0';
-  if(res){ res.readOnly=contado; res.style.background=contado?'var(--tint)':''; if(contado) res.value=l.precio; }
-  if(contado){ el.innerHTML=`<div class="pp-row"><span>Pago al contado</span><b class="pp-big">${Q(l.precio)}</b></div><div class="hint">Sin cuotas: no lleva plan de pagos firmado. Si pagó el 50% y el resto espera la desmembración, se marca después en la ficha.</div>`; return; }
-  const p=planFinanciamiento(l.precio,+v('n-res')||0,+v('n-plz')||60);
+  const res=document.getElementById('n-res'), contado=v('n-plz')==='0', precio=precioVentaElegido();
+  _pistaPrecio();
+  if(res){ res.readOnly=contado; res.style.background=contado?'var(--tint)':''; if(contado) res.value=precio; }
+  if(contado){ el.innerHTML=`<div class="pp-row"><span>Pago al contado</span><b class="pp-big">${Q(precio)}</b></div><div class="hint">Sin cuotas: no lleva plan de pagos firmado. Si pagó el 50% y el resto espera la desmembración, se marca después en la ficha.</div>`; return; }
+  const p=planFinanciamiento(precio,+v('n-res')||0,+v('n-plz')||60);
   el.innerHTML=`<div class="pp-row"><span>Saldo a financiar</span><b>${Q(p.saldo)}</b></div>
     <div class="pp-row"><span>Cuota mensual</span><b class="pp-big">${Q(p.cuota)}</b></div>
     <div class="pp-row"><span>Total del plan</span><b>${Q(p.total)}</b></div>`;
@@ -3520,11 +3538,13 @@ async function crearContrato(){
     pariente:{nombre:d.pnom, telefono:validaTel(d.ptel).valor, email:validaMail(d.pmail).valor, direccion:direccionCompleta(d,'pdir')},
     /* El vendedor vende a su nombre, siempre. El enganche puede ser 0 (promoción): vacío es el mínimo. */
     vendedor:ROLE==='vendedor'?((window.__user&&window.__user.name)||v('n-vend')):v('n-vend'),
-    enganche:v('n-plz')==='0'?getLote(v('n-lote')).precio:(v('n-res')===''?ENGANCHE_MIN:Math.max(0,+v('n-res')||0)),
+    precio:precioVentaElegido(),
+    enganche:v('n-plz')==='0'?precioVentaElegido():(v('n-res')===''?ENGANCHE_MIN:Math.max(0,+v('n-res')||0)),
     plazo:v('n-plz')==='0'?1:(+v('n-plz')||60),origen:'Campo',modalidad:v('n-plz')==='0'?'contado':null}));
   if(!ct) return;                     // no se creó · el motivo ya se mostró
+  { const lt=getLote(v('n-lote'))||{}; if(lt.precio&&Math.abs(ct.precio-lt.precio)>0.005) registrarGestion(ct.id,'Bitácora Socios','Contactado',`Precio de venta ${Q(ct.precio)} distinto del de lista ${Q(lt.precio)} · lo fijó ${(window.__user&&window.__user.name)||''}`); }
 
-  const carga=cargaSobreIngreso(planFinanciamiento(getLote(v('n-lote')).precio,+v('n-res')||0,+v('n-plz')||60).cuota,
+  const carga=cargaSobreIngreso(planFinanciamiento(ct.precio,+v('n-res')||0,+v('n-plz')||60).cuota,
                                 +String(d.ingreso).replace(/[^\d.]/g,''));
   if(carga) ct.cargaIngreso=carga.pct;
   saveDB();
