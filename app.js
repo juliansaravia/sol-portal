@@ -588,6 +588,7 @@ function aplicarSoloLectura(){
 }
 function setView(v){
   if(SCREEN==='app' && ROLES[ROLE] && !ROLES[ROLE].views.includes(v)) return;
+  if(typeof cerrarSugerencias==='function') cerrarSugerencias();   // la lista de un buscador no sobrevive al cambio de pantalla
   try{ if(location.hash.slice(1)!==v) history.replaceState(null,'','#'+v); }catch(e){}
   vista=v;
   document.querySelectorAll('.nav-item,.tab-item').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
