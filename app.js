@@ -800,11 +800,16 @@ let vb=null, dragMoved=false, geomLista=false;
    - ancho: frente del lote (separación al vecino)
    - fondo: 15 m ≈ 40 px (constante, verificado contra la separación entre filas) */
 const DEPTH_PX = 40, MAX_NEIGHBOR = 36;
+/* ¿Este lote está en el plano de assets/plano.png? Las manzanas A–L son
+   Fase 1 y M–W Fase 2. Los agrícolas repiten códigos y no están acá. */
+const fasePlano=codigo=>String(codigo||'').charAt(0)<='L'?'FASE 1':'FASE 2';
+const enPlano=l=>!!l&&(!l.fase||String(l.fase).toUpperCase()===fasePlano(l.codigo));
 function calcularGeometria(){
   if(geomLista) return;
   // 1) Geometría exacta medida del plano (assets/lotes-shape.js)
   const S=window.LOT_SHAPE||{};
   DB.lotes.forEach(l=>{
+    if(!enPlano(l)){ l.x=null; l.y=null; l.poly=null; l.exacto=false; return; }
     const s=S[l.codigo];
     if(s){ l.x=s.x; l.y=s.y; l.poly=s.p; l.exacto=true; }
   });
@@ -845,7 +850,8 @@ function norm(a){ while(a>90)a-=180; while(a<-90)a+=180; return a; }
 function difAng(a,b){ return norm(a-b); }
 function mediana(arr){ const s=arr.slice().sort((a,b)=>a-b); return s[Math.floor(s.length/2)]; }
 function renderInventario(){
-  const conCoord=DB.lotes.filter(l=>l.x!=null).length;
+  if(typeof calcularGeometria==='function') calcularGeometria();
+  const conCoord=DB.lotes.filter(l=>l.x!=null&&enPlano(l)).length;
   let h=`<div class="chips">`+
     [['todos','Todos'],['disponible','Disponibles'],['reservado','Reservados'],['vendido','Vendidos']].map(([k,l])=>
       `<button class="chip ${filtro===k?'active':''}" onclick="setFiltro('${k}')">${l}</button>`).join('')+
@@ -862,14 +868,19 @@ function renderInventario(){
       </div>
       <div class="tooltip" id="tip" hidden></div>
     </div></div>`;
-  const sin=DB.lotes.filter(l=>l.x==null);
-  if(sin.length){
-    h+=`<div class="card"><div class="card-h"><h2>Sin ubicación en el plano · ${sin.length} lotes</h2></div>
+  /* Lo que no está en el plano, por fase: los agrícolas son otro terreno
+     (no un error), y los de Fase 2 sin ubicación esperan el plano con
+     la numeración real de esa fase. */
+  const sin=DB.lotes.filter(l=>l.x==null||!enPlano(l));
+  const grupos=new Map(); sin.forEach(l=>{ const k=String(l.fase||'Sin fase'); if(!grupos.has(k)) grupos.set(k,[]); grupos.get(k).push(l); });
+  grupos.forEach((L,fase)=>{
+    const agro=/AGR/i.test(fase);
+    h+=`<div class="card"><div class="card-h"><h2>${esc(fase)} · ${L.length} lote(s) ${agro?'fuera de este plano':'sin ubicación en el plano'}</h2></div>
       <div class="card-b"><div class="lot-grid">`+
-      sin.map(l=>`<div class="lot ${l.estado==='vendido'?'vend':(l.estado==='reservado'?'apar':'disp')}" onclick="abrirLote('${l.codigo}')">
-        <div class="lc">${l.codigo}</div><div class="la">${l.area} m²</div></div>`).join('')+
-      `</div><div class="hint">Estos lotes existen en el CRM pero no traen coordenadas en el plano.</div></div></div>`;
-  }
+      L.map(l=>`<div class="lot ${l.estado==='vendido'?'vend':(l.estado==='reservado'?'apar':'disp')}" onclick="abrirLote('${esc(claveDe(l))}')">
+        <div class="lc">${esc(l.codigo)}</div><div class="la">${l.area} m²</div></div>`).join('')+
+      `</div><div class="hint">${agro?'Los lotes agrícolas están en otro terreno: este plano es de las fases residenciales. Sus códigos se repiten con la Fase 1, por eso no se dibujan encima.':'La numeración del plano no coincide con la del CRM para estos lotes. Se ubican cuando haya el plano de esa fase con sus números.'}</div></div></div>`;
+  });
   C().innerHTML=h;
   dibujarMapa();
 }
@@ -902,7 +913,7 @@ function dibujarMapa(){
     r.setAttribute('fill',m.fill); r.setAttribute('fill-opacity',0.55);
     r.setAttribute('stroke',m.stroke); r.setAttribute('stroke-width',0.6);
     r.setAttribute('class','lotm'); r.dataset.id=l.codigo;
-    r.addEventListener('click',()=>{if(!dragMoved)abrirLote(l.codigo);});
+    r.addEventListener('click',()=>{if(!dragMoved)abrirLote(claveDe(l));});
     r.addEventListener('mousemove',e=>mostrarTip(e,l));
     r.addEventListener('mouseleave',()=>{document.getElementById('tip').hidden=true;});
     svg.appendChild(r);
@@ -916,7 +927,7 @@ function pintarMapa(){
   document.querySelectorAll('.lotm').forEach(r=>{
     const l=getLote(r.dataset.id); if(!l)return;
     let ok = filtro==='todos'||l.estado===filtro;
-    if(ok&&t){ const ct=contratoDeLote(l.codigo);
+    if(ok&&t){ const ct=contratoDeLote(claveDe(l));
       const hay=[l.codigo,ct?nombreCliente(ct.clienteId):''].join(' ').toLowerCase();
       ok=hay.includes(t); }
     r.style.opacity=ok?1:0.12;
@@ -937,7 +948,7 @@ function pintarMapa(){
 function setFiltro(f){filtro=f;renderInventario();}
 function mostrarTip(e,l){
   const tip=document.getElementById('tip'), wrap=document.querySelector('.map-wrap');
-  const ct=contratoDeLote(l.codigo), m=ESTADO_MAP[l.estado]||ESTADO_MAP.disponible;
+  const ct=contratoDeLote(claveDe(l)), m=ESTADO_MAP[l.estado]||ESTADO_MAP.disponible;
   tip.innerHTML=`<b>Lote ${l.codigo}</b>${l.fase?` <span style="opacity:.75">· ${esc(l.fase)}</span>`:''} · ${l.area} m²<br>${l.precio?Qk(l.precio):'Precio por definir'}
     ${ct?'<br>'+esc(nombreCliente(ct.clienteId)):''}
     <div class="tt-badge" style="background:${m.fill}">${m.label}</div>`;

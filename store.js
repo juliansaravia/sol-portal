@@ -1236,7 +1236,7 @@ function initDB() {
   DB.contratos.forEach(c => { const p = buscarPersona(c.vendedor); if (p) c.vendedor = p.nombre; });
   // asegura que los lotes tengan coordenadas aunque la semilla sea vieja
   const geo = {}; (window.LOT_GEO || []).forEach(g => { geo[g.id] = g; });
-  DB.lotes.forEach(l => { if (l.x == null && geo[l.codigo]) { l.x = geo[l.codigo].x; l.y = geo[l.codigo].y; } });
+  DB.lotes.forEach(l => { const g = geo[l.codigo]; if (l.x == null && g && (!g.fase || !l.fase || g.fase === l.fase)) { l.x = g.x; l.y = g.y; } });
   // recaudadoBase de los contratos reales del CRM
   DB.contratos.forEach((ct, i) => {
     if (ct.recaudadoBase === undefined && ct.fuente === 'CRM') {

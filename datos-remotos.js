@@ -130,8 +130,10 @@ async function cargarDesdeSupabase() {
     (window.LOT_GEO || []).forEach(g => { geo.set(g.fase ? claveLote(g.fase, g.id) : g.id, g); });
     let ubicados = 0;
     for (const l of DB.lotes) {
-      const g = geo.get(l.clave) || geo.get(l.codigo);
-      if (g && g.x != null) { l.x = g.x; l.y = g.y; ubicados++; }
+      /* Por fase·código. Un agrícola «D-02» no es el D-02 de Fase 1: si
+         la geometría trae fase, el código pelado ya no vale. */
+      const g = geo.get(l.clave) || (typeof enPlano === 'function' && enPlano(l) ? geo.get(l.codigo) : null);
+      if (g && g.x != null && (!g.fase || g.fase === l.fase)) { l.x = g.x; l.y = g.y; ubicados++; }
     }
     if (DB.lotes.length && !ubicados)
       console.warn('[datos] ningún lote coincide con lotes-geo.js: revisá los códigos');
