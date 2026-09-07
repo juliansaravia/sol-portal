@@ -3499,7 +3499,27 @@ function modalNuevoContrato(loteSel,pre){
       <button class="btn btn-primary" onclick="crearContrato()">Guardar la venta</button></div>`);
   if(pre.precio==null) precioDeLista(); else prevPlan();
   if(pre.historico) ventaHistorica(true);
+  borradorVenta.restaurar(); borradorVenta.vigilar();
 }
+/* Lo que se va escribiendo en «Ingresar venta» se guarda en el navegador
+   (por usuario, 24 h). Una recarga, un cierre de sesión o un celular que
+   se queda sin batería ya no borran media hora de captura. Se limpia al
+   guardar la venta o al descartarlo a mano. */
+const borradorVenta={
+  clave(){ return 'sol.borradorVenta.'+String((window.__user&&window.__user.name)||'anon'); },
+  leer(){ try{ const j=JSON.parse(localStorage.getItem(this.clave())||'null'); if(!j||Date.now()-j.t>86400000) return null; return j; }catch(e){ return null; } },
+  guardar(){ try{ const m=document.getElementById('modal'); if(!m||!document.getElementById('n-nom')) return; const d={};
+      m.querySelectorAll('input[id^="n-"],select[id^="n-"]').forEach(e=>{ if(e.type==='file') return; d[e.id]=e.type==='checkbox'?e.checked:e.value; });
+      if(!Object.values(d).some(x=>x&&x!==true&&String(x).trim())) return;
+      localStorage.setItem(this.clave(), JSON.stringify({t:Date.now(),d})); }catch(e){} },
+  restaurar(){ const j=this.leer(); if(!j) return; let n=0;
+    Object.entries(j.d).forEach(([id,val])=>{ const e=document.getElementById(id); if(!e||val===''||val==null) return; if(e.type==='checkbox'){ if(val&&!e.checked){ e.checked=true; if(id==='n-hist') ventaHistorica(true); } } else if(!e.value||/^(n-lote|n-vend|n-plz|n-res|n-precio|n-dir_depto|n-pdir_depto)$/.test(id)){ e.value=val; n++; } });
+    if(!n) return; if(typeof prevPlan==='function') prevPlan();
+    const caja=document.getElementById('n-errores'); if(caja) caja.innerHTML=`<div class="aviso-info">Se recuperó lo que estabas escribiendo (${fmtD(new Date(j.t).toISOString().slice(0,10))}). <a href="#" onclick="borradorVenta.descartar();return false;"><b>Empezar en blanco</b></a></div>`; },
+  vigilar(){ const m=document.getElementById('modal'); if(!m) return; m.addEventListener('input',()=>this.guardar()); m.addEventListener('change',()=>this.guardar()); },
+  limpiar(){ try{ localStorage.removeItem(this.clave()); }catch(e){} },
+  descartar(){ this.limpiar(); const lote=v('n-lote'); closeModal(); modalNuevoContrato(lote); }
+};
 /* Modo histórico del formulario: se relajan los campos que un contrato
    viejo no trae y aparece la fecha real de firma. */
 function ventaHistorica(on){
@@ -3615,6 +3635,7 @@ async function crearContrato(){
   if(carga) ct.cargaIngreso=carga.pct;
   saveDB();
 
+  borradorVenta.limpiar();
   closeModal();
   /* La venta nace en borrador: lo que sigue es el expediente. Se abre
      ahí mismo, con la lista de lo que falta y el botón de enviar. */
