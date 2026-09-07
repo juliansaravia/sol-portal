@@ -270,7 +270,46 @@ function repCuadre() {
   return f;
 }
 
+/** Caja esperada por cuotas: lo programado y no pagado, mes a mes. */
+const MESES_CORTOS = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+function cajaMensual(meses) {
+  meses = meses || 12;
+  const cal = (typeof calendario === 'function' ? calendario() : []) || [];
+  const hoyMes = HOY_ISO.slice(0, 7);
+  const porMes = new Map(), vencido = { n: 0, monto: 0, cts: new Set() };
+  cal.forEach(c => {
+    if (!c.f) return;
+    if (c.f < HOY_ISO) { vencido.n++; vencido.monto += c.m || 0; vencido.cts.add(c.c); return; }
+    const k = String(c.f).slice(0, 7);
+    if (!porMes.has(k)) porMes.set(k, { n: 0, monto: 0, cts: new Set() });
+    const m = porMes.get(k); m.n++; m.monto += c.m || 0; m.cts.add(c.c);
+  });
+  const salida = [];
+  let [y, mo] = hoyMes.split('-').map(Number);
+  for (let i = 0; i < meses; i++) {
+    const k = `${y}-${String(mo).padStart(2, '0')}`;
+    const m = porMes.get(k) || { n: 0, monto: 0, cts: new Set() };
+    salida.push({ mes: k, etiqueta: `${MESES_CORTOS[mo - 1]} ${y}`, n: m.n, monto: Math.round(m.monto * 100) / 100, contratos: m.cts.size });
+    mo++; if (mo > 12) { mo = 1; y++; }
+  }
+  const diferido = DB.contratos.filter(c => c.estado === 'aprobado').reduce((s, c) => s + ((estadoCuenta(c).diferido) || 0), 0);
+  return { meses: salida, vencido: { n: vencido.n, monto: Math.round(vencido.monto * 100) / 100, contratos: vencido.cts.size },
+           total: { n: salida.reduce((s, m) => s + m.n, 0), monto: Math.round(salida.reduce((s, m) => s + m.monto, 0) * 100) / 100 },
+           diferido: Math.round(diferido * 100) / 100 };
+}
+function repCajaMensual() {
+  const cm = cajaMensual(24);
+  const f = [['Mes','Cuotas','Contratos','Monto esperado']];
+  if (cm.vencido.monto) f.push(['Vencido a la fecha', cm.vencido.n, cm.vencido.contratos, _repNum(cm.vencido.monto)]);
+  cm.meses.forEach(m => f.push([m.mes, m.n, m.contratos, _repNum(m.monto)]));
+  if (cm.diferido) f.push(['Saldos al desmembrar (sin fecha)', '', '', _repNum(cm.diferido)]);
+  return f;
+}
+
 const REPORTES = [
+  { id:'caja',         nombre:'Caja esperada por cuotas',
+    que:'Mes a mes, cuántas cuotas vencen y cuánto dinero debería entrar.',
+    para:'Para saber con qué caja contar y planear pagos.', fn: repCajaMensual },
   { id:'cartera',      nombre:'Cartera al corte',
     que:'Cada contrato con su plan, lo recaudado, el saldo y la mora.',
     para:'Es el primero que pide el contador.', fn: repCartera },

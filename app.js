@@ -10,7 +10,7 @@ let vista='inicio', filtro='todos', busqueda='', ROLE='admin', SCREEN='login', d
 /* Los roles y sus vistas salen de la matriz de permisos, no de una
    lista escrita a mano. Antes había dos listas que se desincronizaban. */
 const HOME={admin:'inicio',gerencia:'inicio',vendedor:'cotizador',
-            cobranza:'agenda',financiero:'confirmacion',confirmacion:'conciliacion'};
+            cobranza:'agenda',financiero:'confirmacion',confirmacion:'conciliacion',practicante:'expedientes'};
 const ROLES=Object.fromEntries(Object.entries(MATRIZ).map(([r,c])=>[r,
   {label:c.etiqueta, home:HOME[r]||'inicio', views:vistasDe(r), color:c.color, nota:c.nota}]));
 /* 'cobrador' era el nombre viejo del rol de cobranza. */
@@ -500,6 +500,7 @@ function startApp(role){
   });
   document.getElementById('brandRole').textContent=ROLES[role].label;
   document.getElementById('footUser').innerHTML=`<b style="color:#fff">${esc(window.__user.name)}</b><br>${ROLES[role].label}`;
+  marcaDeAgua(role==='practicante'?window.__user.name:null);
   pintarEstado2FA();
   const destino=(location.hash||'').slice(1);
   setView(ROLES[role].views.includes(destino) ? destino : ROLES[role].home);
@@ -508,6 +509,16 @@ function startApp(role){
    entrar. El correo lo manda Supabase; el portal solo lo pide. */
 /* No hay «olvidé mi contraseña» en el formulario: solo administración
    restablece contraseñas, desde Equipo. Decisión del dueño (1 sept 2026). */
+/* Una captura de pantalla no se puede impedir; sí se puede firmar. Al
+   practicante se le pinta su nombre y la hora sobre toda la pantalla. */
+function marcaDeAgua(nombre){
+  let m=document.getElementById('marcaAgua');
+  if(!nombre){ if(m) m.remove(); return; }
+  if(!m){ m=document.createElement('div'); m.id='marcaAgua'; m.className='marca-agua'; m.setAttribute('aria-hidden','true'); document.body.appendChild(m); }
+  const sello=`${nombre} · ${new Date().toLocaleString('es-GT',{dateStyle:'short',timeStyle:'short'})}   `;
+  m.textContent=sello.repeat(160);
+  clearInterval(window.__marcaAguaT); window.__marcaAguaT=setInterval(()=>{ if(document.getElementById('marcaAgua')) marcaDeAgua(nombre); },60000);
+}
 function logout(){
   /* Con la base conectada hay que cerrar la sesión de verdad, no solo
      volver a la pantalla de login: si no, el token sigue vivo y quien
@@ -1031,7 +1042,9 @@ function renderContratos(){
   const th=(k,t,num)=>`<th class="${num?'num ':''}click" onclick="ctOrdenar('${k}')">${t}${ctOrden.k===k?(ctOrden.asc?' ↑':' ↓'):''}</th>`;
   let h=`<div class="card"><div class="card-h" style="flex-wrap:wrap;gap:10px"><h2>Contratos · ${filas.length}${F!=='todos'?` <span class="hint">de ${DB.contratos.length}</span>`:''}</h2>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <input class="chip" style="min-width:220px" placeholder="Buscar por número, lote, cliente o vendedor…" value="${esc(ctBusca)}" oninput="ctBusca=this.value;renderContratos();document.querySelector('.card-h input').focus()">
+      <input class="chip" style="min-width:220px" placeholder="Buscar por número, lote, cliente o vendedor…" value="${esc(ctBusca)}" autocomplete="off"
+             oninput="ctBusca=this.value;renderContratos();const i=document.querySelector('.card-h input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);sugerirBusqueda(i);}"
+             onfocus="sugerirBusqueda(this)" onkeydown="sugTecla(event,0,this)" onblur="setTimeout(cerrarSugerencias,150)">
       ${F==='sin_boleta'?`<button class="btn btn-gold btn-sm" onclick="modalCargaRecibos()">Cargar recibos del CRM</button>`:''}
       ${F==='sin_firmado'?`<button class="btn btn-gold btn-sm" onclick="modalCargaDocumentos()">Cargar contratos firmados</button>`:''}
       <button class="btn btn-ghost btn-sm" onclick="modalCargaDocumentos()">Cargar documentos</button>
@@ -2300,7 +2313,9 @@ function cartaCartera(){
   filas.sort((a,b)=>{const A=val(a),B=val(b);const r=typeof A==='number'?A-B:String(A).localeCompare(String(B));return cobOrden.asc?r:-r;});
   const th=(k,t,num)=>`<th class="${num?'num ':''}click" onclick="cobOrdenar('${k}')">${t}${cobOrden.k===k?(cobOrden.asc?' ↑':' ↓'):''}</th>`;
   let h=`<div class="card"><div class="card-h" style="flex-wrap:wrap;gap:10px"><h2>Cartera · ${filas.length}</h2>
-    <input class="chip" style="min-width:220px" placeholder="Buscar cliente, lote, contrato o vendedor…" value="${esc(cobBusca)}" oninput="cobBusca=this.value;renderCobranza();document.querySelector('.card-h input').focus()"></div>
+    <input class="chip" style="min-width:220px" placeholder="Buscar cliente, lote, contrato o vendedor…" value="${esc(cobBusca)}" autocomplete="off"
+           oninput="cobBusca=this.value;renderCobranza();const i=document.querySelector('.card-h input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);sugerirBusqueda(i);}"
+           onfocus="sugerirBusqueda(this)" onkeydown="sugTecla(event,0,this)" onblur="setTimeout(cerrarSugerencias,150)"></div>
     <div class="card-b chips">${Object.entries(FILTROS_COB).map(([k,t])=>`<button class="chip ${k===F?'on':''}" onclick="irA('cobranza',{f:'${k}'})">${t}</button>`).join('')}</div>
     <div class="card-b" style="padding:0;overflow-x:auto"><table class="data" id="tblCartera"><thead><tr>
     ${th('contrato','Contrato')}${th('cliente','Cliente')}<th>Lote</th>${th('vencido','Vencido',1)}${th('dias','Días',1)}${th('cuotas','Cuotas venc.',1)}
@@ -2736,6 +2751,18 @@ function renderReporteria(){
       <div class="hint" style="margin-top:8px">${pct}% recaudado de una cartera de ${Qk_(n.cartera)}.</div>
     </div></div>`;
 
+  /* Lo que va a entrar por cuotas, mes a mes: la caja que se puede esperar. */
+  if(typeof cajaMensual==='function'){
+    const cm=cajaMensual(12);
+    h += `<div class="card"><div class="card-h"><h2>Caja esperada por cuotas</h2>
+        <span class="hint">Cuotas programadas que aún no se pagan · sin el saldo al desmembrar</span></div>
+      <div class="card-b" style="padding:0;overflow-x:auto"><table class="data"><thead><tr><th>Mes</th><th class="num">Cuotas</th><th class="num">Contratos</th><th class="num">Monto</th></tr></thead><tbody>
+        ${cm.vencido.monto?`<tr><td><b>Vencido a la fecha</b> <span class="hint">lo que ya debió entrar</span></td><td class="num">${cm.vencido.n}</td><td class="num">${cm.vencido.contratos}</td><td class="num" style="color:var(--mora)"><b>${Q(cm.vencido.monto)}</b></td></tr>`:''}
+        ${cm.meses.map(m=>`<tr><td>${esc(m.etiqueta)}</td><td class="num">${m.n}</td><td class="num">${m.contratos}</td><td class="num"><b>${Q(m.monto)}</b></td></tr>`).join('')}
+        <tr><td><b>Total 12 meses</b></td><td class="num">${cm.total.n}</td><td class="num">—</td><td class="num"><b>${Q(cm.total.monto)}</b></td></tr>
+      </tbody></table></div>
+      ${cm.diferido?`<div class="card-b hint">Además hay ${Q(cm.diferido)} en saldos al desmembrar (contado al 50%) que entran cuando se libere cada lote.</div>`:''}</div>`;
+  }
   /* Y abajo lo que de verdad se lleva uno al cierre. */
   h += `<div class="card"><div class="card-h"><h2>Descargar para el cierre</h2>
       <span class="hint">CSV listo para Excel · del ${fmtD(n.desde)} al ${fmtD(n.hasta)}</span></div>
@@ -3590,11 +3617,9 @@ const DOCS_REQ = () => (typeof DB !== 'undefined' && DB.documentosRequeridos && 
 /* Papeles que el vendedor sube escaneados en PDF (no fotos). La boleta
    del enganche queda fuera: casi siempre es una captura del banco. */
 const PAPELES_PDF=['formulario','plan_pagos','contrato','dpi','dpi_pariente'];
-function exigePdfEscaneado(tipo){
-  const rol=String((typeof SESION!=='undefined'&&SESION.persona&&SESION.persona.rol)||(window.__user&&window.__user.role)||'');
-  const esVendedor=rol==='vendedor'||(window.PORTAL==='vendedor'&&!/admin|gerencia|financiero/.test(rol));
-  return esVendedor&&PAPELES_PDF.includes(tipo);
-}
+/* Regla para todos los que suban desde la ficha (4 sept 2026: «solo PDF
+   escaneado»). La carga masiva de expedientes históricos no pasa por aquí. */
+function exigePdfEscaneado(tipo){ return PAPELES_PDF.includes(tipo); }
 /* Orden del flujo de venta. Lo que no esté acá va al final. */
 const ORDEN_FLUJO=['formulario','plan_pagos','boleta_enganche','dpi','dpi_pariente','contrato','recibo_enganche'];
 const ordenFlujo=c=>{ const i=ORDEN_FLUJO.indexOf(c); return i<0?99:i; };
@@ -4425,6 +4450,16 @@ function sugTecla(e,i,input){
 /* Carga masiva: la fila i. */
 function sugerir(i,input){ mostrarSugerencias(input, filtrarSugerencias(input.value, sugerenciasMasa(v('cd-fase'))), val=>masaContrato(i,val), val=>masaContrato(i,val)); }
 function elegirSugerencia(i,valor){ cerrarSugerencias(); masaContrato(i,valor); }
+/* Buscador de una lista (Contratos, Cobranza): la lista se filtra con cada
+   letra y, además, cae un desplegable con los contratos que coinciden;
+   elegir uno abre su ficha. El cursor se mantiene al final: re-dibujar la
+   pantalla lo mandaba al inicio y se escribía al revés («11a»). */
+function sugerirBusqueda(input){
+  const todas=DB.contratos.filter(c=>c.estado!=='anulado').sort((a,b)=>String(a.lote).localeCompare(String(b.lote),undefined,{numeric:true})).map(etiquetaContrato);
+  const elegir=val=>{ const no=String(val).split('·')[0].trim(); const c=indices().contratosPorNo.get(no); if(c) abrirContrato(c.id); };
+  if(!String(input.value||'').trim()){ cerrarSugerencias(); return; }
+  mostrarSugerencias(input, filtrarSugerencias(input.value, todas), elegir, null);
+}
 /* Cualquier campo que deba apuntar a un contrato: guarda el id en data-id. */
 function etiquetaContrato(c){ return `${c.no} · ${c.lote}${c.fase?' · '+c.fase:''} · ${nombreCliente(c.clienteId)}`; }
 function sugerirContrato(input){
@@ -4580,7 +4615,7 @@ function notaDiferido(ct){
       ${(PUEDE_DIFERIR()||ROLE==='cobranza')?`<a href="#" onclick="modalLiberarDiferido('${ct.id}');return false;"><b>Desmembrado: cobrar ahora</b></a>`:''}</div>`;
   }
   if(ct.modalidad==='desmembrado') return `<div class="hint" style="margin:6px 0">Saldo al desmembrar liberado: ya está en cobranza normal.</div>`;
-  return PUEDE_DIFERIR()?`<div class="hint" style="margin:6px 0">¿Pagó al contado el 50% y el resto espera la desmembración? <a href="#" onclick="modalContadoDiferido('${ct.id}');return false;">Marcar saldo al desmembrar</a></div>`:'';
+  return PUEDE_DIFERIR()?`<div class="btn-row" style="margin:6px 0;align-items:center;gap:10px"><button class="btn btn-ghost btn-sm" onclick="modalContadoDiferido('${ct.id}')">Marcar contado al 50%</button><span class="hint">Pagó la mitad al contado y el resto espera la desmembración: no cuenta como mora.</span></div>`:'';
 }
 function modalContadoDiferido(id){
   const ct=getContrato(id); if(!ct) return; const ec=estadoCuenta(ct);

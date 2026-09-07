@@ -125,6 +125,10 @@ function renderExpedientes() {
         escritura cerrada, así que no hay forma de registrar algo por accidente.</div>
     </div></div>`;
 
+  if (typeof puede === 'function' && puede('doc.subir') && typeof modalCargaDocumentos === 'function')
+    h += `<div class="card"><div class="card-b" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="modalCargaDocumentos()">📁 Cargar carpeta de expedientes</button>
+      <span class="hint">Elegí la carpeta de un lote (o varias): el suite reconoce el contrato por el nombre y cada papel por su archivo. También podés abrir un expediente abajo y subir papel por papel.</span></div></div>`;
   h += `<div class="card"><div class="card-h">
     <h2>Buscar un expediente</h2>
     <div style="display:flex;gap:8px;align-items:center">

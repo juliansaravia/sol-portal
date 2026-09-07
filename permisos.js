@@ -128,6 +128,16 @@ const MATRIZ = {
      cualquier botón de guardar rebota. No ve expedientes, ni crea
      ventas, ni toca permisos ni reglas. Mismo criterio que
      21_rol_consulta.sql. */
+  /* Practicantes que suben la documentación de respaldo (4 sept 2026).
+     Ven qué contrato es de quién y qué papel falta; suben archivos. Nada
+     de dinero: ni pagos, ni saldos, ni comisiones. La base lo cierra en
+     45_rol_practicante.sql; acá sólo ven la pantalla de Expedientes y
+     trabajan con marca de agua a su nombre. */
+  practicante: {
+    etiqueta: 'Practicante', color: '#9C8B6E',
+    nota: 'Sube los expedientes. Ve contratos, clientes y papeles; ningún número.',
+    acciones: ['doc.ver_todos','doc.subir'],
+  },
   consulta: {
     etiqueta: 'Solo lectura', color: '#7A8A99',
     nota: 'Mira, no toca. Para revisar UX/UI: ve estructura y números, ninguna persona.',
@@ -181,8 +191,8 @@ function conflictos(matriz = MATRIZ) {
 const RLS_DECLARADO = {
   // De db/04_storage.sql · política exp_leer del bucket «expedientes»
   'doc.ver_expedientes': ['admin','gerencia','financiero','confirmacion'],
-  'doc.ver_todos':  ['admin','cobranza','confirmacion','financiero','gerencia'],
-  'doc.subir':      ['admin','gerencia','vendedor','cobranza','confirmacion','financiero'],
+  'doc.ver_todos':  ['admin','cobranza','confirmacion','financiero','gerencia','practicante'],
+  'doc.subir':      ['admin','gerencia','vendedor','cobranza','confirmacion','financiero','practicante'],
   'doc.borrar':     ['admin'],
   'pago.confirmar': ['admin','financiero','confirmacion'],
 };
@@ -223,6 +233,7 @@ const VISTA_REQUIERE = {
   automatizaciones: 'reglas.editar',
 };
 
-const vistasDe = rol => Object.entries(VISTA_REQUIERE)
+/* El practicante no recorre el portal: una sola pantalla, la suya. */
+const vistasDe = rol => rol === 'practicante' ? ['expedientes'] : Object.entries(VISTA_REQUIERE)
   .filter(([, req]) => !req || accionesDe(rol).includes(req))
   .map(([v]) => v);

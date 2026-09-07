@@ -721,3 +721,6 @@ button,a,.chip,.tab-item,.nav-item,.btn{touch-action:manipulation}
 }
 /* Aviso informativo (instrucciones, no error) */
 .aviso-info{background:var(--info-soft);color:#2F4761;border-left:3px solid var(--info);padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.45}
+
+/* Marca de agua del practicante: su nombre y la hora sobre toda la pantalla */
+.marca-agua{position:fixed;inset:-40%;pointer-events:none;z-index:9990;overflow:hidden;opacity:.11;font:700 15px var(--font);color:var(--dark);transform:rotate(-24deg);line-height:120px;word-spacing:30px;white-space:normal;text-align:center;user-select:none}
