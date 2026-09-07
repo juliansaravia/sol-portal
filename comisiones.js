@@ -304,8 +304,9 @@ const CAMPOS_VENTA = [
   { id:'dir_calle', label:'Calle, avenida, zona o aldea',     grupo:'comprador', req:true },
   { id:'dir_muni',  label:'Municipio',                        grupo:'comprador', req:true },
   { id:'dir_depto', label:'Departamento',                     grupo:'comprador', req:true, tipo:'depto' },
-  { id:'ocup',     label:'Ocupación u oficio',          grupo:'ingresos',  req:true },
-  { id:'ingreso',  label:'Ingreso promedio al mes (Q)', grupo:'ingresos',  req:true, tipo:'monto' },
+  /* Ocupación e ingreso opcionales (7 sept 2026): muchos contratos no traen el dato. Si viene, el comité ve la carga de la cuota. */
+  { id:'ocup',     label:'Ocupación u oficio',          grupo:'ingresos',  req:false },
+  { id:'ingreso',  label:'Ingreso promedio al mes (Q)', grupo:'ingresos',  req:false, tipo:'monto' },
   /* Opcional (4 sept 2026): la constancia de ingresos no es parte del expediente estándar. */
   { id:'fuente',   label:'¿Cómo comprueba su ingreso?', grupo:'ingresos',  req:false, tipo:'lista' },
   { id:'pnom',     label:'Nombre del pariente',         grupo:'pariente',  req:true },

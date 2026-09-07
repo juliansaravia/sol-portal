@@ -3454,10 +3454,10 @@ function modalNuevoContrato(loteSel,pre){
         ${direccion('dir','Dirección de residencia')}
       </div>
 
-      <div class="sect-t" style="margin-top:18px">Ocupación e ingresos</div>
+      <div class="sect-t" style="margin-top:18px">Ocupación e ingresos <span class="hint" style="font-weight:400;text-transform:none;letter-spacing:0">· opcionales, ayudan al comité</span></div>
       <div class="form-grid">
         ${campo('ocup','Ocupación u oficio','placeholder="Agricultor, comerciante, maestra..."')}
-        <div class="field"><label>Ingreso promedio al mes (Q) *</label>
+        <div class="field"><label>Ingreso promedio al mes (Q) <span class="hint">(opcional)</span></label>
           <input id="n-ingreso" type="number" oninput="prevCarga()"><div class="err" id="e-ingreso"></div></div>
         <div class="field full"><label>¿Cómo comprueba su ingreso? <span class="hint">(opcional)</span></label>
           <select id="n-fuente" onchange="pistaConstancia()">
