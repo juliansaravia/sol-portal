@@ -111,8 +111,10 @@ const MATRIZ = {
   },
   financiero: {
     etiqueta: 'Financiero', color: '#3A2318',
-    nota: 'Confirma el dinero, autoriza comisiones y arma expedientes: sube contratos y papeles y llena los datos de los clientes. No concilia ni factura.',
-    acciones: ['cobranza.ver','pago.confirmar','pago.anular','contable.exportar',
+    nota: 'Confirma el dinero, autoriza comisiones y arma expedientes: registra contratos históricos, sube contratos y papeles y llena los datos de los clientes. No concilia ni factura.',
+    /* venta.crear: la base ya lo deja crear contratos (34_financiero_expedientes.sql);
+       lo usa para cargar los históricos con el modo «contrato histórico». */
+    acciones: ['venta.crear','cobranza.ver','pago.confirmar','pago.anular','contable.exportar',
                'comision.ver_todas','comision.pagar',
                'doc.ver_todos','doc.ver_expedientes','doc.subir','venta.ver_todas','bitacora.ver'],
   },

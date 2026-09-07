@@ -3112,7 +3112,9 @@ function abrirLote(codigo){
       <div><div class="f-lbl">En el plano</div><div class="f-val">${l.x!=null?'Ubicado':'Sin coordenadas'}</div></div>
     </div>`;
   if(l.estado==='disponible'&&ROLE!=='cobrador')
-    h+=`<div class="btn-row"><button class="btn btn-primary" onclick="modalNuevoContrato('${l.codigo}')">Vender este lote</button></div>`;
+    /* Sólo quien puede ingresar ventas; y por clave, no por código (los agrícolas repiten códigos). */
+    if(typeof puede!=='function'||puede('venta.crear'))
+      h+=`<div class="btn-row"><button class="btn btn-primary" onclick="modalNuevoContrato('${esc(claveDe(l))}')">Vender este lote</button></div>`;
   h+=`</div>`; openDrawer(h);
 }
 function abrirCliente(id){
