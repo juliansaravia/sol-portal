@@ -2174,6 +2174,35 @@ async function reactivarPersona(id){
   toast(esc(p.nombre)+' vuelve a tener acceso'); renderEquipo();
 }
 
+/* Un contrato, un vendedor: los históricos llegaron sin responsable y
+   «Asignarlos» de Equipo los manda todos al mismo. Acá se pone uno a uno,
+   desde la ficha. Con él va la comisión y el seguimiento. */
+function modalVendedorContrato(id){
+  const ct=getContrato(id); if(!ct) return;
+  const opts=vendedores();
+  openModal(`<div class="modal-h"><h3>Vendedor del contrato</h3><p>${esc(ct.no)} · Lote ${esc(ct.lote)} · ${esc(nombreCliente(ct.clienteId))}</p></div>
+    <div class="modal-b">
+      <div class="field"><label>Vendedor</label><select id="vc-dest">
+        ${opts.map(p=>`<option value="${esc(p.nombre)}" ${p.nombre===ct.vendedor?'selected':''}>${esc(p.nombre)} · ${esc(p.codigo||'')}</option>`).join('')}
+      </select></div>
+      <div class="hint">${ct.vendedor&&buscarPersona(ct.vendedor)?`Hoy está a nombre de <b>${esc(ct.vendedor)}</b>. Al cambiarlo, la comisión pendiente se mueve con el contrato.`:'Este contrato no tiene vendedor: sin responsable no hay comisión ni seguimiento.'}</div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="asignarVendedorContrato('${ct.id}')">Guardar</button></div>`);
+}
+async function asignarVendedorContrato(id){
+  const ct=getContrato(id); if(!ct) return;
+  const nombre=v('vc-dest'); if(!nombre) return toast('Elegí el vendedor',5000,true);
+  const antes=ct.vendedor||'sin asignar';
+  if(typeof hayBase==='function'&&hayBase()){
+    const destino=DB.equipo.find(p=>p.nombre===nombre); if(!destino) return toast('No se encontró a '+nombre+' en el equipo',6000,true);
+    const r=await conBoton(()=>sbReasignarContratos([ct.id], destino.id)); if(!r||!r.ok){ if(r) toast(r.error,7000,true); return; }
+  }
+  ct.vendedor=nombre; if(typeof reindexar==='function') reindexar(); saveDB();
+  await registrarGestion(ct.id,'Bitácora Socios','Contactado',`Vendedor: ${antes} → ${nombre}`);
+  anotar('contrato.vendedor', ct.no+' · '+nombre);
+  closeModal(); toast('Vendedor de '+ct.no+': '+nombre+' ✓'); pintarContrato();
+}
 function modalReasignar(de){
   const cts=de==='Sin asignar'
     ? DB.contratos.filter(c=>c.estado!=='anulado'&&(!c.vendedor||c.vendedor==='Sin asignar'))
@@ -3134,7 +3163,8 @@ function pintarContrato(){
       <div><div class="f-lbl">Fecha</div><div class="f-val">${fmtD(ct.fecha)}</div></div>
       <div><div class="f-lbl">Lote</div><div class="f-val">${ct.lote}</div></div>
       <div><div class="f-lbl">Precio de venta</div><div class="f-val">${Q(ct.precio)}</div></div>
-      <div><div class="f-lbl">Vendedor</div><div class="f-val">${esc(ct.vendedor)}</div></div>
+      <div><div class="f-lbl">Vendedor</div><div class="f-val">${esc(ct.vendedor)||'<span class="muted">Sin asignar</span>'}
+        ${['admin','gerencia','financiero'].includes(ROLE)?`<button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="modalVendedorContrato('${ct.id}')">${ct.vendedor&&buscarPersona(ct.vendedor)?'Cambiar':'Asignar'}</button>`:''}</div></div>
       <div><div class="f-lbl">Origen</div><div class="f-val">${esc(ct.origen||'—')}</div></div>
       <div><div class="f-lbl">Firma</div><div class="f-val">${ct.firma}</div></div>
       <div><div class="f-lbl">Fuente</div><div class="f-val">${ct.fuente||'Suite'}</div></div>
