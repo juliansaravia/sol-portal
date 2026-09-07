@@ -4,9 +4,9 @@
    El portal se despliega solo con cada cambio, pero una pestaña
    abierta sigue corriendo el código con el que arrancó. Cada 3
    minutos —y al volver a la pestaña— se pregunta al servidor la
-   huella (ETag) de app.js. Si cambió, se avisa con un botón; y si no
-   hay ningún modal ni cajón abierto, se recarga sola. Nadie tiene que
-   acordarse de apretar F5.
+   huella (ETag) de app.js. Si cambió, se avisa con un botón para
+   actualizar cuando la persona termine lo que está haciendo. No se
+   recarga sola: perdía trabajo a medias.
    ============================================================ */
 'use strict';
 (() => {
@@ -28,13 +28,16 @@
     if (document.getElementById('avisoVersion')) return;
     const b = document.createElement('div');
     b.id = 'avisoVersion';
-    b.innerHTML = 'Hay una versión nueva del suite. <button onclick="location.reload()">Actualizar</button>';
+    b.innerHTML = 'Hay una versión nueva del suite. Terminá lo que estás haciendo y <button onclick="location.reload()">Actualizar</button>';
     document.body.appendChild(b);
   }
   async function revisar() {
     const h = await huellaActual(); if (!h) return;
     if (huella === null) { huella = h; pintarVersion(h); return; }
-    if (h !== huella) { if (ocupado()) avisar(); else location.reload(); }
+    /* Nunca se recarga sola (7 sept 2026): con varios despliegues al día la
+       gente perdía lo que tenía a medias («el sistema se reinicia»). Se avisa
+       con un botón y cada quien actualiza cuando termina lo suyo. */
+    if (h !== huella) avisar();
   }
   function pintarVersion(h) {
     const f = document.querySelector('.sidebar-foot'); if (!f) return;
