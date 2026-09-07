@@ -3404,7 +3404,16 @@ function drawerHead(id,meta,cls,txt){
     <span class="badge ${cls}" style="margin-top:10px">${txt}</span></div>`;
 }
 function openDrawer(h){const d=document.getElementById('drawer');d.innerHTML=h;d.hidden=false;document.getElementById('scrim').hidden=false;}
-function closeDrawer(){document.getElementById('drawer').hidden=true;document.getElementById('scrim').hidden=true;drawerCt=null;}
+function closeDrawer(){document.getElementById('drawer').hidden=true;document.getElementById('scrim').hidden=true;drawerCt=null;window.__expedienteAbierto=null;}
+/* Después de subir un papel: se redibuja el cajón que esté abierto, sea
+   la ficha del contrato o el expediente de la pantalla Expedientes. */
+function refrescarCajonDocs(){
+  if(typeof reindexar==='function') reindexar();
+  const d=document.getElementById('drawer');
+  if(window.__expedienteAbierto&&d&&!d.hidden&&typeof verExpediente==='function'){ verExpediente(window.__expedienteAbierto); return; }
+  if(drawerCt){ drawerTab='docs'; pintarContrato(); }
+  if(vista==='expedientes'&&typeof renderExpedientes==='function') renderExpedientes();
+}
 
 /* ============================================================ MODALES */
 function modalNuevoContrato(loteSel,pre){
@@ -4342,24 +4351,24 @@ async function guardarDoc(id){
 
   const r=await conBoton(()=>agregarDocumento(id,codigo,archivo,cara));
   if(!r) return;
-  closeModal(); drawerTab='docs';
+  closeModal();
   if(esBol&&monto>0&&!yaPago&&typeof hayBase==='function'&&hayBase()&&typeof sbEngancheDesdeDocumento==='function'&&r.id){
     toast('Boleta subida ✓ · registrando el enganche…');
     const e=await sbEngancheDesdeDocumento(r.id, monto, ref, null);
-    if(!e.ok){ toast('La boleta quedó en el expediente, pero el enganche no se registró: '+e.error, 9000, true); pintarContrato(); return; }
+    if(!e.ok){ toast('La boleta quedó en el expediente, pero el enganche no se registró: '+e.error, 9000, true); refrescarCajonDocs(); return; }
     const d=e.dato||{};
-    if(d.ok===false){ toast('Ese contrato ya tenía un pago registrado; la boleta quedó en el expediente', 7000); pintarContrato(); return; }
+    if(d.ok===false){ toast('Ese contrato ya tenía un pago registrado; la boleta quedó en el expediente', 7000); refrescarCajonDocs(); return; }
     (DB.pagos=DB.pagos||[]).push({ id:d.pago_id, contratoId:Number(ctDoc?ctDoc.id:id), monto, fecha:HOY_ISO, forma:'Transferencia bancaria', referencia:ref||'', estado:'registrado', cuota:d.cuota||1 });
     (DB.adjuntos=DB.adjuntos||[]).push({ id:d.adjunto_id, entidad:'pago', entidadId:d.pago_id, bucket:r.bucket, ruta:r.ruta, nombre:r.nombre, mime:r.mime, bytes:r.bytes, descripcion:'Boleta '+(ref||'')+' · enganche (expediente)', fecha:HOY_ISO });
     (DB.recibos=DB.recibos||[]).push({ id:d.recibo_id, numero:d.recibo_numero, pagoId:d.pago_id, contratoId:Number(ctDoc?ctDoc.id:id), monto, fecha:HOY_ISO, adjuntoId:null });
     if(typeof reindexar==='function') reindexar();
     anotar('pago.boleta', (ctDoc||{}).no+' · enganche '+Q(monto));
-    pintarContrato(); if(typeof pintarBadgeAsuntos==='function') pintarBadgeAsuntos();
+    refrescarCajonDocs(); if(typeof pintarBadgeAsuntos==='function') pintarBadgeAsuntos();
     toast('Enganche de '+Q(monto)+' registrado ✓ · recibo No '+String(d.recibo_numero).padStart(6,'0'));
     if(typeof emitirYCompartirRecibo==='function') emitirYCompartirRecibo(d.pago_id);
     return;
   }
-  toast('Documento subido ✓'); pintarContrato();
+  toast('Documento subido ✓'); refrescarCajonDocs();
 }
 
 /* Abrir un documento es pedir una URL firmada que caduca a los dos

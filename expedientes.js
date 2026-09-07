@@ -199,6 +199,10 @@ function expPintar() {
 function verExpediente(id) {
   const ct = getContrato(id);
   if (!ct) return;
+  /* Quien suba un papel desde este cajón lo vuelve a dibujar: antes se
+     quedaba el texto viejo («no hay ningún documento») aunque el archivo
+     ya estuviera arriba, y parecía que la subida había fallado. */
+  window.__expedienteAbierto = ct.id;
   const c = contactoDe(ct.no) || {};
   const docs = (typeof documentosExpediente === 'function' ? documentosExpediente(ct) : documentosDe(ct.id)) || [];
   const e = estadoCuenta(ct);
