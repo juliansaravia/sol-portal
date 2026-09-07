@@ -3414,9 +3414,11 @@ function modalNuevoContrato(loteSel,pre){
   const disp=DB.lotes.filter(l=>l.estado==='disponible'&&l.precio>0)
     .sort((a,b)=>ordenFase(a.fase)-ordenFase(b.fase)||String(a.fase||'').localeCompare(String(b.fase||''))||String(a.codigo).localeCompare(String(b.codigo),undefined,{numeric:true}));
   const nom=(pre.nombre||'').split(' ');
+  const puedeHistorico=['admin','gerencia','financiero'].includes(ROLE);
   const campo=(id,label,extra,ancho)=>{ const req=((typeof CAMPOS_VENTA!=='undefined'?CAMPOS_VENTA:[]).find(c=>c.id===id)||{}).req!==false;
-    return `<div class="field ${ancho||''}">
-    <label>${label}${req?' *':''}</label><input id="n-${id}" ${extra||''}><div class="err" id="e-${id}"></div></div>`; };
+    const optHist=(typeof OPCIONAL_HISTORICO!=='undefined'&&OPCIONAL_HISTORICO.includes(id))?' opt-hist':'';
+    return `<div class="field ${ancho||''}${optHist}">
+    <label>${label}${req?' <span class="ast">*</span>':''}</label><input id="n-${id}" ${extra||''}><div class="err" id="e-${id}"></div></div>`; };
   /* La dirección va en cuatro partes obligatorias; el departamento se elige de la lista. */
   const direccion=(pref,titulo)=>`<div class="field full" style="margin-bottom:-6px"><label>${titulo} *</label><div class="hint">Número de casa, calle, municipio y departamento: sin los cuatro no se acepta.</div></div>`
     +PARTES_DIRECCION.map(pt=>pt.tipo==='depto'
@@ -3430,7 +3432,7 @@ function modalNuevoContrato(loteSel,pre){
         <div class="field"><label>Lote * <span class="hint">${disp.length} disponibles</span></label><select id="n-lote" onchange="precioDeLista();prevPlan()">${(()=>{ const fases=[...new Set(disp.map(l=>l.fase||''))]; const op=l=>`<option value="${esc(claveDe(l))}" ${claveDe(l)===loteSel||l.codigo===loteSel?'selected':''}>${l.codigo} · ${l.area} m² · ${Qk(l.precio)}</option>`; return fases.length>1?fases.map(f=>`<optgroup label="${esc(f||'Sin fase')}">${disp.filter(l=>(l.fase||'')===f).map(op).join('')}</optgroup>`).join(''):disp.map(op).join(''); })()}</select></div>
         ${ROLE==='vendedor'
           ? `<div class="field"><label>Vendedor</label><input id="n-vend" value="${esc((window.__user&&window.__user.name)||'')}" readonly style="background:var(--tint)"></div>`
-          : `<div class="field"><label>Vendedor</label><select id="n-vend">${vendedores().map(x=>`<option>${esc(x.nombre)}</option>`).join('')}</select></div>`}
+          : `<div class="field"><label>Vendedor</label><select id="n-vend"><option value="">(sin vendedor)</option>${DB.equipo.filter(p=>p.rol==='vendedor'||p.vendedorHasta).sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(x=>`<option ${x.activo?'':'style="color:#888"'}>${esc(x.nombre)}</option>`).join('')}</select></div>`}
         <div class="field"><label>Precio de venta (Q) <span class="hint" id="n-precioLista"></span></label><input id="n-precio" type="number" min="0" step="0.01" value="${pre.precio!=null?pre.precio:''}" oninput="prevPlan()"></div>
         <div class="field"><label>Enganche (Q) <span class="hint">(0 si es promoción)</span></label><input id="n-res" type="number" min="0" value="${pre.enganche!=null?pre.enganche:ENGANCHE_MIN}" oninput="prevPlan()"></div>
         <div class="field"><label>Plazo (meses)</label><select id="n-plz" onchange="prevPlan()">
@@ -3438,6 +3440,9 @@ function modalNuevoContrato(loteSel,pre){
           <option value="0">Al contado · sin cuotas</option></select></div>
       </div>
       <div id="n-prev" class="prev-plan"></div>
+      ${puedeHistorico?`<label class="hint" style="display:flex;gap:8px;align-items:flex-start;margin:10px 0 0;cursor:pointer"><input type="checkbox" id="n-hist" onchange="ventaHistorica(this.checked)" ${pre.historico?'checked':''} style="margin-top:3px">
+        <span><b>Contrato histórico</b>: ya está firmado en papel y vigente. Queda aprobado con el lote vendido; sólo se exige nombre y apellido del cliente, lo demás se guarda si se tiene. El contrato firmado se sube después como documento.</span></label>
+      <div class="form-grid" id="n-histCampos" hidden><div class="field"><label>Fecha del contrato <span class="ast">*</span></label><input id="n-fecha" type="date" value="${HOY_ISO}"></div></div>`:''}
 
       <div class="sect-t" style="margin-top:18px">El comprador</div>
       <div class="form-grid">
@@ -3479,6 +3484,15 @@ function modalNuevoContrato(loteSel,pre){
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="crearContrato()">Guardar la venta</button></div>`);
   if(pre.precio==null) precioDeLista(); else prevPlan();
+  if(pre.historico) ventaHistorica(true);
+}
+/* Modo histórico del formulario: se relajan los campos que un contrato
+   viejo no trae y aparece la fecha real de firma. */
+function ventaHistorica(on){
+  const m=document.getElementById('modal'); if(!m) return;
+  m.classList.toggle('historico',!!on);
+  const f=document.getElementById('n-histCampos'); if(f) f.hidden=!on;
+  const b=document.querySelector('.modal-f .btn-primary'); if(b) b.textContent=on?'Guardar contrato histórico':'Guardar la venta';
 }
 /* El precio de venta nace del precio de lista del lote y se puede cambiar
    a mano (descuento, promoción, negociación). Si difiere, se ve y queda
@@ -3554,7 +3568,9 @@ async function crearContrato(){
   const d={}; CAMPOS_VENTA.forEach(c=>{ d[c.id]=v('n-'+c.id); });
   document.querySelectorAll('.err').forEach(e=>e.textContent='');
 
-  const r=validarVenta(d);
+  const historico=!!(document.getElementById('n-hist')&&document.getElementById('n-hist').checked&&['admin','gerencia','financiero'].includes(ROLE));
+  if(historico&&!v('n-fecha')) return toast('Falta la fecha del contrato',5000,true);
+  const r=validarVenta(d,{historico});
   if(!r.ok){
     r.errores.forEach(e=>{const el=document.getElementById('e-'+e.campo); if(el) el.textContent=e.msg;});
     const caja=document.getElementById('n-errores');
@@ -3568,9 +3584,10 @@ async function crearContrato(){
 
   const ct=await conBoton(()=>nuevoContrato({lote:v('n-lote'),nombre:`${d.nom} ${d.ape}`.trim(),dpi:validaDPI(d.dpi).valor,
     telefono:validaTel(d.tel).valor,email:validaMail(d.mail).valor,
-    direccion:direccionCompleta(d,'dir'), ocupacion:d.ocup, ingresoMensual:+String(d.ingreso).replace(/[^\d.]/g,''),
+    direccion:d.dir_depto?direccionCompleta(d,'dir'):'', ocupacion:d.ocup, ingresoMensual:+String(d.ingreso).replace(/[^\d.]/g,''),
     constancia:d.fuente, pesoConstancia:pesoConstancia(d.fuente),
-    pariente:{nombre:d.pnom, telefono:validaTel(d.ptel).valor, email:validaMail(d.pmail).valor, direccion:direccionCompleta(d,'pdir')},
+    pariente:d.pnom?{nombre:d.pnom, telefono:validaTel(d.ptel).valor, email:validaMail(d.pmail).valor, direccion:d.pdir_depto?direccionCompleta(d,'pdir'):''}:null,
+    fecha:historico?v('n-fecha'):undefined, historico,
     /* El vendedor vende a su nombre, siempre. El enganche puede ser 0 (promoción): vacío es el mínimo. */
     vendedor:ROLE==='vendedor'?((window.__user&&window.__user.name)||v('n-vend')):v('n-vend'),
     precio:precioVentaElegido(),
@@ -3587,7 +3604,7 @@ async function crearContrato(){
   closeModal();
   /* La venta nace en borrador: lo que sigue es el expediente. Se abre
      ahí mismo, con la lista de lo que falta y el botón de enviar. */
-  toast('Venta guardada como borrador · ahora el expediente', 5000);
+  toast(historico?'Contrato histórico guardado · subí el contrato firmado y los papeles que tenga':'Venta guardada como borrador · ahora el expediente', 5000);
   drawerTab='docs'; abrirContrato(ct.id,'docs'); return;
   toast('Contrato '+ct.no+' generado → Aprobación');
   if(carga&&carga.nivel==='riesgoso')

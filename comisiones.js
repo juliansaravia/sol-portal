@@ -295,7 +295,8 @@ const CAMPOS_VENTA = [
   { id:'ape',      label:'Apellidos',                   grupo:'comprador', req:true },
   { id:'dpi',      label:'DPI (CUI)',                   grupo:'comprador', req:true, tipo:'dpi' },
   { id:'tel',      label:'Teléfono celular',            grupo:'comprador', req:true, tipo:'tel' },
-  { id:'mail',     label:'Correo electrónico',          grupo:'comprador', req:true, tipo:'mail' },
+  /* Correo opcional (7 sept 2026): muchos clientes no tienen. Si se anota, se valida. */
+  { id:'mail',     label:'Correo electrónico',          grupo:'comprador', req:false, tipo:'mail' },
   /* Dirección en cuatro partes (4 sept 2026): sin número de casa, calle,
      municipio y departamento no se acepta, ni la del comprador ni la del
      fiador. Se guarda como un solo texto separado por comas. */
@@ -309,7 +310,7 @@ const CAMPOS_VENTA = [
   { id:'fuente',   label:'¿Cómo comprueba su ingreso?', grupo:'ingresos',  req:false, tipo:'lista' },
   { id:'pnom',     label:'Nombre del pariente',         grupo:'pariente',  req:true },
   { id:'ptel',     label:'Teléfono celular del pariente',grupo:'pariente', req:true, tipo:'tel' },
-  { id:'pmail',    label:'Correo del pariente',         grupo:'pariente',  req:true, tipo:'mail' },
+  { id:'pmail',    label:'Correo del pariente',         grupo:'pariente',  req:false, tipo:'mail' },
   { id:'pdir_casa',  label:'Número de casa o lote del pariente', grupo:'pariente', req:true },
   { id:'pdir_calle', label:'Calle, avenida, zona o aldea del pariente', grupo:'pariente', req:true },
   { id:'pdir_muni',  label:'Municipio del pariente',           grupo:'pariente',  req:true },
@@ -388,11 +389,18 @@ const validaMail = v => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(v||'').trim(
  * Revisa el formulario completo. Devuelve TODOS los errores de una vez:
  * al vendedor que está en el campo no se le corrige de uno en uno.
  */
-function validarVenta(datos) {
+/* Campos que un contrato histórico (ya firmado en papel) puede no traer:
+   ocupación, ingresos, dirección en cuatro partes y pariente. Se guardan
+   si vienen y se validan si vienen; no se exigen. */
+const OPCIONAL_HISTORICO = ['dpi','tel','mail','dir_casa','dir_calle','dir_muni','dir_depto','ocup','ingreso','fuente',
+                            'pnom','ptel','pmail','pdir_casa','pdir_calle','pdir_muni','pdir_depto'];
+function validarVenta(datos, opciones) {
+  const historico = !!(opciones && opciones.historico);
   const errores = [];
   for (const c of CAMPOS_VENTA) {
     const v = String(datos[c.id] || '').trim();
-    if (c.req && !v) { errores.push({ campo:c.id, msg:`Falta ${c.label.toLowerCase()}` }); continue; }
+    const req = c.req && !(historico && OPCIONAL_HISTORICO.includes(c.id));
+    if (req && !v) { errores.push({ campo:c.id, msg:`Falta ${c.label.toLowerCase()}` }); continue; }
     if (!v) continue;
     let r = { ok:true };
     if (c.tipo === 'tel')   r = validaTel(v);

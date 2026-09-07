@@ -724,3 +724,6 @@ button,a,.chip,.tab-item,.nav-item,.btn{touch-action:manipulation}
 
 /* Marca de agua del practicante: su nombre y la hora sobre toda la pantalla */
 .marca-agua{position:fixed;inset:-40%;pointer-events:none;z-index:9990;overflow:hidden;opacity:.11;font:700 15px var(--font);color:var(--dark);transform:rotate(-24deg);line-height:120px;word-spacing:30px;white-space:normal;text-align:center;user-select:none}
+
+/* Formulario de venta en modo histórico: lo que no se exige pierde el asterisco */
+.modal.historico .opt-hist .ast{display:none}
