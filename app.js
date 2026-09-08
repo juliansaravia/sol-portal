@@ -3179,6 +3179,8 @@ function pintarContrato(){
       <div><div class="f-lbl">Fecha</div><div class="f-val">${fmtD(ct.fecha)}</div></div>
       <div><div class="f-lbl">Lote</div><div class="f-val">${ct.lote}</div></div>
       <div><div class="f-lbl">Precio de venta</div><div class="f-val">${Q(ct.precio)}</div></div>
+      <div><div class="f-lbl">Enganche</div><div class="f-val">${Q(ct.enganche!=null?ct.enganche:((ct.plan||{}).enganche||0))}
+        ${PUEDE_DIFERIR()&&ct.estado!=='anulado'&&!/contado_diferido|desmembrado/.test(ct.modalidad||'')?`<button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="modalEnganche('${ct.id}')">Editar</button>`:''}</div></div>
       <div><div class="f-lbl">Vendedor</div><div class="f-val">${esc(ct.vendedor)||'<span class="muted">Sin asignar</span>'}
         ${['admin','gerencia','financiero'].includes(ROLE)?`<button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="modalVendedorContrato('${ct.id}')">${ct.vendedor&&buscarPersona(ct.vendedor)?'Cambiar':'Asignar'}</button>`:''}</div></div>
       <div><div class="f-lbl">Origen</div><div class="f-val">${esc(ct.origen||'—')}</div></div>
@@ -4786,6 +4788,57 @@ function notaDiferido(ct){
   }
   if(ct.modalidad==='desmembrado') return `<div class="hint" style="margin:6px 0">Saldo al desmembrar liberado: ya está en cobranza normal.</div>`;
   return PUEDE_DIFERIR()?`<div class="btn-row" style="margin:6px 0;align-items:center;gap:10px"><button class="btn btn-ghost btn-sm" onclick="modalContadoDiferido('${ct.id}')">Marcar contado al 50%</button><span class="hint">Pagó la mitad al contado y el resto espera la desmembración: no cuenta como mora.</span></div>`:'';
+}
+/* Enganche: corregir el monto y/o repartir lo que falta en pagos mensuales
+   sin interés. Caso típico: enganche de Q25,000, pagó Q2,500 y el resto lo
+   paga en tres meses. Lo hacen Administración, Gerencia y Finanzas. */
+function modalEnganche(id){
+  const ct=getContrato(id); if(!ct) return;
+  const eng=ct.enganche!=null?ct.enganche:((ct.plan||{}).enganche||0);
+  const ini=(ct.obligaciones||[]).find(o=>String(o.tipo||'').toLowerCase()==='inicial');
+  const pagadoEng=ini?(ini.giros||[]).reduce((s,g)=>s+(g.abonado||0),0):0;
+  const pend=Math.max(0,Math.round((eng-pagadoEng)*100)/100);
+  const prox=new Date(HOY_ISO+'T12:00:00'); prox.setMonth(prox.getMonth()+1); prox.setDate(1);
+  openModal(`<div class="modal-h"><h3>Enganche de ${esc(ct.no)}</h3><p>Lote ${esc(ct.lote)} · ${esc(nombreCliente(ct.clienteId))}</p></div>
+    <div class="modal-b">
+      <div class="sect-t">Monto del enganche</div>
+      <div class="form-grid">
+        <div class="field"><label>Enganche (Q)</label><input id="en-monto" type="number" step="0.01" min="0" value="${eng}"></div>
+        <div class="field"><label>Pagado del enganche</label><input value="${Q(pagadoEng)}" readonly style="background:var(--tint)"></div>
+      </div>
+      <div class="hint">Cambiar el monto rehace el plan de cuotas con el enganche nuevo y vuelve a aplicar los pagos confirmados.</div>
+      <div class="btn-row" style="margin:8px 0 0"><button class="btn btn-ghost btn-sm" onclick="guardarEnganche('${ct.id}')">Guardar monto</button></div>
+      <div class="sect-t" style="margin-top:18px">Pagar lo pendiente en cuotas · sin interés</div>
+      <div class="form-grid">
+        <div class="field"><label>Pendiente del enganche</label><input value="${Q(pend)}" readonly style="background:var(--tint)"></div>
+        <div class="field"><label>Número de pagos</label><input id="en-cuotas" type="number" min="1" max="24" value="3" oninput="pistaEnganche(${pend})"></div>
+        <div class="field"><label>Primer pago</label><input id="en-primera" type="date" value="${prox.toISOString().slice(0,10)}"></div>
+        <div class="field"><label>Cada pago</label><input id="en-cuota" value="${Q(pend/3)}" readonly style="background:var(--tint)"></div>
+      </div>
+      <div class="hint">Un pago cada mes desde la fecha del primero. Lo ya pagado queda como pagado; las cuotas del saldo no cambian. Sólo lo confirmado por Finanzas cuenta como pagado.</div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
+      <button class="btn btn-primary" ${pend>0?'':'disabled'} onclick="fraccionarEnganche('${ct.id}')">Fraccionar enganche</button></div>`);
+}
+function pistaEnganche(pend){ const n=Math.max(1,+v('en-cuotas')||1); const e=document.getElementById('en-cuota'); if(e) e.value=Q(pend/n); }
+async function guardarEnganche(id){
+  const ct=getContrato(id); if(!ct) return; const m=+v('en-monto');
+  if(!(m>=0)||m>ct.precio) return toast('El enganche va de 0 al precio de venta',5000,true);
+  if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se puede cambiar',5000,true);
+  const r=await conBoton(()=>sbCambiarEnganche(id,m)); if(!r||!r.ok) return;
+  anotar('contrato.enganche', ct.no+' · '+Q(r.dato.antes)+' → '+Q(m));
+  await registrarGestion(id,'Bitácora Socios','Contactado',`Enganche cambiado de ${Q(r.dato.antes)} a ${Q(m)} · lo hizo ${(window.__user&&window.__user.name)||''}`);
+  closeModal(); toast('Enganche de '+ct.no+': '+Q(m)+' · plan rehecho'); await traerCartera(); if(typeof pintarContrato==='function') pintarContrato();
+}
+async function fraccionarEnganche(id){
+  const ct=getContrato(id); if(!ct) return; const n=+v('en-cuotas'), f=v('en-primera');
+  if(!(n>=1&&n<=24)) return toast('Entre 1 y 24 pagos',4000,true); if(!f) return toast('Falta la fecha del primer pago',4000,true);
+  if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se puede fraccionar',5000,true);
+  const r=await conBoton(()=>sbFraccionarEnganche(id,n,f)); if(!r||!r.ok) return;
+  const d=r.dato||{};
+  anotar('contrato.enganche_fraccionado', ct.no+' · '+n+' pagos');
+  await registrarGestion(id,'Bitácora Socios','Contactado',`Enganche pendiente ${Q(d.pendiente||0)} en ${n} pago(s) de ${Q(d.cuota||0)} desde ${fmtD(f)}`);
+  closeModal(); toast('Enganche de '+ct.no+' en '+n+' pagos de '+Q(d.cuota||0)); await traerCartera(); if(typeof pintarContrato==='function') pintarContrato();
 }
 function modalContadoDiferido(id){
   const ct=getContrato(id); if(!ct) return; const ec=estadoCuenta(ct);

@@ -317,6 +317,15 @@ async function sbContadoDiferido(contrato_id, saldo, fecha_estimada) {
     oExplota(await SB.rpc('contado_diferido', { p_contrato_id: Number(contrato_id), p_saldo: saldo == null ? null : Number(saldo),
                                                p_fecha_estimada: fecha_estimada || null })));
 }
+/** Enganche: cambiar el monto (se rehace el plan) o repartir lo pendiente en N pagos sin interés (54). */
+async function sbCambiarEnganche(contrato_id, enganche) {
+  return escribir('cambiar el enganche', async () =>
+    oExplota(await SB.rpc('cambiar_enganche', { p_contrato_id: Number(contrato_id), p_enganche: Number(enganche) })));
+}
+async function sbFraccionarEnganche(contrato_id, cuotas, primera) {
+  return escribir('fraccionar el enganche', async () =>
+    oExplota(await SB.rpc('fraccionar_enganche', { p_contrato_id: Number(contrato_id), p_cuotas: Number(cuotas), p_primera: primera })));
+}
 /** Se desmembró: el saldo pasa a vencer en esa fecha, en 1 o varias cuotas. */
 async function sbLiberarDiferido(contrato_id, vence, cuotas) {
   return escribir('liberar el saldo diferido', async () =>
@@ -1014,7 +1023,7 @@ async function sbReciboAdjunto(recibo_id, adjunto_id) {
    ============================================================ */
 Object.assign(window, {
   hayBase, escribir, traducirError,
-  sbCrearCliente, sbActualizarCliente, sbVincularExpediente, sbReferenciaPago, sbContadoDiferido, sbLiberarDiferido, sbEngancheDesdeDocumento,
+  sbCrearCliente, sbActualizarCliente, sbVincularExpediente, sbReferenciaPago, sbContadoDiferido, sbLiberarDiferido, sbEngancheDesdeDocumento, sbCambiarEnganche, sbFraccionarEnganche,
   sbCrearContrato, sbEstadoContrato, sbReasignarContratos,
   sbRegistrarPago, sbConfirmarPago, sbBorrarPago,
   sbMarcarCobrada, sbMarcarNoCobrada, sbDesmarcarCuota,
