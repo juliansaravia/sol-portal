@@ -62,8 +62,12 @@ const SB = (() => {
      que ejecuta y ya. */
   const sinCandado = async (_nombre, _espera, fn) => await fn();
 
+  /* La sesión vive en sessionStorage, no en localStorage (8 sept 2026):
+     al cerrar la pestaña o el navegador se pide contraseña y código de
+     nuevo. Antes la sesión quedaba guardada y se entraba sin contraseña. */
+  let almacen; try { almacen = window.sessionStorage; almacen.getItem('x'); } catch (e) { almacen = undefined; }
   return window.supabase.createClient(cfg.url, cfg.anon, {
-    auth: { persistSession: true, autoRefreshToken: true, lock: sinCandado }
+    auth: { persistSession: true, autoRefreshToken: true, lock: sinCandado, ...(almacen ? { storage: almacen } : {}) }
   });
 })();
 
@@ -401,8 +405,25 @@ async function sesionRevocada() {
     return false;
   } catch (e) { return false; }
 }
+/* Sin actividad durante una hora se cierra la sesión: una computadora que
+   alguien dejó abierta no queda con la cartera a la vista. */
+const INACTIVIDAD_MS = 60 * 60 * 1000;
+function vigilarInactividad() {
+  let ultimo = Date.now();
+  const tocar = () => { ultimo = Date.now(); };
+  ['click', 'keydown', 'touchstart', 'scroll', 'mousemove'].forEach(ev => document.addEventListener(ev, tocar, { passive: true }));
+  setInterval(async () => {
+    if (window.__saliendo || !SESION.persona) return;
+    if (Date.now() - ultimo < INACTIVIDAD_MS) return;
+    window.__saliendo = true;
+    try { sessionStorage.setItem('motivoSalida', 'Se cerró la sesión por una hora sin actividad. Volvé a entrar.'); } catch (e) {}
+    try { await SB.auth.signOut({ scope: 'local' }); } catch (e) {}
+    location.reload();
+  }, 60000);
+}
 function vigilarSesionUnica() {
   if (!SB || _vigilante) return;
+  vigilarInactividad();
   let revisando = false;
   const revisar = async () => {
     if (document.hidden || window.__saliendo || revisando) return;
