@@ -353,12 +353,26 @@ function validaDireccion(datos, pref) {
 /* ---------- Validaciones ---------- */
 
 /** Celular de Guatemala: 8 dígitos que empiezan en 3,4,5 (fijo: 2,6,7). */
+/* Guatemala: 8 dígitos (se quita el 502 si viene). Extranjero (8 sept
+   2026): con su código de país, por ejemplo +1 305 555 0123; un número
+   de 10 dígitos se toma como Estados Unidos y se le antepone el 1. Se
+   guarda sin espacios ni signos: 55551234 · 13055550123. */
 function validaTel(v, exigeCelular = true) {
-  let d = String(v || '').replace(/\D/g, '');
+  const crudo = String(v || '').trim();
+  let d = crudo.replace(/\D/g, '');
+  const internacional = crudo.startsWith('+') || crudo.startsWith('00') || d.length >= 10;
+  if (d.startsWith('00')) d = d.slice(2);
   if (d.length === 11 && d.startsWith('502')) d = d.slice(3);
-  if (d.length !== 8) return { ok:false, msg:'Debe tener 8 dígitos' };
-  if (exigeCelular && !/^[345]/.test(d)) return { ok:false, msg:'No parece celular (los celulares empiezan en 3, 4 o 5)' };
-  return { ok:true, valor:d };
+  if (d.length === 8) {
+    if (exigeCelular && !/^[345]/.test(d)) return { ok:false, msg:'No parece celular (los celulares empiezan en 3, 4 o 5)' };
+    return { ok:true, valor:d };
+  }
+  if (internacional) {
+    if (d.length === 10) d = '1' + d;                       // EE. UU. / Canadá sin código
+    if (d.length >= 11 && d.length <= 15) return { ok:true, valor:d, internacional:true };
+    return { ok:false, msg:'Un número del extranjero lleva código de país: +1 305 555 0123' };
+  }
+  return { ok:false, msg:'Debe tener 8 dígitos, o el código de país si es del extranjero (+1…)' };
 }
 
 /** DPI (CUI): 13 dígitos. Se verifica el dígito verificador y el código de municipio. */

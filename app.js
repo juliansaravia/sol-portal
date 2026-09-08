@@ -188,6 +188,19 @@ async function entrar(){
 
 /* La cartera —5,550 giros, el 74% de todo— se pide con la aplicación ya
    en pantalla. Cuando llega, se vuelve a pintar lo que esté abierto. */
+/* Los números del portal (asuntos, mora, sin vendedor…) salen de la base
+   en cada carga. Para que lo que va metiendo el equipo se vea sin apretar
+   F5, cada 5 minutos se vuelve a traer la cartera, sólo si no hay un
+   formulario o un cajón abierto y la pestaña está a la vista. */
+function vigilarCartera(){
+  if(window.__vigilaCartera) return; window.__vigilaCartera=true;
+  setInterval(async()=>{
+    if(document.hidden || SCREEN!=='app' || !hayRemoto()) return;
+    const m=document.getElementById('modalScrim'), d=document.getElementById('drawer');
+    if((m&&!m.hidden)||(d&&!d.hidden)||(typeof _guardando!=='undefined'&&_guardando)) return;
+    try{ await traerCartera(); if(typeof pintarBadgeAsuntos==='function') pintarBadgeAsuntos(); }catch(e){}
+  }, 5*60*1000);
+}
 async function traerCartera(){
   if(typeof cargarCartera!=='function' || !hayRemoto()) return;
   const r = await cargarCartera();
@@ -501,6 +514,7 @@ function startApp(role){
   document.getElementById('brandRole').textContent=ROLES[role].label;
   document.getElementById('footUser').innerHTML=`<b style="color:#fff">${esc(window.__user.name)}</b><br>${ROLES[role].label}`;
   marcaDeAgua(role==='practicante'?window.__user.name:null);
+  vigilarCartera();
   pintarEstado2FA();
   const destino=(location.hash||'').slice(1);
   setView(ROLES[role].views.includes(destino) ? destino : ROLES[role].home);
@@ -3464,7 +3478,7 @@ function modalNuevoContrato(loteSel,pre){
         ${campo('nom','Nombres',`value="${esc(nom.slice(0,2).join(' '))}"`)}
         ${campo('ape','Apellidos',`value="${esc(nom.slice(2).join(' '))}"`)}
         ${campo('dpi','DPI (CUI)','placeholder="13 dígitos" inputmode="numeric"')}
-        ${campo('tel','Teléfono celular','placeholder="5555 5555" inputmode="numeric"')}
+        ${campo('tel','Teléfono celular','placeholder="5555 5555 · extranjero: +1 305 555 0123" inputmode="tel"')}
         ${campo('mail','Correo electrónico','type="email" placeholder="nombre@correo.com"','full')}
         ${direccion('dir','Dirección de residencia')}
       </div>
@@ -3490,7 +3504,7 @@ function modalNuevoContrato(loteSel,pre){
       <div class="hint" style="margin-bottom:10px">Tiene que ser un contacto distinto: si el cliente cambia de número, es a quien se llama.</div>
       <div class="form-grid">
         ${campo('pnom','Nombre')}
-        ${campo('ptel','Teléfono celular','placeholder="5555 5555" inputmode="numeric"')}
+        ${campo('ptel','Teléfono celular','placeholder="5555 5555 · extranjero: +1 305 555 0123" inputmode="tel"')}
         ${campo('pmail','Correo','type="email"','full')}
         ${direccion('pdir','Dirección del pariente o fiador')}
       </div>
