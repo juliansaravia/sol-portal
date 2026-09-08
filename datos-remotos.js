@@ -247,7 +247,8 @@ async function cargarDesdeSupabase() {
         n: g.numero, vence: _fecha(g.vencimiento),
         monto: _num(g.monto), estado: g.estado, abonado: _num(g.abonado),
         // 'desmembracion': no vence hasta que se libere (40)
-        condicion: g.condicion || null
+        condicion: g.condicion || null,
+        fechaEstimada: g.fecha_estimada ? _fecha(g.fecha_estimada) : null
       });
     }
     for (const ct of DB.contratos) {
@@ -338,7 +339,7 @@ async function cargarCartera() {
   try {
     const [obligaciones, giros] = await Promise.all([
       todas('obligacion', 'id,contrato_id,tipo,descripcion,monto_total,orden'),
-      conRespaldo('giro', 'id,obligacion_id,numero,vencimiento,monto,estado,abonado', 'condicion')
+      conRespaldo('giro', 'id,obligacion_id,numero,vencimiento,monto,estado,abonado', 'condicion,fecha_estimada')
     ]);
 
     const porContrato = new Map(DB.contratos.map(c => [c.id, c]));

@@ -284,25 +284,41 @@ function cajaMensual(meses) {
     if (!porMes.has(k)) porMes.set(k, { n: 0, monto: 0, cts: new Set() });
     const m = porMes.get(k); m.n++; m.monto += c.m || 0; m.cts.add(c.c);
   });
+  /* Saldos al desmembrar (contado al 50%): entran el mes de la fecha
+     estimada de escrituras; sin fecha, se listan aparte. */
+  const difMes = new Map(); let diferidoSinFecha = 0;
+  DB.contratos.filter(c => c.estado === 'aprobado').forEach(c => {
+    (c.obligaciones || []).flatMap(o => o.giros || []).filter(g => g.condicion && g.estado !== 'pagado').forEach(g => {
+      const resto = (g.monto || 0) - (g.abonado || 0); if (!(resto > 0)) return;
+      const f = g.fechaEstimada ? String(g.fechaEstimada).slice(0, 7) : null;
+      if (!f) { diferidoSinFecha += resto; return; }
+      const k = f < hoyMes ? hoyMes : f;
+      if (!difMes.has(k)) difMes.set(k, { monto: 0, n: 0 });
+      const d = difMes.get(k); d.monto += resto; d.n++;
+    });
+  });
   const salida = [];
   let [y, mo] = hoyMes.split('-').map(Number);
   for (let i = 0; i < meses; i++) {
     const k = `${y}-${String(mo).padStart(2, '0')}`;
     const m = porMes.get(k) || { n: 0, monto: 0, cts: new Set() };
-    salida.push({ mes: k, etiqueta: `${MESES_CORTOS[mo - 1]} ${y}`, n: m.n, monto: Math.round(m.monto * 100) / 100, contratos: m.cts.size });
+    const d = difMes.get(k) || { monto: 0, n: 0 };
+    salida.push({ mes: k, etiqueta: `${MESES_CORTOS[mo - 1]} ${y}`, n: m.n, monto: Math.round(m.monto * 100) / 100, contratos: m.cts.size,
+                  diferido: Math.round(d.monto * 100) / 100, diferidoN: d.n });
     mo++; if (mo > 12) { mo = 1; y++; }
   }
   const diferido = DB.contratos.filter(c => c.estado === 'aprobado').reduce((s, c) => s + ((estadoCuenta(c).diferido) || 0), 0);
   return { meses: salida, vencido: { n: vencido.n, monto: Math.round(vencido.monto * 100) / 100, contratos: vencido.cts.size },
-           total: { n: salida.reduce((s, m) => s + m.n, 0), monto: Math.round(salida.reduce((s, m) => s + m.monto, 0) * 100) / 100 },
-           diferido: Math.round(diferido * 100) / 100 };
+           total: { n: salida.reduce((s, m) => s + m.n, 0), monto: Math.round(salida.reduce((s, m) => s + m.monto, 0) * 100) / 100,
+                    diferido: Math.round(salida.reduce((s, m) => s + m.diferido, 0) * 100) / 100 },
+           diferido: Math.round(diferido * 100) / 100, diferidoSinFecha: Math.round(diferidoSinFecha * 100) / 100 };
 }
 function repCajaMensual() {
   const cm = cajaMensual(24);
-  const f = [['Mes','Cuotas','Contratos','Monto esperado']];
-  if (cm.vencido.monto) f.push(['Vencido a la fecha', cm.vencido.n, cm.vencido.contratos, _repNum(cm.vencido.monto)]);
-  cm.meses.forEach(m => f.push([m.mes, m.n, m.contratos, _repNum(m.monto)]));
-  if (cm.diferido) f.push(['Saldos al desmembrar (sin fecha)', '', '', _repNum(cm.diferido)]);
+  const f = [['Mes','Cuotas','Contratos','Cuotas (Q)','Escrituras · contado 50% (Q)','Total']];
+  if (cm.vencido.monto) f.push(['Vencido a la fecha', cm.vencido.n, cm.vencido.contratos, _repNum(cm.vencido.monto), '', _repNum(cm.vencido.monto)]);
+  cm.meses.forEach(m => f.push([m.mes, m.n, m.contratos, _repNum(m.monto), _repNum(m.diferido), _repNum(m.monto + m.diferido)]));
+  if (cm.diferidoSinFecha) f.push(['Saldos al desmembrar sin fecha estimada', '', '', '', _repNum(cm.diferidoSinFecha), '']);
   return f;
 }
 

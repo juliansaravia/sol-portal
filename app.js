@@ -2786,12 +2786,12 @@ function renderReporteria(){
     const cm=cajaMensual(12);
     h += `<div class="card"><div class="card-h"><h2>Caja esperada por cuotas</h2>
         <span class="hint">Cuotas programadas que aún no se pagan · sin el saldo al desmembrar</span></div>
-      <div class="card-b" style="padding:0;overflow-x:auto"><table class="data"><thead><tr><th>Mes</th><th class="num">Cuotas</th><th class="num">Contratos</th><th class="num">Monto</th></tr></thead><tbody>
-        ${cm.vencido.monto?`<tr><td><b>Vencido a la fecha</b> <span class="hint">lo que ya debió entrar</span></td><td class="num">${cm.vencido.n}</td><td class="num">${cm.vencido.contratos}</td><td class="num" style="color:var(--mora)"><b>${Q(cm.vencido.monto)}</b></td></tr>`:''}
-        ${cm.meses.map(m=>`<tr><td>${esc(m.etiqueta)}</td><td class="num">${m.n}</td><td class="num">${m.contratos}</td><td class="num"><b>${Q(m.monto)}</b></td></tr>`).join('')}
-        <tr><td><b>Total 12 meses</b></td><td class="num">${cm.total.n}</td><td class="num">—</td><td class="num"><b>${Q(cm.total.monto)}</b></td></tr>
+      <div class="card-b" style="padding:0;overflow-x:auto"><table class="data"><thead><tr><th>Mes</th><th class="num">Cuotas</th><th class="num">Contratos</th><th class="num">Cuotas (Q)</th><th class="num">Escrituras · contado 50% (Q)</th><th class="num">Total</th></tr></thead><tbody>
+        ${cm.vencido.monto?`<tr><td><b>Vencido a la fecha</b> <span class="hint">lo que ya debió entrar</span></td><td class="num">${cm.vencido.n}</td><td class="num">${cm.vencido.contratos}</td><td class="num" style="color:var(--mora)"><b>${Q(cm.vencido.monto)}</b></td><td class="num">—</td><td class="num" style="color:var(--mora)"><b>${Q(cm.vencido.monto)}</b></td></tr>`:''}
+        ${cm.meses.map(m=>`<tr><td>${esc(m.etiqueta)}</td><td class="num">${m.n}</td><td class="num">${m.contratos}</td><td class="num">${Q(m.monto)}</td><td class="num">${m.diferido?`${Q(m.diferido)} <span class="hint">· ${m.diferidoN} lote(s)</span>`:'—'}</td><td class="num"><b>${Q(m.monto+(m.diferido||0))}</b></td></tr>`).join('')}
+        <tr><td><b>Total 12 meses</b></td><td class="num">${cm.total.n}</td><td class="num">—</td><td class="num">${Q(cm.total.monto)}</td><td class="num">${Q(cm.total.diferido||0)}</td><td class="num"><b>${Q(cm.total.monto+(cm.total.diferido||0))}</b></td></tr>
       </tbody></table></div>
-      ${cm.diferido?`<div class="card-b hint">Además hay ${Q(cm.diferido)} en saldos al desmembrar (contado al 50%) que entran cuando se libere cada lote.</div>`:''}</div>`;
+      ${cm.diferidoSinFecha?`<div class="card-b hint">Además hay ${Q(cm.diferidoSinFecha)} en saldos al desmembrar sin fecha estimada: se ponen desde la ficha del contrato (Marcar contado al 50%).</div>`:''}</div>`;
   }
   /* Y abajo lo que de verdad se lleva uno al cierre. */
   h += `<div class="card"><div class="card-h"><h2>Descargar para el cierre</h2>
@@ -3170,6 +3170,7 @@ function pintarContrato(){
       <div><div class="f-lbl">Origen</div><div class="f-val">${esc(ct.origen||'—')}</div></div>
       <div><div class="f-lbl">Firma</div><div class="f-val">${ct.firma}</div></div>
       <div><div class="f-lbl">Fuente</div><div class="f-val">${ct.fuente||'Suite'}</div></div>
+      <div><div class="f-lbl">Modalidad</div><div class="f-val">${esc(etiquetaModalidad(ct))}</div></div>
     </div>
     <div class="sect-t">Cliente</div><div class="fgrid">
       <div class="f-full"><div class="f-lbl">Nombre</div><div class="f-val">${esc(nombreCliente(ct.clienteId))}</div></div>
@@ -3447,8 +3448,8 @@ function modalNuevoContrato(loteSel,pre){
         <div class="field"><label>Precio de venta (Q) <span class="hint" id="n-precioLista"></span></label><input id="n-precio" type="number" min="0" step="0.01" value="${pre.precio!=null?pre.precio:''}" oninput="prevPlan()"></div>
         <div class="field"><label>Enganche (Q) <span class="hint">(0 si es promoción)</span></label><input id="n-res" type="number" min="0" value="${pre.enganche!=null?pre.enganche:ENGANCHE_MIN}" oninput="prevPlan()"></div>
         <div class="field"><label>Plazo (meses)</label><select id="n-plz" onchange="prevPlan()">
-          ${PLAZOS.map(p=>`<option value="${p}" ${p===(pre.plazo||60)?'selected':''}>${p} meses</option>`).join('')}
-          <option value="0">Al contado · sin cuotas</option></select></div>
+          <optgroup label="Crédito · 1.5% mensual">${PLAZOS.map(p=>`<option value="${p}" ${p===(pre.plazo||60)?'selected':''}>${p} meses</option>`).join('')}</optgroup>
+          <optgroup label="Contado · sin intereses"><option value="0">Al contado · un solo pago</option>${[2,3,4,6,9,12].map(n=>`<option value="c${n}">Contado en ${n} pagos mensuales</option>`).join('')}</optgroup></select></div>
       </div>
       <div id="n-prev" class="prev-plan"></div>
       ${puedeHistorico?`<label class="hint" style="display:flex;gap:8px;align-items:flex-start;margin:10px 0 0;cursor:pointer"><input type="checkbox" id="n-hist" onchange="ventaHistorica(this.checked)" ${pre.historico?'checked':''} style="margin-top:3px">
@@ -3535,6 +3536,21 @@ function precioDeLista(){
   const l=getLote(v('n-lote')); const inp=document.getElementById('n-precio'); if(!l||!inp) return;
   inp.value=l.precio||''; prevPlan();
 }
+function etiquetaModalidad(ct){
+  const m=String(ct.modalidad||'');
+  if(m==='contado') return 'Al contado · un pago';
+  if(m==='contado_fraccionado') return `Contado en ${ct.plazo||'?'} pagos · sin intereses`;
+  if(m==='contado_diferido') return 'Contado al 50% · saldo al desmembrar';
+  if(m==='desmembrado') return 'Contado al 50% · saldo liberado';
+  return `Crédito · ${ct.plazo||60} meses${ct.tasa!=null?` · ${(ct.tasa*100).toFixed(1)}%`:''}`;
+}
+/* Qué eligió en «Plazo»: crédito a N meses, contado de un pago, o contado en N pagos sin intereses. */
+function modalidadElegida(){
+  const val=String(v('n-plz')||'');
+  if(val==='0') return {tipo:'contado', plazo:1, tasa:0, modalidad:'contado'};
+  if(/^c\d+$/.test(val)) return {tipo:'contado_fraccionado', plazo:+val.slice(1), tasa:0, modalidad:'contado_fraccionado'};
+  return {tipo:'credito', plazo:+val||60, tasa:undefined, modalidad:null};
+}
 function precioVentaElegido(){
   const l=getLote(v('n-lote'))||{}; const p=+v('n-precio'); return p>0?p:(l.precio||0);
 }
@@ -3576,7 +3592,7 @@ function pistaConstancia(){
 function prevCarga(){
   const el=document.getElementById('n-carga'); if(!el)return;
   const l=getLote(v('n-lote')); if(!l){el.innerHTML='';return;}
-  const p=planFinanciamiento(precioVentaElegido(),+v('n-res')||0,+v('n-plz')||60);
+  const p=planFinanciamiento(precioVentaElegido(),+v('n-res')||0,modalidadElegida().plazo,modalidadElegida().tasa);
   const r=cargaSobreIngreso(p.cuota,+v('n-ingreso')||0);
   if(!r){el.innerHTML='';return;}
   const color=r.nivel==='riesgoso'?'var(--mora)':(r.nivel==='ajustado'?'#b8860b':'var(--green)');
@@ -3589,11 +3605,13 @@ function prevPlan(){
   const l=getLote(v('n-lote')); if(!l)return;
   const el=document.getElementById('n-prev'); if(!el)return;
   /* Al contado: paga el precio completo de una, no hay cuotas ni plan que firmar. */
-  const res=document.getElementById('n-res'), contado=v('n-plz')==='0', precio=precioVentaElegido();
+  const res=document.getElementById('n-res'), md=modalidadElegida(), contado=md.tipo==='contado', precio=precioVentaElegido();
   _pistaPrecio();
   if(res){ res.readOnly=contado; res.style.background=contado?'var(--tint)':''; if(contado) res.value=precio; }
   if(contado){ el.innerHTML=`<div class="pp-row"><span>Pago al contado</span><b class="pp-big">${Q(precio)}</b></div><div class="hint">Sin cuotas: no lleva plan de pagos firmado. Si pagó el 50% y el resto espera la desmembración, se marca después en la ficha.</div>`; return; }
-  const p=planFinanciamiento(precio,+v('n-res')||0,+v('n-plz')||60);
+  if(md.tipo==='contado_fraccionado'){ const pf=planFinanciamiento(precio,+v('n-res')||0,md.plazo,0);
+    el.innerHTML=`<div class="pp-row"><span>Contado en ${md.plazo} pagos · sin intereses</span><b class="pp-big">${Q(pf.cuota)}</b></div><div class="pp-row"><span>Enganche ahora</span><b>${Q(pf.enganche)}</b></div><div class="pp-row"><span>Total</span><b>${Q(precio)}</b></div><div class="hint">Cada pago vence el mismo día de los meses siguientes. No lleva plan de pagos firmado.</div>`; return; }
+  const p=planFinanciamiento(precio,+v('n-res')||0,md.plazo);
   el.innerHTML=`<div class="pp-row"><span>Saldo a financiar</span><b>${Q(p.saldo)}</b></div>
     <div class="pp-row"><span>Cuota mensual</span><b class="pp-big">${Q(p.cuota)}</b></div>
     <div class="pp-row"><span>Total del plan</span><b>${Q(p.total)}</b></div>`;
@@ -3625,12 +3643,12 @@ async function crearContrato(){
     /* El vendedor vende a su nombre, siempre. El enganche puede ser 0 (promoción): vacío es el mínimo. */
     vendedor:ROLE==='vendedor'?((window.__user&&window.__user.name)||v('n-vend')):v('n-vend'),
     precio:precioVentaElegido(),
-    enganche:v('n-plz')==='0'?precioVentaElegido():(v('n-res')===''?ENGANCHE_MIN:Math.max(0,+v('n-res')||0)),
-    plazo:v('n-plz')==='0'?1:(+v('n-plz')||60),origen:'Campo',modalidad:v('n-plz')==='0'?'contado':null}));
+    enganche:modalidadElegida().tipo==='contado'?precioVentaElegido():(v('n-res')===''?(modalidadElegida().tipo==='credito'?ENGANCHE_MIN:0):Math.max(0,+v('n-res')||0)),
+    plazo:modalidadElegida().plazo, tasa:modalidadElegida().tasa, origen:'Campo', modalidad:modalidadElegida().modalidad}));
   if(!ct) return;                     // no se creó · el motivo ya se mostró
   { const lt=getLote(v('n-lote'))||{}; if(lt.precio&&Math.abs(ct.precio-lt.precio)>0.005) registrarGestion(ct.id,'Bitácora Socios','Contactado',`Precio de venta ${Q(ct.precio)} distinto del de lista ${Q(lt.precio)} · lo fijó ${(window.__user&&window.__user.name)||''}`); }
 
-  const carga=cargaSobreIngreso(planFinanciamiento(ct.precio,+v('n-res')||0,+v('n-plz')||60).cuota,
+  const carga=cargaSobreIngreso(planFinanciamiento(ct.precio,+v('n-res')||0,modalidadElegida().plazo,modalidadElegida().tasa).cuota,
                                 +String(d.ingreso).replace(/[^\d.]/g,''));
   if(carga) ct.cargaIngreso=carga.pct;
   saveDB();
@@ -4736,7 +4754,8 @@ function notaDiferido(ct){
   if(!ct||ct.estado!=='aprobado') return '';
   const ec=estadoCuenta(ct);
   if(ct.modalidad==='contado_diferido'){
-    return `<div class="hint" style="margin:6px 0;padding:8px 10px;background:#FFF6DE;border-radius:8px;color:#5C4A12"><b>Contado al 50%.</b> Pagó ${Q(ec.recaudado||0)}; quedan <b>${Q(ec.diferido||0)}</b> pendientes de la desmembración. No cuenta como mora.
+    const est=(ct.obligaciones||[]).flatMap(o=>o.giros||[]).map(g=>g.fechaEstimada).filter(Boolean).sort()[0];
+    return `<div class="hint" style="margin:6px 0;padding:8px 10px;background:#FFF6DE;border-radius:8px;color:#5C4A12"><b>Contado al 50%${est?` · escrituras estimadas para el ${fmtD(est)}`:''}.</b> Pagó ${Q(ec.recaudado||0)}; quedan <b>${Q(ec.diferido||0)}</b> pendientes de la desmembración. No cuenta como mora.
       ${(PUEDE_DIFERIR()||ROLE==='cobranza')?`<a href="#" onclick="modalLiberarDiferido('${ct.id}');return false;"><b>Desmembrado: cobrar ahora</b></a>`:''}</div>`;
   }
   if(ct.modalidad==='desmembrado') return `<div class="hint" style="margin:6px 0">Saldo al desmembrar liberado: ya está en cobranza normal.</div>`;
@@ -4750,7 +4769,8 @@ function modalContadoDiferido(id){
       <div class="form-grid">
         <div class="field"><label>Precio de venta</label><input value="${Q(ct.precio)}" readonly style="background:var(--tint)"></div>
         <div class="field"><label>Pagado (confirmado)</label><input value="${Q(ec.recaudado||0)}" readonly style="background:var(--tint)"></div>
-        <div class="field full"><label>Saldo que espera la desmembración (Q)</label><input id="cd-saldo" type="number" step="0.01" value="${saldo}"></div>
+        <div class="field"><label>Saldo que espera la desmembración (Q)</label><input id="cd-saldo" type="number" step="0.01" value="${saldo}"></div>
+        <div class="field"><label>Fecha estimada de escrituras</label><input id="cd-fecha" type="date" value="2026-10-31"><div class="hint">Sólo para la caja esperada del mes; no vence ni genera mora.</div></div>
       </div>
       <div class="hint">Las cuotas pendientes se reemplazan por una sola por este saldo, sin fecha: no aparece en mora, en la agenda ni en los recordatorios. Cuando se desmembre, desde la ficha o desde Cobranza se libera con fecha y en las cuotas que se acuerden.</div>
     </div>
@@ -4760,7 +4780,7 @@ function modalContadoDiferido(id){
 async function guardarContadoDiferido(id){
   const saldo=+v('cd-saldo'); if(!(saldo>0)) return toast('El saldo tiene que ser mayor que cero',4000,true);
   if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se puede marcar',5000,true);
-  const r=await conBoton(()=>sbContadoDiferido(id, saldo)); if(!r||!r.ok) return;
+  const r=await conBoton(()=>sbContadoDiferido(id, saldo, v('cd-fecha')||null)); if(!r||!r.ok) return;
   anotar('contrato.contado_diferido', (getContrato(id)||{}).no+' · '+Q(saldo));
   closeModal(); toast('Marcado: '+Q(saldo)+' quedan al desmembrar, fuera de la mora'); await traerCartera(); if(typeof pintarContrato==='function') pintarContrato();
 }

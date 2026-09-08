@@ -819,7 +819,7 @@ const contratoFirmadoDe = ct => documentosDe(ct.id).find(d => d.tipo === 'contra
 const EXIGE_DPI_PARIENTE_DESDE = '2026-09-16';
 function esContado(ct) {
   if (!ct) return false;
-  if (['contado', 'contado_diferido', 'desmembrado'].includes(String(ct.modalidad || ''))) return true;
+  if (['contado', 'contado_fraccionado', 'contado_diferido', 'desmembrado'].includes(String(ct.modalidad || ''))) return true;
   const plan = ct.plan || planFinanciamiento(ct.precio, ct.enganche != null ? ct.enganche : ENGANCHE_MIN, ct.plazo || 60, ct.tasa);
   return !!plan && plan.saldo <= 0;
 }
@@ -857,7 +857,7 @@ function contactoDe(numeroContrato) {
 
 /* ---------- Mutaciones ---------- */
 async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, reserva, enganche, plazo, girosSaldo, origen,
-                         direccion, ocupacion, ingresoMensual, constancia, pesoConstancia, pariente, fecha, historico, modalidad, precio, numero }) {
+                         direccion, ocupacion, ingresoMensual, constancia, pesoConstancia, pariente, fecha, historico, modalidad, precio, numero, tasa }) {
   const l = getLote(lote);
   if (!l) { avisar('No se encontró el lote ' + lote); return null; }
 
@@ -878,7 +878,7 @@ async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, res
       plazo: plazo || girosSaldo || 60, origen: origen || 'Campo', estado: 'borrador',
       fecha: fecha || undefined, historico: !!historico, modalidad: modalidad || null,
       precio: precio > 0 ? precio : undefined,
-      numero: numero || undefined
+      numero: numero || undefined, tasa: tasa
     });
     if (!r.ok) { avisar(r.error); return null; }
 
@@ -919,9 +919,10 @@ async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, res
     enganche: enganche !== undefined ? enganche : (reserva !== undefined ? reserva : ENGANCHE_MIN),
     plazo: plazo || girosSaldo || 60, modalidad: modalidad || null
   };
+  if (tasa !== undefined && tasa !== null) ct.tasa = tasa;
   ct.obligaciones = crearObligaciones(ct, 0, {
     enganche: enganche !== undefined ? enganche : reserva,
-    plazo: plazo || girosSaldo
+    plazo: plazo || girosSaldo, tasa: tasa
   });
   DB.contratos.push(ct);
   if (l) l.estado = historico ? 'vendido' : 'reservado';

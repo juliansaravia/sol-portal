@@ -201,7 +201,7 @@ async function sbActualizarCliente(id, datos) {
    pero si algún día dejaran de coincidir, la que manda es la de
    la base: es la que ve la contabilidad.
    ============================================================ */
-async function sbCrearContrato({ lote, cliente_id, persona_id, enganche, plazo, origen, banco, boleta, estado, fecha, historico, modalidad, precio, numero: numeroPropio }) {
+async function sbCrearContrato({ lote, cliente_id, persona_id, enganche, plazo, origen, banco, boleta, estado, fecha, historico, modalidad, precio, numero: numeroPropio, tasa }) {
   return escribir('crear el contrato', async () => {
     if (!lote || !lote.id) throw new Error('No se identificó el lote.');
     if (!lote.proyecto_id) throw new Error('El lote no trae proyecto. Recarga la página.');
@@ -221,7 +221,8 @@ async function sbCrearContrato({ lote, cliente_id, persona_id, enganche, plazo, 
       precio_venta: precio > 0 ? precio : lote.precio,
       enganche: enganche,
       plazo_meses: plazo,
-      tasa_mensual: lote.tasa || TASA_MENSUAL,
+      /* Contado (de un pago o en cuotas): tasa 0. Crédito: la del lote o la general. */
+      tasa_mensual: (tasa !== undefined && tasa !== null) ? tasa : (lote.tasa || TASA_MENSUAL),
       /* 'contado' cuando pagó todo de una: sin cuotas ni plan firmado (40_saldo_al_desmembrar.sql trae la columna). */
       ...(modalidad ? { modalidad } : {}),
       /* Nace en borrador: el vendedor arma el expediente (DPI de ambos
@@ -311,9 +312,10 @@ async function sbRegistrarPago(contrato_id, { monto, forma, cuenta, referencia, 
 }
 
 /** Contado al 50%: lo pendiente queda como saldo al desmembrar (40). */
-async function sbContadoDiferido(contrato_id, saldo) {
+async function sbContadoDiferido(contrato_id, saldo, fecha_estimada) {
   return escribir('marcar el saldo al desmembrar', async () =>
-    oExplota(await SB.rpc('contado_diferido', { p_contrato_id: Number(contrato_id), p_saldo: saldo == null ? null : Number(saldo) })));
+    oExplota(await SB.rpc('contado_diferido', { p_contrato_id: Number(contrato_id), p_saldo: saldo == null ? null : Number(saldo),
+                                               p_fecha_estimada: fecha_estimada || null })));
 }
 /** Se desmembró: el saldo pasa a vencer en esa fecha, en 1 o varias cuotas. */
 async function sbLiberarDiferido(contrato_id, vence, cuotas) {
