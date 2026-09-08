@@ -4291,11 +4291,11 @@ async function subirDocumentosMasa(){
 function modalBoleta(pagoId){
   const p=DB.pagos.find(x=>mismoId(x.id,pagoId)); if(!p) return;
   const ct=getContrato(p.contratoId);
-  openModal(`<div class="modal-h"><h3>Boleta del pago</h3><p>${ct?ct.no+' · ':''}${Q(p.monto)} · ${fmtD(p.fecha)}${p.referencia?' · ref. '+esc(p.referencia):''}</p></div>
-    <div class="modal-b"><div class="field"><label>Foto o PDF de la boleta *</label>
+  openModal(`<div class="modal-h"><h3>Boleta o recibo del pago</h3><p>${ct?ct.no+' · ':''}${Q(p.monto)} · ${fmtD(p.fecha)}${p.referencia?' · ref. '+esc(p.referencia):''}</p></div>
+    <div class="modal-b"><div class="field"><label>Foto o PDF de la boleta, o del recibo que se emitió *</label>
       <input id="b-archivo" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment"
              onchange="if(typeof leerBoletaEn==='function')leerBoletaEn(this,{aviso:'b-leido'})">
-      <div class="hint" id="b-leido">JPG, PNG o PDF · máximo 5 MB. Queda colgada del pago como respaldo de lo cobrado.</div></div>
+      <div class="hint" id="b-leido">JPG, PNG o PDF · máximo 5 MB. Queda colgado del pago como respaldo de lo cobrado. Para lo histórico sirve el recibo emitido, aunque la boleta ya no exista.</div></div>
       <div class="field full"><div class="hint">¿Esta misma boleta pagó también otros lotes? <a href="#" onclick="agregarFilaPago('b');return false;"><b>+ Agregar otro pago</b></a> · se cuelga en cada uno, con la misma referencia, y sale su recibo.</div><div id="b-filas"></div></div></div>
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarBoleta('${p.id}')">Subir boleta</button></div>`);
