@@ -763,6 +763,19 @@ async function vincularExpediente(id, principalId) {
 /* ── Recibo de pago ── */
 const reciboDe = pagoId => (DB.recibos || []).find(r => mismoId(r.pagoId, pagoId)) || null;
 
+/* ---------- Qué respalda un pago (8 sept 2026) ----------
+   Desde el arranque del portal, la boleta (foto o PDF) colgada del pago.
+   Lo histórico entró con la confirmación del banco y su número de
+   referencia; las boletas iban por WhatsApp y WhatsApp las borró. Para
+   un pago anterior al corte, la referencia bancaria ES el respaldo. */
+const CORTE_BOLETAS = '2026-09-01';
+function pagoRespaldado(p) {
+  if (!p) return false;
+  const adj = (typeof adjuntosDe === 'function' ? adjuntosDe('pago', p.id) : []).filter(a => !/^Recibo/i.test(a.descripcion || ''));
+  if (adj.length) return true;
+  return !!(p.referencia && String(p.referencia).trim() && String(p.fecha || '') < CORTE_BOLETAS);
+}
+
 /* Cantidad en letras, al estilo del recibo del CRM:
    «VEINTIOCHO MIL SEISCIENTOS NOVENTA Y CINCO QUETZALES CON 00/100 CENTAVOS». */
 function cantidadEnLetras(n) {
@@ -930,14 +943,14 @@ async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, res
   saveDB();
   return ct;
 }
-async function registrarPago(contratoId, { monto, forma, cuenta, referencia }) {
+async function registrarPago(contratoId, { monto, forma, cuenta, referencia, fecha }) {
   if (typeof hayBase === 'function' && hayBase()) {
-    const r = await sbRegistrarPago(contratoId, { monto, forma, cuenta, referencia });
+    const r = await sbRegistrarPago(contratoId, { monto, forma, cuenta, referencia, fecha });
     if (!r.ok) { avisar(r.error); return null; }
     return DB.pagos[DB.pagos.length - 1];
   }
   const p = { id: uid(), contratoId, monto: +monto, forma, cuenta, referencia,
-              fecha: HOY_ISO, estado: 'registrado', registrado: new Date().toISOString() };
+              fecha: fecha || HOY_ISO, estado: 'registrado', registrado: new Date().toISOString() };
   DB.pagos.push(p); saveDB(); return p;
 }
 async function confirmarPago(pagoId, ok = true) {

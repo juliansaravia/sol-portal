@@ -651,8 +651,8 @@ function asuntos(){
   if(pend) A.push({sev:'media',n:pend,t:'solicitudes por aprobar',d:'El comité decide y se genera el plan de giros',ir:()=>setView('aprobacion')});
   if(sinVend) A.push({sev:'media',n:sinVend,t:'contratos sin vendedor',d:'Sin responsable no hay comisión ni seguimiento',ir:()=>irA('contratos',{f:'sin_vendedor'})});
   if(sinCli) A.push({sev:'media',n:sinCli,t:'contratos sin cliente vinculado',d:'Existe la venta, falta la ficha del titular',ir:()=>irA('contratos',{f:'sin_cliente'})});
-  const pagosSinBoleta=DB.pagos.filter(p=>p.estado==='confirmado'&&!adjuntosDe('pago',p.id).length).length;
-  if(pagosSinBoleta) A.push({sev:'media',n:pagosSinBoleta,t:pagosSinBoleta===1?'pago cobrado sin boleta de respaldo':'pagos cobrados sin boleta de respaldo',d:'Lo cobrado antes del portal entró sin comprobante. Con los recibos del CRM en PDF se cargan de golpe.',ir:()=>irA('contratos',{f:'sin_boleta'})});
+  const pagosSinBoleta=DB.pagos.filter(p=>p.estado==='confirmado'&&!pagoRespaldado(p)).length;
+  if(pagosSinBoleta) A.push({sev:'media',n:pagosSinBoleta,t:pagosSinBoleta===1?'pago cobrado sin respaldo':'pagos cobrados sin respaldo',d:'Sin boleta ni referencia del banco. Lo histórico con referencia ya cuenta como respaldado.',ir:()=>irA('contratos',{f:'sin_boleta'})});
   const sinFirmado=activos.filter(c=>!contratoFirmadoDe(c)).length;
   if(sinFirmado) A.push({sev:'media',n:sinFirmado,t:sinFirmado===1?'contrato sin el firmado en el sistema':'contratos sin el firmado en el sistema',d:'El contrato existe en papel; falta subir el escaneado',ir:()=>irA('contratos',{f:'sin_firmado'})});
   if(sinAcceso) A.push({sev:'baja',n:sinAcceso,t:'usuarios sin acceso',d:'Pendientes de invitación o de correo',ir:()=>setView('equipo')});
@@ -1026,7 +1026,7 @@ const FILTROS_CT={
   sin_vendedor:{t:'Sin vendedor',f:c=>c.estado==='aprobado'&&(!c.vendedor||!buscarPersona(c.vendedor))},
   sin_cliente:{t:'Sin cliente',f:c=>c.estado==='aprobado'&&!getCliente(c.clienteId)},
   bajo_recaudo:{t:'Bajo % recaudado',f:(c,ec)=>c.estado==='aprobado'&&ec.totalGiros>0&&ec.recaudado/ec.totalGiros<0.15},
-  sin_boleta:{t:'Pagos sin boleta',f:c=>c.estado==='aprobado'&&(indices().pagosPorContrato.get(String(c.id))||[]).some(p=>p.estado==='confirmado'&&!adjuntosDe('pago',p.id).length)},
+  sin_boleta:{t:'Pagos sin respaldo',f:c=>c.estado==='aprobado'&&(indices().pagosPorContrato.get(String(c.id))||[]).some(p=>p.estado==='confirmado'&&!pagoRespaldado(p))},
   sin_firmado:{t:'Sin contrato firmado',f:c=>c.estado==='aprobado'&&!contratoFirmadoDe(c)},
   anulados:{t:'Anulados',f:c=>c.estado==='anulado'},
 };
@@ -3215,13 +3215,13 @@ function pintarContrato(){
     /* Cada pago con su boleta. Lo cobrado antes del portal entró sin
        respaldo; acá se ve cuál falta y se sube desde la misma fila. */
     const pagos=(indices().pagosPorContrato.get(String(ct.id))||[]).slice().sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
-    const sinBol=pagos.filter(p=>p.estado!=='rechazado'&&!adjuntosDe('pago',p.id).some(a=>!/^Recibo/i.test(a.descripcion||'')));
-    h+=`<div class="sect-t" style="margin-top:16px">Pagos y boletas · ${pagos.length}${sinBol.length?` <span class="nav-badge">${sinBol.length} sin boleta</span>`:''}</div>`;
+    const sinBol=pagos.filter(p=>p.estado!=='rechazado'&&!pagoRespaldado(p));
+    h+=`<div class="sect-t" style="margin-top:16px">Pagos y boletas · ${pagos.length}${sinBol.length?` <span class="nav-badge">${sinBol.length} sin respaldo</span>`:''}</div>`;
     if(!pagos.length) h+=`<div class="hint">Sin pagos registrados.</div>`;
-    pagos.forEach(p=>{ const bol=adjuntosDe('pago',p.id).filter(a=>!/^Recibo/i.test(a.descripcion||''));
-      h+=`<div class="pay-item"><div class="pay-ico" style="${bol.length?'':'color:var(--gold)'}">${bol.length?'🗎':'⚠'}</div>
+    pagos.forEach(p=>{ const bol=adjuntosDe('pago',p.id).filter(a=>!/^Recibo/i.test(a.descripcion||'')); const resp=pagoRespaldado(p);
+      h+=`<div class="pay-item"><div class="pay-ico" style="${resp?'':'color:var(--gold)'}">${resp?'🗎':'⚠'}</div>
         <div class="pay-main"><div class="pay-title">${Q(p.monto)} · ${esc(p.forma||'')} ${p.referencia?`· ref. ${esc(p.referencia)}`:''}</div>
-          <div class="pay-sub">${fmtD(p.fecha)} · ${esc(p.estado||'')}${bol.length?` · boleta subida`:' · <b>sin boleta</b>'}</div></div>
+          <div class="pay-sub">${fmtD(p.fecha)} · ${esc(p.estado||'')}${bol.length?` · boleta subida`:(resp?' · <b>respaldado con la referencia del banco</b>':' · <b>sin respaldo</b>')}</div></div>
         <div>${(()=>{const rc=reciboDe(p.id); return rc?`<button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">Recibo ${String(rc.numero).padStart(6,'0')}</button>`:(bol.length&&p.estado!=='rechazado'?`<button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">Emitir recibo</button>`:'');})()}
           ${bol.length?`<button class="btn btn-ghost btn-sm" onclick="verAdjunto('${bol[0].id}')">Ver</button>`:''}
           ${p.estado!=='rechazado'?`<button class="btn ${bol.length?'btn-ghost':'btn-gold'} btn-sm" onclick="modalBoleta('${p.id}')">${bol.length?'Otra boleta':'Subir boleta'}</button>`:''}</div></div>`;});
@@ -3671,7 +3671,8 @@ function modalPago(id){
       <div class="field"><label>Monto (Q) *</label><input id="p-monto" type="number" value="${ec.prox?ec.prox.monto:''}" oninput="totalBoleta('p')"></div>
       <div class="field"><label>Forma de pago</label><input id="p-forma" value="Transferencia bancaria" readonly style="background:var(--tint)"></div>
       <div class="field"><label>Cuenta acreditada</label><select id="p-cta">${opcionesCuenta()}</select></div>
-      <div class="field full"><label>Foto de la boleta *</label>
+      <div class="field"><label>Fecha del pago</label><input id="p-fecha" type="date" value="${HOY_ISO}" max="${HOY_ISO}" onchange="pagoHistoricoPista()"></div>
+      <div class="field full"><label>Foto de la boleta <span class="ast" id="p-fotoAst">*</span></label>
         <input id="p-foto" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment"
                onchange="if(typeof leerBoletaEn==='function')leerBoletaEn(this,{ref:'p-ref',monto:'p-monto',aviso:'p-leido'})">
         <div class="hint" id="p-leido">JPG, PNG o PDF · máximo 5 MB. Al elegir la foto, la referencia y el monto se leen solos.</div></div>
@@ -3681,26 +3682,37 @@ function modalPago(id){
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarPago('${id}')">Aplicar pago</button></div>`);
 }
+/* Un pago con fecha anterior al arranque del portal es histórico: la
+   boleta ya no existe (WhatsApp la borró) y el respaldo es la referencia
+   con la que el banco lo confirmó. */
+function pagoHistoricoPista(){
+  const f=v('p-fecha')||HOY_ISO, hist=f<CORTE_BOLETAS;
+  const ast=document.getElementById('p-fotoAst'); if(ast) ast.hidden=hist;
+  const l=document.getElementById('p-leido'); if(l&&hist) l.textContent='Pago histórico: si no hay boleta, basta la referencia con la que el banco lo confirmó.';
+}
 async function guardarPago(id){
   const monto=+v('p-monto'); if(!monto||monto<=0){toast('Ingresa un monto válido');return;}
   const ref=v('p-ref').trim(); if(!ref){toast('Anotá el número de boleta o referencia',5000,true);return;}
+  const fecha=v('p-fecha')||HOY_ISO; if(fecha>HOY_ISO){toast('La fecha del pago no puede ser futura',5000,true);return;}
+  const historico=fecha<CORTE_BOLETAS;
   const foto=(document.getElementById('p-foto')||{}).files; const archivo=foto&&foto[0];
-  if(!archivo){toast('Adjuntá la foto de la boleta: sin ella no se puede confirmar el pago',6000,true);return;}
+  if(!archivo&&!historico){toast('Adjuntá la foto de la boleta: sin ella no se puede confirmar el pago',6000,true);return;}
   const p=await conBoton(async()=>{
     /* Si hay una cuota pendiente, el pago se ata a ella y queda marcada
        como cobrada (misma ruta que Recaudación). Si no —abono libre—,
        se registra suelto y la base lo aplica al confirmarse. */
     const ct=getContrato(id), ec=estadoCuenta(ct); const prox=ec&&ec.prox; const vence=prox&&(prox.venc||prox.vence);
     let pago=null;
-    if(vence && typeof marcarCobrada==='function'){
+    if(vence && !historico && typeof marcarCobrada==='function'){
       const reg=await marcarCobrada(ct.no, vence, {monto,forma:v('p-forma'),cuenta:v('p-cta'),referencia:ref,nota:''});
       if(!reg) return null;
       pago=DB.pagos.find(x=>mismoId(x.id,reg.pagoId))||{id:reg.pagoId};
     } else {
-      pago=await registrarPago(id,{monto,forma:v('p-forma'),cuenta:v('p-cta'),referencia:ref});
+      /* Histórico: con su fecha real; la base lo aplica a las cuotas al confirmarse. */
+      pago=await registrarPago(id,{monto,forma:v('p-forma'),cuenta:v('p-cta'),referencia:ref,fecha});
     }
     if(!pago) return null;
-    if(typeof hayBase==='function'&&hayBase()){
+    if(archivo&&typeof hayBase==='function'&&hayBase()){
       const a=await sbAdjuntar('pago', pago.id, archivo, 'Boleta '+ref);
       if(!a.ok) toast('El pago quedó registrado, pero la foto no subió: '+a.error+' · Subila desde Cuenta.',9000,true);
       else (DB.adjuntos=DB.adjuntos||[]).push({id:a.dato.id,entidad:'pago',entidadId:Number(pago.id),bucket:a.dato.bucket,ruta:a.dato.ruta,nombre:archivo.name,mime:archivo.type,bytes:archivo.size,descripcion:'Boleta '+ref,fecha:HOY_ISO});
@@ -3762,7 +3774,7 @@ function previosAlContrato(ct){
   const ds=(typeof documentosExpediente==='function'?documentosExpediente(ct):documentosDe(ct.id))||[];
   const hay=t=>ds.some(d=>d.tipo===t&&d.bucket&&d.ruta);
   const pagos=(DB.pagos||[]).filter(p=>mismoId(p.contratoId,ct.id)&&p.estado!=='rechazado');
-  const boleta=hay('boleta_enganche')||pagos.some(p=>adjuntosDe('pago',p.id).length||reciboDe(p.id));
+  const boleta=hay('boleta_enganche')||pagos.some(p=>pagoRespaldado(p)||reciboDe(p.id));
   const plan=planFinanciamiento(ct.precio, ct.enganche!=null?ct.enganche:ENGANCHE_MIN, ct.plazo||60, ct.tasa);
   const faltan=[];
   if(ct.origen){ if(!hay('formulario')) faltan.push('formulario firmado'); if(!esContado(ct)&&!hay('plan_pagos')) faltan.push('plan de pagos firmado'); if(!boleta) faltan.push(esContado(ct)?'boleta del pago':'boleta del enganche'); }

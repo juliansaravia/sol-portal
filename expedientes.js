@@ -50,7 +50,7 @@ function faltantesDe(ct) {
      del pago) y el recibo lo emite el suite: cuentan aunque no estén
      subidos como documento. Lo histórico sí se sube al expediente. */
   const pagosCt = (DB.pagos || []).filter(p => mismoId(p.contratoId, ct.id) && p.estado !== 'rechazado');
-  const enPago = r => r.codigo === 'boleta_enganche' && pagosCt.some(p => (typeof adjuntosDe === 'function' ? adjuntosDe('pago', p.id) : []).length);
+  const enPago = r => r.codigo === 'boleta_enganche' && pagosCt.some(p => (typeof pagoRespaldado === 'function' ? pagoRespaldado(p) : (typeof adjuntosDe === 'function' ? adjuntosDe('pago', p.id) : []).length));
   const conRecibo = r => r.codigo === 'recibo_enganche' && (DB.recibos || []).some(x => mismoId(x.contratoId || x.contrato_id, ct.id) || pagosCt.some(p => mismoId(x.pagoId || x.pago_id, p.id)));
 
   /* Lo que falta se lista en el orden del flujo de venta, y sólo lo que
