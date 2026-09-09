@@ -3777,9 +3777,14 @@ const DOCS_REQ = () => (typeof DB !== 'undefined' && DB.documentosRequeridos && 
 /* Papeles que el vendedor sube escaneados en PDF (no fotos). La boleta
    del enganche queda fuera: casi siempre es una captura del banco. */
 const PAPELES_PDF=['formulario','plan_pagos','contrato','dpi','dpi_pariente'];
-/* Regla para todos los que suban desde la ficha (4 sept 2026: «solo PDF
-   escaneado»). La carga masiva de expedientes históricos no pasa por aquí. */
-function exigePdfEscaneado(tipo){ return PAPELES_PDF.includes(tipo); }
+/* «Solo PDF escaneado» rige para las ventas nuevas de los vendedores (4 sept
+   2026). Finanzas y los practicantes cargan expedientes históricos que
+   existen como foto o captura: a ellos se les acepta la imagen (9 sept). La
+   base aplica la misma regla: sólo al vendedor le exige PDF. */
+function exigePdfEscaneado(tipo){
+  const rol=String((typeof SESION!=='undefined'&&SESION&&SESION.rol)||(window.__user&&window.__user.role)||ROLE||'');
+  return PAPELES_PDF.includes(tipo) && (rol==='vendedor' || window.PORTAL==='vendedor');
+}
 /* Orden del flujo de venta. Lo que no esté acá va al final. */
 const ORDEN_FLUJO=['formulario','plan_pagos','boleta_enganche','dpi','dpi_pariente','contrato','recibo_enganche'];
 const ordenFlujo=c=>{ const i=ORDEN_FLUJO.indexOf(c); return i<0?99:i; };
