@@ -1113,7 +1113,7 @@ function filasClientes(t){
     const cts=DB.contratos.filter(x=>x.clienteId===c.id);
     return `<tr class="click" onclick="abrirCliente('${c.id}')">
       <td><b>${esc(c.nombre)} ${esc(c.apellido)}</b></td><td>${esc(c.dpi)||'<span class="muted">—</span>'}</td>
-      <td>${esc(c.telefono)||'—'}</td><td>${esc(c.email)||'—'}</td>
+      <td>${esc(c.telefono||c.tel)||'—'}</td><td>${esc(c.email||c.correo)||'—'}</td>
       <td>${cts.map(x=>`<span class="pill">${x.no}</span>`).join(' ')||'—'}</td></tr>`;
   }).join('');
 }
@@ -3139,8 +3139,8 @@ function abrirCliente(id){
     <div class="fgrid">
       <div class="f-full"><div class="f-lbl">Nombre completo</div><div class="f-val">${esc(c.nombre)} ${esc(c.apellido)}</div></div>
       <div><div class="f-lbl">DPI / CUI</div><div class="f-val">${esc(c.dpi)||'—'}</div></div>
-      <div><div class="f-lbl">Teléfono</div><div class="f-val">${esc(c.telefono)||'—'}</div></div>
-      <div class="f-full"><div class="f-lbl">Correo</div><div class="f-val">${esc(c.email)||'—'}</div></div>
+      <div><div class="f-lbl">Teléfono</div><div class="f-val">${esc(c.telefono||c.tel)||'—'}</div></div>
+      <div class="f-full"><div class="f-lbl">Correo</div><div class="f-val">${esc(c.email||c.correo)||'—'}</div></div>
       <div class="f-full"><div class="f-lbl">Dirección</div><div class="f-val">${esc(c.direccion)||'—'}</div></div>
     </div>
     <div class="btn-row"><button class="btn btn-ghost btn-sm" onclick="modalEditarCliente('${c.id}')">Editar información</button></div>
@@ -3191,8 +3191,8 @@ function pintarContrato(){
     <div class="sect-t">Cliente</div><div class="fgrid">
       <div class="f-full"><div class="f-lbl">Nombre</div><div class="f-val">${esc(nombreCliente(ct.clienteId))}</div></div>
       <div><div class="f-lbl">DPI / CUI</div><div class="f-val">${esc(cli&&cli.dpi)||'—'}</div></div>
-      <div><div class="f-lbl">Teléfono</div><div class="f-val">${esc(cli&&cli.telefono)||'—'}</div></div>
-      <div class="f-full"><div class="f-lbl">Correo</div><div class="f-val">${esc(cli&&cli.email)||'—'}</div></div>
+      <div><div class="f-lbl">Teléfono</div><div class="f-val">${esc(cli&&(cli.telefono||cli.tel))||'—'}</div></div>
+      <div class="f-full"><div class="f-lbl">Correo</div><div class="f-val">${esc(cli&&(cli.email||cli.correo))||'—'}</div></div>
     </div>
     ${(()=>{ const firmado=contratoFirmadoDe(ct);
       if(firmado) return `<div class="hint" style="margin:6px 0">Contrato firmado en el sistema · <a href="#" onclick="verDocumento('${firmado.id}');return false;">ver</a></div>`;

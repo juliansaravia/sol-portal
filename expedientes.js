@@ -230,6 +230,8 @@ function verExpediente(id) {
       ${dato('Nombre', nombreCliente(ct.clienteId))}
       ${dato('Teléfono', c.tel)}
       ${dato('Correo', c.correo)}
+      <div class="f-full"><div class="btn-row" style="margin:4px 0 0">${(typeof ROLE !== 'undefined' && ['admin','gerencia','financiero','vendedor'].includes(ROLE) && ct.clienteId)
+        ? `<button class="btn btn-ghost btn-sm" onclick="modalEditarCliente('${ct.clienteId}')">Editar datos del cliente · teléfono, correo, dirección</button>` : ''}</div></div>
       ${dato('Ocupación', c.ocupacion)}
       ${dato('Departamento', c.depto)}
     </div>
