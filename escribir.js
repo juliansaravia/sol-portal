@@ -322,6 +322,11 @@ async function sbCambiarEnganche(contrato_id, enganche) {
   return escribir('cambiar el enganche', async () =>
     oExplota(await SB.rpc('cambiar_enganche', { p_contrato_id: Number(contrato_id), p_enganche: Number(enganche) })));
 }
+async function sbReestructurarPlan(contrato_id, enganche, plazo, tasa, modalidad, primera) {
+  return escribir('rehacer el plan', async () =>
+    oExplota(await SB.rpc('reestructurar_plan', { p_contrato_id: Number(contrato_id), p_enganche: Number(enganche), p_plazo: Number(plazo),
+      p_tasa: Number(tasa), p_modalidad: modalidad || null, p_primera: primera || null })));
+}
 async function sbFraccionarEnganche(contrato_id, cuotas, primera) {
   return escribir('fraccionar el enganche', async () =>
     oExplota(await SB.rpc('fraccionar_enganche', { p_contrato_id: Number(contrato_id), p_cuotas: Number(cuotas), p_primera: primera })));
@@ -1023,7 +1028,7 @@ async function sbReciboAdjunto(recibo_id, adjunto_id) {
    ============================================================ */
 Object.assign(window, {
   hayBase, escribir, traducirError,
-  sbCrearCliente, sbActualizarCliente, sbVincularExpediente, sbReferenciaPago, sbContadoDiferido, sbLiberarDiferido, sbEngancheDesdeDocumento, sbCambiarEnganche, sbFraccionarEnganche,
+  sbCrearCliente, sbActualizarCliente, sbVincularExpediente, sbReferenciaPago, sbContadoDiferido, sbLiberarDiferido, sbEngancheDesdeDocumento, sbCambiarEnganche, sbFraccionarEnganche, sbReestructurarPlan,
   sbCrearContrato, sbEstadoContrato, sbReasignarContratos,
   sbRegistrarPago, sbConfirmarPago, sbBorrarPago,
   sbMarcarCobrada, sbMarcarNoCobrada, sbDesmarcarCuota,

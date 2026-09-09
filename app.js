@@ -2383,12 +2383,13 @@ function renderConfirmacion(){
   const pend=DB.pagos.filter(p=>p.estado==='registrado');
   let h=`<div class="card"><div class="card-h"><h2>Pagos por confirmar · ${pend.length}</h2></div>
     <div class="card-b" style="padding:0"><table class="data"><thead><tr>
-    <th>Contrato</th><th>Cliente</th><th>Cuenta acreditada</th><th>Forma</th>
+    <th>Contrato</th><th>Lote</th><th>Tipo</th><th>Cliente</th><th>Fecha de pago</th><th>Cuenta acreditada</th><th>Forma</th>
     <th>Referencia</th><th class="num">Monto</th><th>Acción</th></tr></thead><tbody>`;
-  if(!pend.length)h+=`<tr><td colspan="7" class="empty">No hay pagos pendientes de confirmar</td></tr>`;
-  pend.forEach(p=>{const ct=getContrato(p.contratoId);
-    h+=`<tr><td><b>${ct?ct.no:'—'}</b></td><td>${ct?esc(nombreCliente(ct.clienteId)):'—'}</td>
-      <td>${esc(p.cuenta)}</td><td>${esc(p.forma)}</td><td>${esc(p.referencia)||'—'}</td>
+  if(!pend.length)h+=`<tr><td colspan="10" class="empty">No hay pagos pendientes de confirmar</td></tr>`;
+  pend.sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha))).forEach(p=>{const ct=getContrato(p.contratoId); const lt=ct?getLote(ct.clave||ct.lote):null;
+    const fase=String((lt&&lt.fase)||(ct&&ct.fase)||''); const tipo=/AGR/i.test(fase)||/^AGR/i.test(ct?ct.no:'')?'Agrícola':(fase?'Residencial · '+esc(fase.replace(/^FASE\s*/i,'F')):'Residencial');
+    h+=`<tr><td><b>${ct?ct.no:'—'}</b></td><td>${ct?esc(ct.lote):'—'}</td><td><span class="pill">${tipo}</span></td><td>${ct?esc(nombreCliente(ct.clienteId)):'—'}</td>
+      <td>${fmtD(p.fecha)}</td><td>${esc(p.cuenta)||'—'}</td><td>${esc(p.forma)}</td><td>${esc(p.referencia)||'—'}</td>
       <td class="num">${Q(p.monto)}</td>
       <td><button class="btn btn-primary btn-sm" onclick="doConfirmar('${p.id}',true)">Confirmar</button>
           <button class="btn btn-ghost btn-sm" onclick="doConfirmar('${p.id}',false)">Rechazar</button>
@@ -4801,13 +4802,17 @@ function modalEnganche(id){
   const prox=new Date(HOY_ISO+'T12:00:00'); prox.setMonth(prox.getMonth()+1); prox.setDate(1);
   openModal(`<div class="modal-h"><h3>Enganche de ${esc(ct.no)}</h3><p>Lote ${esc(ct.lote)} · ${esc(nombreCliente(ct.clienteId))}</p></div>
     <div class="modal-b">
-      <div class="sect-t">Monto del enganche</div>
+      <div class="sect-t">Plan del contrato · enganche, plazo y tasa</div>
       <div class="form-grid">
-        <div class="field"><label>Enganche (Q)</label><input id="en-monto" type="number" step="0.01" min="0" value="${eng}"></div>
+        <div class="field"><label>Enganche (Q)</label><input id="en-monto" type="number" step="0.01" min="0" value="${eng}" oninput="pistaPlan('${ct.id}')"></div>
         <div class="field"><label>Pagado del enganche</label><input value="${Q(pagadoEng)}" readonly style="background:var(--tint)"></div>
+        <div class="field"><label>Plazo del saldo (meses)</label><input id="en-plazo" type="number" min="1" max="120" value="${ct.plazo||60}" oninput="pistaPlan('${ct.id}')"></div>
+        <div class="field"><label>Tasa</label><select id="en-tasa" onchange="pistaPlan('${ct.id}')"><option value="0.015" ${(ct.tasa==null||+ct.tasa===0.015)?'selected':''}>Crédito · 1.5% mensual</option><option value="0" ${+ct.tasa===0?'selected':''}>Sin interés (contado en pagos)</option></select></div>
+        <div class="field"><label>Primera cuota del saldo</label><input id="en-primeraSaldo" type="date" value="${prox.toISOString().slice(0,10)}"></div>
+        <div class="field"><label>Cuota resultante</label><input id="en-cuotaPlan" readonly style="background:var(--tint)"></div>
       </div>
-      <div class="hint">Cambiar el monto rehace el plan de cuotas con el enganche nuevo y vuelve a aplicar los pagos confirmados.</div>
-      <div class="btn-row" style="margin:8px 0 0"><button class="btn btn-ghost btn-sm" onclick="guardarEnganche('${ct.id}')">Guardar monto</button></div>
+      <div class="hint">Rehace todas las cuotas del saldo con estos datos, desde la primera fecha, y vuelve a aplicar en orden los pagos confirmados. Sirve cuando se firma un contrato nuevo con otras condiciones.</div>
+      <div class="btn-row" style="margin:8px 0 0"><button class="btn btn-ghost btn-sm" onclick="guardarPlan('${ct.id}')">Rehacer plan</button></div>
       <div class="sect-t" style="margin-top:18px">Pagar lo pendiente en cuotas · sin interés</div>
       <div class="form-grid">
         <div class="field"><label>Pendiente del enganche</label><input value="${Q(pend)}" readonly style="background:var(--tint)"></div>
@@ -4819,6 +4824,25 @@ function modalEnganche(id){
     </div>
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
       <button class="btn btn-primary" ${pend>0?'':'disabled'} onclick="fraccionarEnganche('${ct.id}')">Fraccionar enganche</button></div>`);
+  pistaPlan(ct.id);
+}
+function pistaPlan(id){
+  const ct=getContrato(id); if(!ct) return;
+  const p=planFinanciamiento(ct.precio,+v('en-monto')||0,+v('en-plazo')||1,+v('en-tasa'));
+  const e=document.getElementById('en-cuotaPlan'); if(e) e.value=`${Q(p.cuota)} × ${p.plazo}`;
+}
+async function guardarPlan(id){
+  const ct=getContrato(id); if(!ct) return;
+  const eng=+v('en-monto'), plazo=+v('en-plazo'), tasa=+v('en-tasa'), primera=v('en-primeraSaldo')||null;
+  if(!(eng>=0)||eng>ct.precio) return toast('El enganche va de 0 al precio de venta',5000,true);
+  if(!(plazo>=1&&plazo<=120)) return toast('El plazo va de 1 a 120 meses',4000,true);
+  if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se puede rehacer',5000,true);
+  if(!confirm(`Rehacer el plan de ${ct.no}: enganche ${Q(eng)}, ${plazo} cuotas ${tasa?'al 1.5% mensual':'sin interés'}${primera?' desde el '+fmtD(primera):''}. Los pagos confirmados se vuelven a aplicar. ¿Seguir?`)) return;
+  const r=await conBoton(()=>sbReestructurarPlan(id,eng,plazo,tasa,null,primera)); if(!r||!r.ok) return;
+  const d=r.dato||{};
+  anotar('contrato.plan', ct.no+' · '+Q(eng)+' · '+plazo+'m · '+tasa);
+  await registrarGestion(id,'Bitácora Socios','Contactado',`Plan rehecho: enganche ${Q(eng)}, ${plazo} cuotas de ${Q(d.cuota||0)} ${tasa?'al 1.5%':'sin interés'}${primera?' desde '+fmtD(primera):''} · lo hizo ${(window.__user&&window.__user.name)||''}`);
+  closeModal(); toast('Plan de '+ct.no+' rehecho: '+plazo+' cuotas de '+Q(d.cuota||0)); await traerCartera(); if(typeof pintarContrato==='function') pintarContrato();
 }
 function pistaEnganche(pend){ const n=Math.max(1,+v('en-cuotas')||1); const e=document.getElementById('en-cuota'); if(e) e.value=Q(pend/n); }
 async function guardarEnganche(id){
