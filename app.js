@@ -2379,23 +2379,74 @@ function cartaCartera(){
 function filtrarCartera(t){ cobBusca=t||''; renderCobranza(); }
 
 /* ============================================================ CONFIRMACIÓN DE PAGOS */
+/* ---------- Cuadre con el estado de cuenta del banco ----------
+   Se sube (o se pega) el export de Banrural y cada pago por confirmar se
+   busca en los abonos: primero por la referencia de la boleta, si no por
+   monto y fecha (±3 días). Lo que cuadra se puede confirmar de un golpe.
+   Reusa el lector de conciliacion.js (formato real de Banrural). */
+window.__cuadre=null;
+function cuadrarConBanco(texto){
+  if(typeof leerEstadoCuenta!=='function') return toast('El lector del estado de cuenta no está cargado',5000,true);
+  const r=leerEstadoCuenta(texto); if(r.error) return toast(r.error,7000,true);
+  const movs=r.movimientos.map((m,i)=>({...m,i,usado:false}));
+  const pend=DB.pagos.filter(p=>p.estado==='registrado');
+  const porPago=new Map();
+  const ref=v=>(typeof normRef==='function'?normRef(v):String(v||'').replace(/\W/g,'').replace(/^0+/,'').toUpperCase())||null;
+  pend.forEach(p=>{ const rp=ref(p.referencia); if(!rp) return;
+    const m=movs.find(x=>!x.usado&&(x.ref===rp||x.ref2===rp)&&Math.abs(x.monto-p.monto)<=0.5);
+    if(m){ m.usado=true; porPago.set(String(p.id),{mov:m,via:'referencia'}); } });
+  pend.forEach(p=>{ if(porPago.has(String(p.id))) return;
+    const cand=movs.filter(x=>!x.usado&&Math.abs(x.monto-p.monto)<=0.5&&Math.abs((new Date(x.fecha+'T00:00:00')-new Date(String(p.fecha)+'T00:00:00'))/86400000)<=3)
+      .sort((a,b)=>Math.abs(new Date(a.fecha)-new Date(p.fecha))-Math.abs(new Date(b.fecha)-new Date(p.fecha)));
+    if(cand.length){ cand[0].usado=true; porPago.set(String(p.id),{mov:cand[0],via:'monto y fecha'}); } });
+  /* Abonos del banco que no casan con ningún pago pendiente: ¿ya confirmado, o nadie lo registró? */
+  const sobran=movs.filter(m=>!m.usado).map(m=>{ const ya=DB.pagos.find(p=>p.estado==='confirmado'&&ref(p.referencia)&&(ref(p.referencia)===m.ref||ref(p.referencia)===m.ref2)); return {...m, estado: ya?'ya confirmado · '+((getContrato(ya.contratoId)||{}).no||''):'sin pago en el sistema'}; });
+  window.__cuadre={porPago, sobran, total:movs.length, fecha:new Date().toLocaleString('es-GT')};
+  renderConfirmacion();
+  toast(`${porPago.size} de ${pend.length} pagos cuadran con el banco · ${sobran.length} abono(s) sin pago registrado`,7000);
+}
+async function cuadrarArchivo(inp){ const f=inp&&inp.files&&inp.files[0]; if(!f) return; const t=await f.text(); cuadrarConBanco(t); }
+async function confirmarCuadrados(){
+  const c=window.__cuadre; if(!c||!c.porPago.size) return;
+  const ids=[...c.porPago.keys()].filter(id=>DB.pagos.some(p=>mismoId(p.id,id)&&p.estado==='registrado'));
+  if(!confirm(`Confirmar ${ids.length} pago(s) que cuadran con el estado de cuenta. Se aplican a la cartera. ¿Seguir?`)) return;
+  let ok=0; for(const id of ids){ if(await confirmarPago(id,true)) ok++; }
+  toast(`${ok} pago(s) confirmados · actualizando la cartera…`);
+  if(typeof cargarCartera==='function' && hayRemoto()){ const r=await cargarCartera(); if(r.ok) renderConfirmacion(); } else renderConfirmacion();
+}
 function renderConfirmacion(){
   const pend=DB.pagos.filter(p=>p.estado==='registrado');
-  let h=`<div class="card"><div class="card-h"><h2>Pagos por confirmar · ${pend.length}</h2></div>
-    <div class="card-b" style="padding:0"><table class="data"><thead><tr>
+  const cu=window.__cuadre; const cuadran=cu?[...cu.porPago.keys()].filter(id=>pend.some(p=>mismoId(p.id,id))).length:0;
+  let h=`<div class="card"><div class="card-h" style="flex-wrap:wrap;gap:10px"><h2>Cuadre con el banco</h2><span class="hint">Subí el estado de cuenta de Banrural (CSV o Excel guardado como CSV) o pegalo. Cada pago por confirmar se busca por referencia, y si no, por monto y fecha.</span></div>
+    <div class="card-b"><div class="form-grid">
+      <div class="field"><label>Estado de cuenta (CSV)</label><input type="file" accept=".csv,.txt,.tsv,text/csv,text/plain" onchange="cuadrarArchivo(this)"></div>
+      <div class="field"><label>…o pegá las filas del Excel</label><textarea id="cb-texto" rows="2" placeholder="fecha, agencia, descripción, referencia 1, referencia 2, débito, crédito, saldo"></textarea></div>
+    </div>
+    <div class="btn-row"><button class="btn btn-ghost btn-sm" onclick="cuadrarConBanco(v('cb-texto'))">Cuadrar lo pegado</button>
+      ${cu?`<button class="btn btn-primary btn-sm" ${cuadran?'':'disabled'} onclick="confirmarCuadrados()">Confirmar los ${cuadran} que cuadran</button><span class="hint">${cu.total} abono(s) leídos · ${cu.fecha}</span>`:''}</div>
+    ${cu&&cu.sobran.length?`<div class="sect-t" style="margin-top:12px">Abonos del banco sin pago pendiente · ${cu.sobran.length}</div>
+      <div style="max-height:200px;overflow:auto"><table class="data"><thead><tr><th>Fecha</th><th>Referencia</th><th>Descripción</th><th class="num">Monto</th><th>Estado</th></tr></thead><tbody>
+      ${cu.sobran.map(m=>`<tr><td>${fmtD(m.fecha)}</td><td>${esc(m.ref||'—')}</td><td>${esc(m.descripcion||'')}</td><td class="num">${Q(m.monto)}</td><td><span class="pill">${esc(m.estado)}</span></td></tr>`).join('')}</tbody></table></div>`:''}
+    </div></div>`;
+  h+=`<div class="card"><div class="card-h"><h2>Pagos por confirmar · ${pend.length}</h2></div>
+    <div class="card-b" style="padding:0;overflow-x:auto"><table class="data"><thead><tr>
     <th>Contrato</th><th>Lote</th><th>Tipo</th><th>Cliente</th><th>Fecha de pago</th><th>Cuenta acreditada</th><th>Forma</th>
-    <th>Referencia</th><th class="num">Monto</th><th>Acción</th></tr></thead><tbody>`;
-  if(!pend.length)h+=`<tr><td colspan="10" class="empty">No hay pagos pendientes de confirmar</td></tr>`;
+    <th>Referencia</th><th class="num">Monto</th><th>Boleta</th>${cu?'<th>Banco</th>':''}<th>Acción</th></tr></thead><tbody>`;
+  if(!pend.length)h+=`<tr><td colspan="12" class="empty">No hay pagos pendientes de confirmar</td></tr>`;
   pend.sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha))).forEach(p=>{const ct=getContrato(p.contratoId); const lt=ct?getLote(ct.clave||ct.lote):null;
     const fase=String((lt&&lt.fase)||(ct&&ct.fase)||''); const tipo=/AGR/i.test(fase)||/^AGR/i.test(ct?ct.no:'')?'Agrícola':(fase?'Residencial · '+esc(fase.replace(/^FASE\s*/i,'F')):'Residencial');
+    const bol=adjuntosDe('pago',p.id).filter(a=>!/^Recibo \d/.test(a.descripcion||''));
+    const q=cu?cu.porPago.get(String(p.id)):null;
     h+=`<tr><td><b>${ct?ct.no:'—'}</b></td><td>${ct?esc(ct.lote):'—'}</td><td><span class="pill">${tipo}</span></td><td>${ct?esc(nombreCliente(ct.clienteId)):'—'}</td>
       <td>${fmtD(p.fecha)}</td><td>${esc(p.cuenta)||'—'}</td><td>${esc(p.forma)}</td><td>${esc(p.referencia)||'—'}</td>
       <td class="num">${Q(p.monto)}</td>
+      <td>${bol.length?`<button class="btn btn-ghost btn-sm" onclick="verAdjunto('${bol[0].id}')">Ver boleta</button>`:(pagoRespaldado(p)?'<span class="hint">ref. banco</span>':'<span class="hint">sin boleta</span>')}</td>
+      ${cu?`<td>${q?`<span class="badge b-ok">✓ ${q.via}</span><div class="hint">${fmtD(q.mov.fecha)} · ${esc(q.mov.ref||'')}</div>`:'<span class="badge b-mora">✗ no aparece</span>'}</td>`:''}
       <td><button class="btn btn-primary btn-sm" onclick="doConfirmar('${p.id}',true)">Confirmar</button>
           <button class="btn btn-ghost btn-sm" onclick="doConfirmar('${p.id}',false)">Rechazar</button>
           <button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">${reciboDe(p.id)?'Recibo':'Emitir recibo'}</button></td></tr>`;});
   h+=`</tbody></table></div></div>
-    <div class="hint">Flujo real del CRM: la boleta se registra y luego contabilidad verifica el depósito antes de aplicarlo a la cartera.</div>`;
+    <div class="hint">La boleta se registra y quien confirma verifica el depósito contra el banco antes de aplicarlo a la cartera.</div>`;
   C().innerHTML=h;
 }
 async function doConfirmar(id,ok){
