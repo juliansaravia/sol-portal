@@ -3407,7 +3407,7 @@ function enviarEC(id){
     `Total del plan: ${Q(totalPlan)}\nPagado: ${Q(pagado)}\n*Saldo: ${Q(totalPlan-pagado)}*\n`+
     (prox?`\nPróxima cuota: ${Q(prox.cuota)}\nVence: ${fmtD(prox.venc)}\n`:'\nPlan liquidado\n')+
     `\nSOL Desarrollos · La Esperanza`;
-  const tel=(cli&&cli.telefono||'').replace(/\D/g,'');
+  const tel=(cli&&(cli.telefono||cli.tel)||'').replace(/\D/g,'');
   window.open(`https://wa.me/${tel}?text=${encodeURIComponent(txt)}`,'_blank');
   /* Anotación de bitácora: no se espera a propósito. Si falla, se queda
      en consola y no estorba el envío, que es lo que el usuario pidió. */
