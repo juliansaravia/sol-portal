@@ -108,7 +108,19 @@ function leerEstadoCuenta(texto) {
   if (!lineas.length) return { movimientos: [], error: 'No hay nada que leer' };
 
   const sep = lineas[0].includes('\t') ? '\t' : (lineas[0].split(';').length > lineas[0].split(',').length ? ';' : ',');
-  const parte = l => l.split(sep).map(c => c.trim().replace(/^"|"$/g, ''));
+  /* Un CSV de banco trae los montos entre comillas con coma de miles
+     («"2,665.59"»): partir a lo bruto por comas los rompía en dos. */
+  const parte = l => {
+    const out = []; let cur = '', dentro = false;
+    for (let i = 0; i < l.length; i++) {
+      const ch = l[i];
+      if (ch === '"') { if (dentro && l[i + 1] === '"') { cur += '"'; i++; } else dentro = !dentro; }
+      else if (ch === sep && !dentro) { out.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    out.push(cur);
+    return out.map(c => c.trim().replace(/^"|"$/g, ''));
+  };
 
   const enc = parte(lineas[0]);
   const cols = detectarColumnas(enc);
