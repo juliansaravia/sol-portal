@@ -909,9 +909,11 @@ function norm(a){ while(a>90)a-=180; while(a<-90)a+=180; return a; }
 function difAng(a,b){ return norm(a-b); }
 function mediana(arr){ const s=arr.slice().sort((a,b)=>a-b); return s[Math.floor(s.length/2)]; }
 function renderInventario(){
-  /* El plano dibujado (assets/plano.png) es el de La Esperanza. Un proyecto
-     sin plano muestra su inventario en lista, por fase, sin mapa. */
+  /* El plano dibujado con polígonos (assets/plano.png + lotes-geo) es el de
+     La Esperanza. Otros proyectos usan una imagen (PLANOS) con marcadores
+     ubicados a clic; sin imagen, el inventario se ve en lista. */
   const tienePlano=!PROYECTO||PROYECTO.codigo==='RLE';
+  if(!tienePlano && PLANOS[PROYECTO.codigo]){ renderInventarioImagen(); return; }
   if(!tienePlano){
     const fases=[...new Set(DB.lotes.map(l=>l.fase||'Sin fase'))];
     let h=`<div class="chips">`+[['todos','Todos'],['disponible','Disponibles'],['reservado','Reservados'],['vendido','Vendidos']].map(([k,l])=>`<button class="chip ${filtro===k?'active':''}" onclick="setFiltro('${k}')">${l}</button>`).join('')+`</div>`;
@@ -955,7 +957,62 @@ function renderInventario(){
   C().innerHTML=h;
   dibujarMapa();
 }
+/* ---------- Plano por imagen (Hati) ----------
+   Cada proyecto declara su imagen y su tamaño; los lotes se dibujan como
+   marcadores en (cx, cy). Administración y gerencia entran a «Ubicar
+   lotes»: eligen un lote de la lista y hacen clic en el plano. */
+const PLANOS={ HATI:{ src:'assets/planos/hati.png', w:1600, h:1100, nota:'Arriba Los Cerros · abajo San Juan' } };
+let RLE_CLIP=null, ubicando=null;
+function renderInventarioImagen(){
+  const pl=PLANOS[PROYECTO.codigo]; const puedeUbicar=['admin','gerencia'].includes(ROLE);
+  if(!RLE_CLIP&&window.PLAN_CLIP) RLE_CLIP=window.PLAN_CLIP;
+  window.PLAN_CLIP={x:0,y:0,w:pl.w,h:pl.h};
+  const con=DB.lotes.filter(l=>l.cx!=null&&l.cy!=null), sin=DB.lotes.filter(l=>!(l.cx!=null&&l.cy!=null));
+  let h=`<div class="chips">`+[['todos','Todos'],['disponible','Disponibles'],['reservado','Reservados'],['vendido','Vendidos']].map(([k,l])=>`<button class="chip ${filtro===k?'active':''}" onclick="setFiltro('${k}')">${l}</button>`).join('')+
+    `<input id="qmap" class="chip" style="min-width:220px" placeholder="Buscar lote o cliente…" value="${esc(busqueda)}" oninput="busqueda=this.value;pintarMapa()">
+     ${puedeUbicar?`<button class="chip ${ubicando?'active':''}" onclick="ubicando=ubicando?null:{};renderInventario()">${ubicando?'Terminar de ubicar':'Ubicar lotes'}</button>`:''}</div>`;
+  h+=`<div class="map-legend">`+Object.keys(ESTADO_MAP).map(k=>`<span><i class="dot" style="background:${ESTADO_MAP[k].fill}"></i>${ESTADO_MAP[k].label}</span>`).join('')+
+      `<span style="margin-left:auto;color:var(--muted)">${con.length} de ${DB.lotes.length} lotes ubicados · ${esc(pl.nota||'')}</span></div>`;
+  if(ubicando) h+=`<div class="aviso-info" style="margin:0 0 10px">${ubicando.lote?`Ubicando <b>${esc(ubicando.lote.codigo)}</b>: hacé clic en el plano donde está. `:'Elegí un lote de la lista de abajo y después hacé clic en el plano. '}Podés arrastrar y usar la rueda para acercar; un lote ya ubicado se corrige eligiéndolo de nuevo.</div>`;
+  h+=`<div class="card"><div class="map-wrap"><svg id="mapSvg" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="map-zoom"><button onclick="zoomBtn(0.75)" title="Acercar">+</button><button onclick="zoomBtn(1.33)" title="Alejar">−</button><button onclick="zoomReset()" title="Ver todo">⤢</button></div>
+      <div class="tooltip" id="tip" hidden></div></div></div>`;
+  const fases=[...new Set(DB.lotes.map(l=>l.fase||'Sin fase'))];
+  fases.forEach(f=>{ const L=DB.lotes.filter(l=>(l.fase||'Sin fase')===f).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo),undefined,{numeric:true}));
+    h+=`<div class="card"><div class="card-h"><h2>${esc(f)} · ${L.length}</h2><span class="hint">${L.filter(l=>l.cx==null).length} sin ubicar</span></div><div class="card-b"><div class="lot-grid">`+
+      L.map(l=>`<div class="lot ${l.estado==='vendido'?'vend':(l.estado==='reservado'?'apar':'disp')}" style="${ubicando&&ubicando.lote&&mismoId(ubicando.lote.id,l.id)?'outline:3px solid var(--green)':''}${l.cx==null?';opacity:.55':''}" onclick="${ubicando?`elegirParaUbicar('${esc(claveDe(l))}')`:`abrirLote('${esc(claveDe(l))}')`}"><div class="lc">${esc(l.codigo)}</div><div class="la">${l.area?l.area+' m²':'sin medida'}${l.cx==null?' · sin ubicar':''}</div></div>`).join('')+`</div></div></div>`; });
+  C().innerHTML=h;
+  dibujarMapaImagen(pl);
+}
+function elegirParaUbicar(clave){ const l=getLote(clave); if(!l) return; ubicando={lote:l}; renderInventario(); }
+function dibujarMapaImagen(pl){
+  const svg=document.getElementById('mapSvg'); if(!svg) return; const NS='http://www.w3.org/2000/svg';
+  svg.innerHTML='';
+  const img=document.createElementNS(NS,'image'); img.setAttribute('x',0); img.setAttribute('y',0); img.setAttribute('width',pl.w); img.setAttribute('height',pl.h);
+  img.setAttribute('preserveAspectRatio','none'); img.setAttribute('href',pl.src); img.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href',pl.src);
+  img.addEventListener('error',()=>{ const t=document.createElementNS(NS,'text'); t.setAttribute('x',pl.w/2); t.setAttribute('y',pl.h/2); t.setAttribute('text-anchor','middle'); t.setAttribute('font-size',Math.round(pl.w/40)); t.setAttribute('fill','#B0562F'); t.textContent='Falta la imagen del plano ('+pl.src+')'; svg.appendChild(t); });
+  svg.appendChild(img);
+  const r=Math.max(10,Math.round(pl.w/90));
+  DB.lotes.filter(l=>l.cx!=null&&l.cy!=null).forEach(l=>{
+    const m=ESTADO_MAP[l.estado]||ESTADO_MAP.disponible;
+    const g=document.createElementNS(NS,'g'); g.setAttribute('class','lotm'); g.dataset.id=l.codigo; g.style.cursor='pointer';
+    const c=document.createElementNS(NS,'circle'); c.setAttribute('cx',l.cx); c.setAttribute('cy',l.cy); c.setAttribute('r',r); c.setAttribute('fill',m.fill); c.setAttribute('fill-opacity',0.9); c.setAttribute('stroke','#fff'); c.setAttribute('stroke-width',Math.max(1,r/6));
+    const t=document.createElementNS(NS,'text'); t.setAttribute('x',l.cx); t.setAttribute('y',l.cy+r*0.36); t.setAttribute('text-anchor','middle'); t.setAttribute('font-size',r*0.95); t.setAttribute('font-weight','700'); t.setAttribute('fill','#fff'); t.setAttribute('font-family','Helvetica,Arial,sans-serif'); t.textContent=String(l.codigo).replace(/^[A-Z]+-0?/,'');
+    g.appendChild(c); g.appendChild(t);
+    g.addEventListener('click',e=>{ if(dragMoved) return; if(ubicando){ e.stopPropagation(); ubicando={lote:l}; renderInventario(); return; } abrirLote(claveDe(l)); });
+    g.addEventListener('mousemove',e=>mostrarTip(e,l)); g.addEventListener('mouseleave',()=>{document.getElementById('tip').hidden=true;});
+    svg.appendChild(g);
+  });
+  if(ubicando){ svg.addEventListener('click',async e=>{
+      if(dragMoved||!ubicando||!ubicando.lote) return;
+      const pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY; const p=pt.matrixTransform(svg.getScreenCTM().inverse());
+      const l=ubicando.lote; const x=Math.round(p.x*10)/10, y=Math.round(p.y*10)/10;
+      if(typeof hayBase==='function'&&hayBase()){ const r=await sbUbicarLote(l.id,x,y); if(!r.ok){ toast(r.error,7000,true); return; } }
+      l.cx=x; l.cy=y; toast(l.codigo+' ubicado ✓'); ubicando={}; renderInventario(); }); }
+  setViewBox(0,0,pl.w,pl.h); panZoom(svg); pintarMapa();
+}
 function dibujarMapa(){
+  if(RLE_CLIP) window.PLAN_CLIP=RLE_CLIP;   // volver al recorte de La Esperanza
   const svg=document.getElementById('mapSvg'); if(!svg||!window.PLAN_CLIP)return;
   const clip=window.PLAN_CLIP, NS='http://www.w3.org/2000/svg';
   svg.innerHTML='';

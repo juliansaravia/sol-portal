@@ -321,6 +321,11 @@ async function sbContadoDiferido(contrato_id, saldo, fecha_estimada) {
                                                p_fecha_estimada: fecha_estimada || null })));
 }
 /** Enganche: cambiar el monto (se rehace el plan) o repartir lo pendiente en N pagos sin interés (54). */
+/** Posición de un lote en el plano de su proyecto (58). */
+async function sbUbicarLote(lote_id, x, y) {
+  return escribir('ubicar el lote', async () =>
+    oExplota(await SB.rpc('ubicar_lote', { p_lote_id: Number(lote_id), p_x: Number(x), p_y: Number(y) })));
+}
 async function sbCambiarEnganche(contrato_id, enganche) {
   return escribir('cambiar el enganche', async () =>
     oExplota(await SB.rpc('cambiar_enganche', { p_contrato_id: Number(contrato_id), p_enganche: Number(enganche) })));
@@ -1031,7 +1036,7 @@ async function sbReciboAdjunto(recibo_id, adjunto_id) {
    ============================================================ */
 Object.assign(window, {
   hayBase, escribir, traducirError,
-  sbCrearCliente, sbActualizarCliente, sbVincularExpediente, sbReferenciaPago, sbContadoDiferido, sbLiberarDiferido, sbEngancheDesdeDocumento, sbCambiarEnganche, sbFraccionarEnganche, sbReestructurarPlan,
+  sbCrearCliente, sbActualizarCliente, sbVincularExpediente, sbReferenciaPago, sbContadoDiferido, sbLiberarDiferido, sbEngancheDesdeDocumento, sbCambiarEnganche, sbFraccionarEnganche, sbReestructurarPlan, sbUbicarLote,
   sbCrearContrato, sbEstadoContrato, sbReasignarContratos,
   sbRegistrarPago, sbConfirmarPago, sbBorrarPago,
   sbMarcarCobrada, sbMarcarNoCobrada, sbDesmarcarCuota,

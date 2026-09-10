@@ -1,0 +1,3 @@
+Planos por proyecto (imagen PNG/JPG). El nombre lo declara PLANOS en app.js:
+  hati.png  →  Hati · Amatique Bay (Los Cerros arriba, San Juan abajo)
+Los lotes se ubican a clic desde Inventario → Ubicar lotes (administración/gerencia).
