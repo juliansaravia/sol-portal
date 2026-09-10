@@ -309,6 +309,8 @@ const CAMPOS_VENTA = [
   { id:'ingreso',  label:'Ingreso promedio al mes (Q)', grupo:'ingresos',  req:false, tipo:'monto' },
   /* Opcional (4 sept 2026): la constancia de ingresos no es parte del expediente estándar. */
   { id:'fuente',   label:'¿Cómo comprueba su ingreso?', grupo:'ingresos',  req:false, tipo:'lista' },
+  { id:'empleador',label:'Empresa o negocio donde trabaja', grupo:'ingresos', req:false },
+  { id:'nit',      label:'NIT',                         grupo:'comprador', req:false },
   { id:'pnom',     label:'Nombre del pariente',         grupo:'pariente',  req:true },
   { id:'ptel',     label:'Teléfono celular del pariente',grupo:'pariente', req:true, tipo:'tel' },
   { id:'pmail',    label:'Correo del pariente',         grupo:'pariente',  req:false, tipo:'mail' },
@@ -409,12 +411,16 @@ const validaMail = v => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(v||'').trim(
    si vienen y se validan si vienen; no se exigen. */
 const OPCIONAL_HISTORICO = ['dpi','tel','mail','dir_casa','dir_calle','dir_muni','dir_depto','ocup','ingreso','fuente',
                             'pnom','ptel','pmail','pdir_casa','pdir_calle','pdir_muni','pdir_depto'];
+/* Crédito con expediente completo (Hati, 10 sept 2026): todo lo que
+   sirve para evaluar al deudor pasa a obligatorio. */
+const REQUERIDO_ROBUSTO = ['mail','ocup','ingreso','fuente','empleador','nit','pnom','ptel','pdir_casa','pdir_calle','pdir_muni','pdir_depto'];
 function validarVenta(datos, opciones) {
   const historico = !!(opciones && opciones.historico);
+  const robusto = !!(opciones && opciones.robusto) && !historico;
   const errores = [];
   for (const c of CAMPOS_VENTA) {
     const v = String(datos[c.id] || '').trim();
-    const req = c.req && !(historico && OPCIONAL_HISTORICO.includes(c.id));
+    const req = (c.req || (robusto && REQUERIDO_ROBUSTO.includes(c.id))) && !(historico && OPCIONAL_HISTORICO.includes(c.id));
     if (req && !v) { errores.push({ campo:c.id, msg:`Falta ${c.label.toLowerCase()}` }); continue; }
     if (!v) continue;
     let r = { ok:true };

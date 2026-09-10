@@ -38,15 +38,26 @@ const DIAS_GRACIA = 0;               // ajustar si se otorgan días de gracia
 /* Comisión del vendedor: 2 % del valor del lote */
 const COMISION_PCT = 0.02;
 
-function planFinanciamiento(precio, enganche, plazo, tasa){
+function planFinanciamiento(precio, enganche, plazo, tasa, metodo){
   precio = +precio || 0;
   enganche = Math.min(+enganche || 0, precio);
   plazo = +plazo || 60;
-  tasa = (tasa === undefined || tasa === null) ? TASA_MENSUAL : +tasa;
+  const P = (typeof PROYECTO !== 'undefined' && PROYECTO) || {};
+  tasa = (tasa === undefined || tasa === null) ? (P.tasaMensual != null ? +P.tasaMensual : TASA_MENSUAL) : +tasa;
+  metodo = metodo || P.metodo || 'plano';
   const saldo   = Math.max(0, precio - enganche);
-  const capital = saldo / plazo;
-  const interes = saldo * tasa;
-  const cuota   = capital + interes;
+  /* plano: interés fijo sobre el saldo original (La Esperanza).
+     amortizado: cuota nivelada francesa sobre saldo decreciente (Hati). */
+  let capital, interes, cuota;
+  if (metodo === 'amortizado') {
+    cuota   = tasa > 0 ? saldo * tasa / (1 - Math.pow(1 + tasa, -plazo)) : saldo / plazo;
+    interes = saldo * tasa;              // el del primer mes
+    capital = cuota - interes;
+  } else {
+    capital = saldo / plazo;
+    interes = saldo * tasa;
+    cuota   = capital + interes;
+  }
   const totalGiros = cuota * plazo;
   return {
     precio, enganche, plazo, saldo,
@@ -54,7 +65,7 @@ function planFinanciamiento(precio, enganche, plazo, tasa){
     totalGiros: r2(totalGiros),
     totalInteres: r2(interes * plazo),
     total: r2(enganche + totalGiros),
-    tasa
+    tasa, metodo
   };
 }
 const r2 = n => Math.round(n * 100) / 100;
@@ -456,7 +467,7 @@ function crearClienteLocal(nombreCompleto, extra = {}) {
     id: uid(),
     nombre: partes.slice(0, 2).join(' '),
     apellido: partes.slice(2).join(' '),
-    dpi: extra.dpi || '', telefono: extra.telefono || '',
+    dpi: extra.dpi || '', nit: extra.nit || '', telefono: extra.telefono || '',
     email: extra.email || '', direccion: extra.direccion || '',
     ocupacion: extra.ocupacion || '', ingresoMensual: extra.ingresoMensual || null,
     constancia: extra.constancia || null, pesoConstancia: extra.pesoConstancia ?? null,
@@ -837,7 +848,14 @@ function esContado(ct) {
   return !!plan && plan.saldo <= 0;
 }
 function requeridosPara(ct, reqs) {
-  return (reqs || []).filter(r => {
+  const P = (typeof PROYECTO !== 'undefined' && PROYECTO) || {};
+  reqs = (reqs || []).slice();
+  /* Crédito con expediente completo (Hati): la constancia de ingresos es obligatoria. */
+  if (P.creditoRobusto && !esContado(ct) && !reqs.some(r => r.codigo === 'constancia_ingresos')) {
+    const cat = ((typeof DB !== 'undefined' && DB.documentosRequeridos) || []).find(r => r.codigo === 'constancia_ingresos');
+    reqs.push(cat ? { ...cat, obligatorio: true } : { codigo: 'constancia_ingresos', nombre: 'Constancia de ingresos', caras: 1, obligatorio: true });
+  }
+  return reqs.filter(r => {
     if (r.codigo === 'dpi_pariente') return !!ct.origen && String(ct.fecha || '') >= EXIGE_DPI_PARIENTE_DESDE;
     if (r.codigo === 'plan_pagos')   return !esContado(ct);
     return true;
@@ -870,13 +888,13 @@ function contactoDe(numeroContrato) {
 
 /* ---------- Mutaciones ---------- */
 async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, reserva, enganche, plazo, girosSaldo, origen,
-                         direccion, ocupacion, ingresoMensual, constancia, pesoConstancia, pariente, fecha, historico, modalidad, precio, numero, tasa }) {
+                         direccion, ocupacion, ingresoMensual, constancia, pesoConstancia, pariente, fecha, historico, modalidad, precio, numero, tasa, nit }) {
   const l = getLote(lote);
   if (!l) { avisar('No se encontró el lote ' + lote); return null; }
 
   // El expediente completo se guarda en el cliente: es lo que después
   // permite cobrar, y lo que arma la carpeta para el buró de créditos.
-  const cli = await crearCliente(nombre, { dpi, telefono, email, direccion, ocupacion,
+  const cli = await crearCliente(nombre, { dpi, nit, telefono, email, direccion, ocupacion,
                                      ingresoMensual, constancia, pesoConstancia, pariente });
   if (!cli) return null;
 

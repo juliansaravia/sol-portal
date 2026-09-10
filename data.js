@@ -33,7 +33,9 @@ PROYECTOS.HATI = {
   razonSocial: "Hati (por definir)", ubicacion: "Puerto Barrios, Izabal", fase: "Los Cerros · San Juan",
   moneda: "USD", tipoCambio: 7.80,
   salaVenta: { descripcion: "HATI", prefijo: "HAT", correlativo: 0 },
-  tasaMensual: 0.015, tasaMora: 0.02, engancheMinimo: 2500, plazos: [12, 24, 36, 48, 60], comisionPct: 0.02, activo: true,
+  /* Crédito a 3 años, 30% de enganche, 14% anual amortizado (francés); expediente de crédito completo. */
+  metodo: "amortizado", tasaAnual: 0.14, tasaMensual: 0.14/12, tasaMora: 0.02, enganchePct: 0.30, engancheMinimo: 0,
+  plazos: [12, 24, 36], comisionPct: 0.02, creditoRobusto: true, activo: true,
 };
 
 /* El proyecto en el que se está trabajando. */

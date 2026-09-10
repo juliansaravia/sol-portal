@@ -102,7 +102,7 @@ async function cargarDesdeSupabase() {
          lista de respaldo — no se cae por un catálogo que no está. */
       opcional('documento_requerido', 'codigo,nombre,descripcion,bucket,caras,obligatorio,orden'),
       /* Los proyectos con sus reglas y su moneda (56_hati_y_moneda.sql trae moneda/tipo_cambio). */
-      conRespaldo('proyecto', 'id,codigo,nombre,municipio,departamento,tasa_mensual,tasa_mora,enganche_minimo,plazos,comision_pct', 'moneda,tipo_cambio')
+      conRespaldo('proyecto', 'id,codigo,nombre,municipio,departamento,tasa_mensual,tasa_mora,enganche_minimo,plazos,comision_pct', 'moneda,tipo_cambio,metodo_interes,tasa_anual,enganche_pct,expediente_robusto')
     ]);
 
     const porLote = new Map(lotes.map(l => [l.lote_id, l]));
@@ -190,7 +190,9 @@ async function cargarDesdeSupabase() {
         id: pr.id, codigo: pr.codigo, nombre: pr.nombre, ubicacion: [pr.municipio, pr.departamento].filter(Boolean).join(', ') || base.ubicacion,
         moneda: pr.moneda || base.moneda || 'GTQ', tipoCambio: _num(pr.tipo_cambio) || base.tipoCambio || 1,
         tasaMensual: _num(pr.tasa_mensual) || base.tasaMensual, tasaMora: _num(pr.tasa_mora) || base.tasaMora,
-        engancheMinimo: _num(pr.enganche_minimo) || base.engancheMinimo, plazos: pr.plazos || base.plazos, comisionPct: _num(pr.comision_pct) || base.comisionPct
+        engancheMinimo: _num(pr.enganche_minimo) || base.engancheMinimo, plazos: pr.plazos || base.plazos, comisionPct: _num(pr.comision_pct) || base.comisionPct,
+        metodo: pr.metodo_interes || base.metodo || 'plano', tasaAnual: _num(pr.tasa_anual) || base.tasaAnual || null,
+        enganchePct: _num(pr.enganche_pct) || base.enganchePct || null, creditoRobusto: pr.expediente_robusto != null ? !!pr.expediente_robusto : !!base.creditoRobusto
       });
     });
     DB.todosLotes = null; DB.todosContratos = null;

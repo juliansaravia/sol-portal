@@ -3545,7 +3545,7 @@ function modalNuevoContrato(loteSel,pre){
         <div class="field"><label>Precio de venta (Q) <span class="hint" id="n-precioLista"></span></label><input id="n-precio" type="number" min="0" step="0.01" value="${pre.precio!=null?pre.precio:''}" oninput="prevPlan()"></div>
         <div class="field"><label>Enganche (Q) <span class="hint">(0 si es promoción)</span></label><input id="n-res" type="number" min="0" value="${pre.enganche!=null?pre.enganche:((PROYECTO&&PROYECTO.engancheMinimo)||ENGANCHE_MIN)}" oninput="prevPlan()"></div>
         <div class="field"><label>Plazo (meses)</label><select id="n-plz" onchange="prevPlan()">
-          <optgroup label="Crédito · ${((PROYECTO&&PROYECTO.tasaMensual||0.015)*100).toFixed(1)}% mensual">${((PROYECTO&&PROYECTO.plazos)||PLAZOS).map(p=>`<option value="${p}" ${p===(pre.plazo||60)?'selected':''}>${p} meses</option>`).join('')}</optgroup>
+          <optgroup label="Crédito · ${PROYECTO&&PROYECTO.metodo==='amortizado'?`${((PROYECTO.tasaAnual||0.14)*100).toFixed(0)}% anual amortizado`:`${((PROYECTO&&PROYECTO.tasaMensual||0.015)*100).toFixed(1)}% mensual`}">${((PROYECTO&&PROYECTO.plazos)||PLAZOS).map(p=>`<option value="${p}" ${p===(pre.plazo||60)?'selected':''}>${p} meses</option>`).join('')}</optgroup>
           <optgroup label="Contado · sin intereses"><option value="0">Al contado · un solo pago</option>${[2,3,4,6,9,12].map(n=>`<option value="c${n}">Contado en ${n} pagos mensuales</option>`).join('')}</optgroup></select></div>
       </div>
       <div id="n-prev" class="prev-plan"></div>
@@ -3561,6 +3561,7 @@ function modalNuevoContrato(loteSel,pre){
         ${campo('nom','Nombres',`value="${esc(nom.slice(0,2).join(' '))}"`)}
         ${campo('ape','Apellidos',`value="${esc(nom.slice(2).join(' '))}"`)}
         ${campo('dpi','DPI (CUI)','placeholder="13 dígitos" inputmode="numeric"')}
+        ${campo('nit','NIT','placeholder="1234567-8 o CF"')}
         ${campo('tel','Teléfono celular','placeholder="5555 5555 · extranjero: +1 305 555 0123" inputmode="tel"')}
         ${campo('mail','Correo electrónico','type="email" placeholder="nombre@correo.com"','full')}
         ${direccion('dir','Dirección de residencia')}
@@ -3569,6 +3570,7 @@ function modalNuevoContrato(loteSel,pre){
       <div class="sect-t" style="margin-top:18px">Ocupación e ingresos <span class="hint" style="font-weight:400;text-transform:none;letter-spacing:0">· opcionales, ayudan al comité</span></div>
       <div class="form-grid">
         ${campo('ocup','Ocupación u oficio','placeholder="Agricultor, comerciante, maestra..."')}
+        ${campo('empleador','Empresa o negocio donde trabaja','placeholder="Nombre de la empresa o del negocio propio"')}
         <div class="field"><label>Ingreso promedio al mes (Q) <span class="hint">(opcional)</span></label>
           <input id="n-ingreso" type="number" oninput="prevCarga()"><div class="err" id="e-ingreso"></div></div>
         <div class="field full"><label>¿Cómo comprueba su ingreso? <span class="hint">(opcional)</span></label>
@@ -3631,7 +3633,10 @@ function ventaHistorica(on){
    anotado en la bitácora del contrato. */
 function precioDeLista(){
   const l=getLote(v('n-lote')); const inp=document.getElementById('n-precio'); if(!l||!inp) return;
-  inp.value=l.precio||''; prevPlan();
+  inp.value=l.precio||'';
+  /* Enganche por porcentaje del proyecto (Hati: 30%); si no, el mínimo fijo. */
+  const res=document.getElementById('n-res'); if(res&&PROYECTO&&PROYECTO.enganchePct&&v('n-plz')!=='0') res.value=Math.round((l.precio||0)*PROYECTO.enganchePct*100)/100;
+  prevPlan();
 }
 function etiquetaModalidad(ct){
   const m=String(ct.modalidad||'');
@@ -3719,7 +3724,9 @@ async function crearContrato(){
 
   const historico=!!(document.getElementById('n-hist')&&document.getElementById('n-hist').checked&&['admin','gerencia','financiero'].includes(ROLE));
   if(historico&&!v('n-fecha')) return toast('Falta la fecha del contrato',5000,true);
-  const r=validarVenta(d,{historico});
+  if(!historico&&PROYECTO&&PROYECTO.enganchePct&&modalidadElegida().tipo==='credito'){ const min=Math.round(precioVentaElegido()*PROYECTO.enganchePct*100)/100; if((+v('n-res')||0)<min-0.01) return toast(`El enganche mínimo en ${PROYECTO.corto} es el ${Math.round(PROYECTO.enganchePct*100)}%: ${Q(min)}`,7000,true); }
+  const robusto=!!(PROYECTO&&PROYECTO.creditoRobusto)&&modalidadElegida().tipo==='credito';
+  const r=validarVenta(d,{historico,robusto});
   if(!r.ok){
     r.errores.forEach(e=>{const el=document.getElementById('e-'+e.campo); if(el) el.textContent=e.msg;});
     const caja=document.getElementById('n-errores');
@@ -3733,7 +3740,7 @@ async function crearContrato(){
 
   const ct=await conBoton(()=>nuevoContrato({lote:v('n-lote'),nombre:`${d.nom} ${d.ape}`.trim(),dpi:validaDPI(d.dpi).valor,
     telefono:validaTel(d.tel).valor,email:validaMail(d.mail).valor,
-    direccion:d.dir_depto?direccionCompleta(d,'dir'):'', ocupacion:d.ocup, ingresoMensual:+String(d.ingreso).replace(/[^\d.]/g,''),
+    direccion:d.dir_depto?direccionCompleta(d,'dir'):'', ocupacion:[d.ocup,d.empleador].filter(Boolean).join(' · '), nit:d.nit||'', ingresoMensual:+String(d.ingreso).replace(/[^\d.]/g,''),
     constancia:d.fuente, pesoConstancia:pesoConstancia(d.fuente),
     pariente:d.pnom?{nombre:d.pnom, telefono:validaTel(d.ptel).valor, email:validaMail(d.pmail).valor, direccion:d.pdir_depto?direccionCompleta(d,'pdir'):''}:null,
     fecha:historico?v('n-fecha'):undefined, historico, numero:historico?v('n-numero').trim().toUpperCase()||undefined:undefined,
