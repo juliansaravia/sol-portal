@@ -1,8 +1,11 @@
 /* ============================================================
    SUITE SOL INMOBILIARIA — motor de la aplicación
    ============================================================ */
-const Q  = n => 'Q ' + (Math.round(n*100)/100).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2});
-const Qk = n => 'Q ' + Math.round(n).toLocaleString('es-GT');
+/* El símbolo lo pone el proyecto activo: Q en La Esperanza, US$ en Hati. */
+const SIMBOLO = () => (typeof PROYECTO !== 'undefined' && PROYECTO && PROYECTO.moneda === 'USD') ? 'US$ ' : 'Q ';
+const Q  = n => SIMBOLO() + (Math.round(n*100)/100).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2});
+const Qk = n => SIMBOLO() + Math.round(n).toLocaleString('es-GT');
+const QQ = n => 'Q ' + (Math.round(n*100)/100).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2});   // siempre quetzales
 const fmtD = iso => iso ? new Date(iso+'T00:00:00').toLocaleDateString('es-GT',{day:'2-digit',month:'short',year:'numeric'}) : '—';
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let vista='inicio', filtro='todos', busqueda='', ROLE='admin', SCREEN='login', drawerTab='ficha', drawerCt=null;
@@ -511,6 +514,8 @@ function startApp(role){
     while(n&&n.classList.contains('nav-item')){if(n.style.display!=='none')vis=true;n=n.nextElementSibling;}
     sec.style.display=vis?'':'none';
   });
+  try{ const g=localStorage.getItem('sol.proyecto'); if(g&&PROYECTOS[g]){ PROYECTO_ACTIVO=g; PROYECTO=PROYECTOS[g]; } }catch(e){}
+  pintarSelectorProyecto(); aplicarProyecto();
   document.getElementById('brandRole').textContent=ROLES[role].label;
   document.getElementById('footUser').innerHTML=`<b style="color:#fff">${esc(window.__user.name)}</b><br>${ROLES[role].label}`;
   marcaDeAgua(role==='practicante'?window.__user.name:null);
@@ -558,12 +563,36 @@ function startCliente(){
    cada uno lleva su propia tasa, enganche mínimo, plazos y comisión. */
 let PROYECTO_ACTIVO = 'RLE';
 
-function cambiarProyecto(codigo){
+/* Cada proyecto se trabaja aparte: lotes, contratos, mapa y números son
+   los del proyecto activo. Los datos completos quedan en DB.todosLotes /
+   DB.todosContratos y acá se recortan (10 sept 2026, al entrar Hati). */
+function aplicarProyecto(){
+  if(!DB.todosLotes){ DB.todosLotes=DB.lotes; DB.todosContratos=DB.contratos; }
+  const p=PROYECTOS[PROYECTO_ACTIVO]||{}; const pid=p.id;
+  const esDel=l=> pid!=null ? String(l.proyecto_id)===String(pid) : (l.proyecto_id==null || String(l.proyecto_id)===String(p.id));
+  const lotesP=DB.todosLotes.filter(esDel);
+  const idsLote=new Set(lotesP.map(l=>String(l.id)));
+  const clavesLote=new Set(lotesP.map(l=>String(l.clave||l.codigo)));
+  DB.lotes=lotesP;
+  DB.contratos=DB.todosContratos.filter(c=> c.proyecto_id!=null ? String(c.proyecto_id)===String(pid) : (c.loteId!=null ? idsLote.has(String(c.loteId)) : clavesLote.has(String(c.clave||c.lote))));
+  if(typeof reindexar==='function') reindexar();
+}
+function pintarSelectorProyecto(){
+  const sel=document.getElementById('proyectoActivo'); if(!sel) return;
+  const lista=Object.values(PROYECTOS).filter(p=>p.activo!==false);
+  sel.innerHTML=lista.map(p=>`<option value="${esc(p.codigo)}" ${p.codigo===PROYECTO_ACTIVO?'selected':''}>${esc(p.corto||p.nombre)}${p.moneda==='USD'?' · US$':''}</option>`).join('');
+  const caja=sel.closest('.proyecto-sel'); if(caja) caja.style.display=lista.length>1?'':'none';
+}
+async function cambiarProyecto(codigo){
   if(codigo === PROYECTO_ACTIVO || !PROYECTOS[codigo]) return;
   PROYECTO_ACTIVO = codigo;
   PROYECTO = PROYECTOS[codigo];        // las reglas comerciales cambian con él
-  toast('Proyecto: ' + PROYECTO.corto);
-  setView(vista);
+  try{ localStorage.setItem('sol.proyecto', codigo); }catch(e){}
+  aplicarProyecto();
+  closeDrawer(); closeModal();
+  toast('Proyecto: ' + PROYECTO.corto + (PROYECTO.moneda==='USD'?' · montos en US$':''));
+  setView(ROLES[ROLE]&&ROLES[ROLE].views.includes(vista)?vista:ROLES[ROLE].home);
+  if(typeof traerCartera==='function') traerCartera();   // los giros de este proyecto
 }
 
 /* Nombre del proyecto para títulos y documentos. */
@@ -3514,9 +3543,9 @@ function modalNuevoContrato(loteSel,pre){
           ? `<div class="field"><label>Vendedor</label><input id="n-vend" value="${esc((window.__user&&window.__user.name)||'')}" readonly style="background:var(--tint)"></div>`
           : `<div class="field"><label>Vendedor</label><select id="n-vend"><option value="">(sin vendedor)</option>${DB.equipo.filter(p=>p.rol==='vendedor'||p.vendedorHasta).sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(x=>`<option ${x.activo?'':'style="color:#888"'}>${esc(x.nombre)}</option>`).join('')}</select></div>`}
         <div class="field"><label>Precio de venta (Q) <span class="hint" id="n-precioLista"></span></label><input id="n-precio" type="number" min="0" step="0.01" value="${pre.precio!=null?pre.precio:''}" oninput="prevPlan()"></div>
-        <div class="field"><label>Enganche (Q) <span class="hint">(0 si es promoción)</span></label><input id="n-res" type="number" min="0" value="${pre.enganche!=null?pre.enganche:ENGANCHE_MIN}" oninput="prevPlan()"></div>
+        <div class="field"><label>Enganche (Q) <span class="hint">(0 si es promoción)</span></label><input id="n-res" type="number" min="0" value="${pre.enganche!=null?pre.enganche:((PROYECTO&&PROYECTO.engancheMinimo)||ENGANCHE_MIN)}" oninput="prevPlan()"></div>
         <div class="field"><label>Plazo (meses)</label><select id="n-plz" onchange="prevPlan()">
-          <optgroup label="Crédito · 1.5% mensual">${PLAZOS.map(p=>`<option value="${p}" ${p===(pre.plazo||60)?'selected':''}>${p} meses</option>`).join('')}</optgroup>
+          <optgroup label="Crédito · ${((PROYECTO&&PROYECTO.tasaMensual||0.015)*100).toFixed(1)}% mensual">${((PROYECTO&&PROYECTO.plazos)||PLAZOS).map(p=>`<option value="${p}" ${p===(pre.plazo||60)?'selected':''}>${p} meses</option>`).join('')}</optgroup>
           <optgroup label="Contado · sin intereses"><option value="0">Al contado · un solo pago</option>${[2,3,4,6,9,12].map(n=>`<option value="c${n}">Contado en ${n} pagos mensuales</option>`).join('')}</optgroup></select></div>
       </div>
       <div id="n-prev" class="prev-plan"></div>
@@ -3740,6 +3769,7 @@ function modalPago(id){
       <div class="field"><label>Forma de pago</label><input id="p-forma" value="Transferencia bancaria" readonly style="background:var(--tint)"></div>
       <div class="field"><label>Cuenta acreditada</label><select id="p-cta">${opcionesCuenta()}</select></div>
       <div class="field"><label>Fecha del pago</label><input id="p-fecha" type="date" value="${HOY_ISO}" max="${HOY_ISO}" onchange="pagoHistoricoPista()"></div>
+      ${PROYECTO&&PROYECTO.moneda==='USD'?`<div class="field"><label>Moneda en que pagó</label><select id="p-moneda" onchange="pistaMonedaPago()"><option value="USD">Dólares (US$)</option><option value="GTQ">Quetzales · al ${PROYECTO.tipoCambio||7.8}</option></select><div class="hint" id="p-monedaPista">El contrato está en US$.</div></div>`:''}
       <div class="field full"><label>Foto de la boleta <span class="ast" id="p-fotoAst">*</span></label>
         <input id="p-foto" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment"
                onchange="if(typeof leerBoletaEn==='function')leerBoletaEn(this,{ref:'p-ref',monto:'p-monto',aviso:'p-leido'})">
@@ -3758,8 +3788,17 @@ function pagoHistoricoPista(){
   const ast=document.getElementById('p-fotoAst'); if(ast) ast.hidden=hist;
   const l=document.getElementById('p-leido'); if(l&&hist) l.textContent='Pago histórico: si no hay boleta, basta la referencia con la que el banco lo confirmó.';
 }
+function pistaMonedaPago(){
+  const e=document.getElementById('p-monedaPista'); if(!e) return; const tc=PROYECTO.tipoCambio||7.8; const m=+v('p-monto')||0;
+  e.textContent = v('p-moneda')==='GTQ' ? `Q ${m.toLocaleString('es-GT',{minimumFractionDigits:2})} ÷ ${tc} = US$ ${(m/tc).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2})} al contrato` : 'El contrato está en US$.';
+}
 async function guardarPago(id){
-  const monto=+v('p-monto'); if(!monto||monto<=0){toast('Ingresa un monto válido');return;}
+  let monto=+v('p-monto'); if(!monto||monto<=0){toast('Ingresa un monto válido');return;}
+  /* Proyecto en US$ y el cliente pagó en quetzales: se convierte al tipo de
+     cambio del proyecto; lo pagado de verdad queda en monto_original. */
+  const monedaPago=(document.getElementById('p-moneda')||{}).value||((PROYECTO&&PROYECTO.moneda)||'GTQ');
+  const tc=(PROYECTO&&PROYECTO.moneda==='USD'&&monedaPago==='GTQ')?(PROYECTO.tipoCambio||7.8):1;
+  const montoOriginal=monto; if(tc!==1) monto=Math.round(monto/tc*100)/100;
   const ref=v('p-ref').trim(); if(!ref){toast('Anotá el número de boleta o referencia',5000,true);return;}
   const fecha=v('p-fecha')||HOY_ISO; if(fecha>HOY_ISO){toast('La fecha del pago no puede ser futura',5000,true);return;}
   const historico=fecha<CORTE_BOLETAS;
@@ -3771,13 +3810,13 @@ async function guardarPago(id){
        se registra suelto y la base lo aplica al confirmarse. */
     const ct=getContrato(id), ec=estadoCuenta(ct); const prox=ec&&ec.prox; const vence=prox&&(prox.venc||prox.vence);
     let pago=null;
-    if(vence && !historico && typeof marcarCobrada==='function'){
+    if(vence && !historico && tc===1 && typeof marcarCobrada==='function'){
       const reg=await marcarCobrada(ct.no, vence, {monto,forma:v('p-forma'),cuenta:v('p-cta'),referencia:ref,nota:''});
       if(!reg) return null;
       pago=DB.pagos.find(x=>mismoId(x.id,reg.pagoId))||{id:reg.pagoId};
     } else {
       /* Histórico: con su fecha real; la base lo aplica a las cuotas al confirmarse. */
-      pago=await registrarPago(id,{monto,forma:v('p-forma'),cuenta:v('p-cta'),referencia:ref,fecha});
+      pago=await registrarPago(id,{monto,forma:v('p-forma'),cuenta:v('p-cta'),referencia:ref,fecha, moneda:monedaPago, tipo_cambio:tc, monto_original:montoOriginal});
     }
     if(!pago) return null;
     if(archivo&&typeof hayBase==='function'&&hayBase()){

@@ -71,7 +71,7 @@ async function cargarDesdeSupabase() {
 
        Los pagos se quedan acá: son 738 y de ellos depende cuánto lleva
        recaudado cada contrato, que es de lo primero que se mira. */
-    const [lotes, contratos, clientes, pagos, equipo, documentos, comisiones, adjuntos, recibos, liquidaciones, requeridos] = await Promise.all([
+    const [lotes, contratos, clientes, pagos, equipo, documentos, comisiones, adjuntos, recibos, liquidaciones, requeridos, proyectos] = await Promise.all([
       todas('v_inventario', 'proyecto_id,proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado'),
       conRespaldo('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,origen,banco,boleta,lote_id,cliente_id,persona_id',
                   'expediente_de,modalidad'),
@@ -100,7 +100,9 @@ async function cargarDesdeSupabase() {
       opcional('liquidacion', 'id,numero,persona_id,periodo,periodo_desde,periodo_hasta,total,estado,factura_numero,factura_fecha,pago_fecha,created_at'),
       /* La tabla nace con 14_documentos.sql. Sin ella el portal usa su
          lista de respaldo — no se cae por un catálogo que no está. */
-      opcional('documento_requerido', 'codigo,nombre,descripcion,bucket,caras,obligatorio,orden')
+      opcional('documento_requerido', 'codigo,nombre,descripcion,bucket,caras,obligatorio,orden'),
+      /* Los proyectos con sus reglas y su moneda (56_hati_y_moneda.sql trae moneda/tipo_cambio). */
+      conRespaldo('proyecto', 'id,codigo,nombre,municipio,departamento,tasa_mensual,tasa_mora,enganche_minimo,plazos,comision_pct', 'moneda,tipo_cambio')
     ]);
 
     const porLote = new Map(lotes.map(l => [l.lote_id, l]));
@@ -180,6 +182,19 @@ async function cargarDesdeSupabase() {
       exige2fa: p.exige_2fa !== false
     }));
 
+    /* Cada proyecto de la base entra a PROYECTOS con sus reglas; el portal
+       recorta lotes y contratos al activo (aplicarProyecto en app.js). */
+    (proyectos || []).forEach(pr => {
+      const base = (typeof PROYECTOS !== 'undefined' && PROYECTOS[pr.codigo]) || {};
+      PROYECTOS[pr.codigo] = Object.assign({ corto: pr.nombre, activo: true }, base, {
+        id: pr.id, codigo: pr.codigo, nombre: pr.nombre, ubicacion: [pr.municipio, pr.departamento].filter(Boolean).join(', ') || base.ubicacion,
+        moneda: pr.moneda || base.moneda || 'GTQ', tipoCambio: _num(pr.tipo_cambio) || base.tipoCambio || 1,
+        tasaMensual: _num(pr.tasa_mensual) || base.tasaMensual, tasaMora: _num(pr.tasa_mora) || base.tasaMora,
+        engancheMinimo: _num(pr.enganche_minimo) || base.engancheMinimo, plazos: pr.plazos || base.plazos, comisionPct: _num(pr.comision_pct) || base.comisionPct
+      });
+    });
+    DB.todosLotes = null; DB.todosContratos = null;
+
     DB.contratos = contratos.map(c => {
       const l = porLote.get(c.lote_id) || {};
       const cl = porCliente.get(c.cliente_id) || {};
@@ -187,6 +202,7 @@ async function cargarDesdeSupabase() {
       return {
         id: c.id,
         no: c.numero,
+        proyecto_id: c.proyecto_id || l.proyecto_id || null, loteId: c.lote_id,
         lote: l.lote || '—',
         fase: l.fase || '',
         clave: l.lote ? claveLote(l.fase, l.lote) : null,

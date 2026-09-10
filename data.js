@@ -28,6 +28,14 @@ const PROYECTOS = {
   },
 };
 
+PROYECTOS.HATI = {
+  codigo: "HATI", nombre: "Hati · Amatique Bay", corto: "Hati", desarrollador: "SOL Desarrollos",
+  razonSocial: "Hati (por definir)", ubicacion: "Puerto Barrios, Izabal", fase: "Los Cerros · San Juan",
+  moneda: "USD", tipoCambio: 7.80,
+  salaVenta: { descripcion: "HATI", prefijo: "HAT", correlativo: 0 },
+  tasaMensual: 0.015, tasaMora: 0.02, engancheMinimo: 2500, plazos: [12, 24, 36, 48, 60], comisionPct: 0.02, activo: true,
+};
+
 /* El proyecto en el que se está trabajando. */
 let PROYECTO = PROYECTOS.RLE;
 

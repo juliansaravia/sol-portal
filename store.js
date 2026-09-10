@@ -943,9 +943,9 @@ async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, res
   saveDB();
   return ct;
 }
-async function registrarPago(contratoId, { monto, forma, cuenta, referencia, fecha }) {
+async function registrarPago(contratoId, { monto, forma, cuenta, referencia, fecha, moneda, tipo_cambio, monto_original }) {
   if (typeof hayBase === 'function' && hayBase()) {
-    const r = await sbRegistrarPago(contratoId, { monto, forma, cuenta, referencia, fecha });
+    const r = await sbRegistrarPago(contratoId, { monto, forma, cuenta, referencia, fecha, moneda, tipo_cambio, monto_original });
     if (!r.ok) { avisar(r.error); return null; }
     return DB.pagos[DB.pagos.length - 1];
   }

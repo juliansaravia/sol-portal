@@ -288,13 +288,16 @@ async function sbReasignarContratos(idsContrato, persona_id) {
    el financiero. Y hasta que no se confirma, la contabilidad no
    asienta nada — el disparador espera el estado 'confirmado'.
    ============================================================ */
-async function sbRegistrarPago(contrato_id, { monto, forma, cuenta, referencia, fecha, giro_id }) {
+async function sbRegistrarPago(contrato_id, { monto, forma, cuenta, referencia, fecha, giro_id, moneda, tipo_cambio, monto_original }) {
   return escribir('registrar el pago', async () => {
+    /* Pago en otra moneda (Hati en US$, cliente paga Q): las tres columnas llegan con 56_hati_y_moneda.sql. */
+    const extraMoneda = (tipo_cambio && tipo_cambio !== 1) ? { moneda: moneda || 'GTQ', tipo_cambio, monto_original } : {};
     const fila = oExplota(await SB.from('pago').insert({
       contrato_id,
       giro_id: giro_id || null,
       cuenta_bancaria_id: await idDeCuenta(cuenta),
       monto: +monto,
+      ...extraMoneda,
       fecha_pago: fecha || new Date().toISOString().slice(0, 10),
       forma_pago: forma || null,
       referencia: referencia || null,
