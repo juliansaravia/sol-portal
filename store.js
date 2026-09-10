@@ -483,7 +483,7 @@ async function crearCliente(nombreCompleto, extra = {}) {
   if (!(typeof hayBase === 'function' && hayBase()))
     return crearClienteLocal(nombreCompleto, extra);
   const r = await sbCrearCliente({
-    nombre: nombreCompleto.trim(), dpi: extra.dpi, telefono: extra.telefono,
+    nombre: nombreCompleto.trim(), dpi: extra.dpi, nit: extra.nit, telefono: extra.telefono,
     email: extra.email, direccion: extra.direccion, ocupacion: extra.ocupacion,
     pariente: extra.pariente || null
   });
