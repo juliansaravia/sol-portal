@@ -862,7 +862,12 @@ const DEPTH_PX = 40, MAX_NEIGHBOR = 36;
 /* ¿Este lote está en el plano de assets/plano.png? Las manzanas A–L son
    Fase 1 y M–W Fase 2. Los agrícolas repiten códigos y no están acá. */
 const fasePlano=codigo=>String(codigo||'').charAt(0)<='L'?'FASE 1':'FASE 2';
-const enPlano=l=>!!l&&(!l.fase||String(l.fase).toUpperCase()===fasePlano(l.codigo));
+/* FASE 2 no se dibuja todavía (10 sept 2026): las etiquetas del plano en esa
+   zona están corruptas y la numeración no coincide con la del CRM, así que
+   pintarla ponía «vendido» y «disponible» en lotes que no son. Se dibuja
+   cuando llegue el DWG con la numeración real. */
+const FASES_SIN_PLANO=['FASE 2'];
+const enPlano=l=>!!l&&(!l.fase||(String(l.fase).toUpperCase()===fasePlano(l.codigo)&&!FASES_SIN_PLANO.includes(String(l.fase).toUpperCase())));
 function calcularGeometria(){
   if(geomLista) return;
   // 1) Geometría exacta medida del plano (assets/lotes-shape.js)
@@ -952,7 +957,7 @@ function renderInventario(){
       <div class="card-b"><div class="lot-grid">`+
       L.map(l=>`<div class="lot ${l.estado==='vendido'?'vend':(l.estado==='reservado'?'apar':'disp')}" onclick="abrirLote('${esc(claveDe(l))}')">
         <div class="lc">${esc(l.codigo)}</div><div class="la">${l.area} m²</div></div>`).join('')+
-      `</div><div class="hint">${agro?'Los lotes agrícolas están en otro terreno: este plano es de las fases residenciales. Sus códigos se repiten con la Fase 1, por eso no se dibujan encima.':'La numeración del plano no coincide con la del CRM para estos lotes. Se ubican cuando haya el plano de esa fase con sus números.'}</div></div></div>`;
+      `</div><div class="hint">${agro?'Los lotes agrícolas están en otro terreno: este plano es de las fases residenciales. Sus códigos se repiten con la Fase 1, por eso no se dibujan encima.':'El plano de esta fase trae los números corruptos y no coinciden con los del CRM: mientras no llegue el dibujo correcto, no se pinta, para no marcar vendido un lote que no lo está. La lista sí es la real.'}</div></div></div>`;
   });
   C().innerHTML=h;
   dibujarMapa();
