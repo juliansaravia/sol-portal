@@ -585,7 +585,7 @@ function pintarSelectorProyecto(){
   const lista=Object.values(PROYECTOS).filter(p=>p.activo!==false&&(!remoto||p.id!=null));
   if(remoto&&!lista.some(p=>p.codigo===PROYECTO_ACTIVO)&&lista.length){ PROYECTO_ACTIVO=lista[0].codigo; PROYECTO=PROYECTOS[PROYECTO_ACTIVO]; }
   sel.innerHTML=lista.map(p=>`<option value="${esc(p.codigo)}" ${p.codigo===PROYECTO_ACTIVO?'selected':''}>${esc(p.corto||p.nombre)}${p.moneda==='USD'?' · US$':''}</option>`).join('');
-  const caja=sel.closest('.proyecto-sel'); if(caja) caja.style.display=lista.length>1?'':'none';
+  const caja=sel.closest('.proyecto-sel'); if(caja) caja.style.display='';
 }
 async function cambiarProyecto(codigo){
   if(codigo === PROYECTO_ACTIVO || !PROYECTOS[codigo]) return;
