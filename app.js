@@ -961,7 +961,7 @@ function renderInventario(){
    Cada proyecto declara su imagen y su tamaño; los lotes se dibujan como
    marcadores en (cx, cy). Administración y gerencia entran a «Ubicar
    lotes»: eligen un lote de la lista y hacen clic en el plano. */
-const PLANOS={ HATI:{ src:'assets/planos/hati.png', w:1600, h:1100, nota:'Arriba Los Cerros · abajo San Juan' } };
+const PLANOS={ HATI:{ src:'assets/planos/hati.png', w:423, h:343, nota:'Arriba Los Cerros · abajo San Juan' } };
 let RLE_CLIP=null, ubicando=null;
 function renderInventarioImagen(){
   const pl=PLANOS[PROYECTO.codigo]; const puedeUbicar=['admin','gerencia'].includes(ROLE);
