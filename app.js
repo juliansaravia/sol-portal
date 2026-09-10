@@ -579,7 +579,11 @@ function aplicarProyecto(){
 }
 function pintarSelectorProyecto(){
   const sel=document.getElementById('proyectoActivo'); if(!sel) return;
-  const lista=Object.values(PROYECTOS).filter(p=>p.activo!==false);
+  /* Con la base conectada sólo se ofrecen los proyectos que existen en ella
+     (con id); uno sólo declarado en el portal dejaría todo en cero. */
+  const remoto=typeof hayRemoto==='function'&&hayRemoto();
+  const lista=Object.values(PROYECTOS).filter(p=>p.activo!==false&&(!remoto||p.id!=null));
+  if(remoto&&!lista.some(p=>p.codigo===PROYECTO_ACTIVO)&&lista.length){ PROYECTO_ACTIVO=lista[0].codigo; PROYECTO=PROYECTOS[PROYECTO_ACTIVO]; }
   sel.innerHTML=lista.map(p=>`<option value="${esc(p.codigo)}" ${p.codigo===PROYECTO_ACTIVO?'selected':''}>${esc(p.corto||p.nombre)}${p.moneda==='USD'?' · US$':''}</option>`).join('');
   const caja=sel.closest('.proyecto-sel'); if(caja) caja.style.display=lista.length>1?'':'none';
 }
@@ -905,6 +909,18 @@ function norm(a){ while(a>90)a-=180; while(a<-90)a+=180; return a; }
 function difAng(a,b){ return norm(a-b); }
 function mediana(arr){ const s=arr.slice().sort((a,b)=>a-b); return s[Math.floor(s.length/2)]; }
 function renderInventario(){
+  /* El plano dibujado (assets/plano.png) es el de La Esperanza. Un proyecto
+     sin plano muestra su inventario en lista, por fase, sin mapa. */
+  const tienePlano=!PROYECTO||PROYECTO.codigo==='RLE';
+  if(!tienePlano){
+    const fases=[...new Set(DB.lotes.map(l=>l.fase||'Sin fase'))];
+    let h=`<div class="chips">`+[['todos','Todos'],['disponible','Disponibles'],['reservado','Reservados'],['vendido','Vendidos']].map(([k,l])=>`<button class="chip ${filtro===k?'active':''}" onclick="setFiltro('${k}')">${l}</button>`).join('')+`</div>`;
+    h+=`<div class="hint" style="margin:0 0 12px">${esc(PROYECTO.corto||PROYECTO.nombre)} todavía no tiene plano cargado: el inventario se ve en lista. Cuando esté el plano con la numeración, se dibuja igual que La Esperanza.</div>`;
+    fases.forEach(f=>{ const L=DB.lotes.filter(l=>(l.fase||'Sin fase')===f&&(filtro==='todos'||l.estado===filtro)).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo),undefined,{numeric:true}));
+      h+=`<div class="card"><div class="card-h"><h2>${esc(f)} · ${L.length}</h2><span class="hint">${Qk(L.reduce((s,l)=>s+(l.precio||0),0))} en lista</span></div><div class="card-b"><div class="lot-grid">`+
+        L.map(l=>`<div class="lot ${l.estado==='vendido'?'vend':(l.estado==='reservado'?'apar':'disp')}" onclick="abrirLote('${esc(claveDe(l))}')"><div class="lc">${esc(l.codigo)}</div><div class="la">${l.area?l.area+' m²':'sin medida'}</div></div>`).join('')+`</div></div></div>`; });
+    C().innerHTML=h; return;
+  }
   if(typeof calcularGeometria==='function') calcularGeometria();
   const conCoord=DB.lotes.filter(l=>l.x!=null&&enPlano(l)).length;
   let h=`<div class="chips">`+
