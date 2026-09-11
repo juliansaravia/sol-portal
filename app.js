@@ -3485,8 +3485,8 @@ function filasEstadoCuenta(ct){
   ct.obligaciones.forEach(o=>{
     o.giros.forEach(g=>{
       const antes=restante; restante=r2(restante-g.monto);
-      filas.push({obl:o.desc,n:g.n,de:o.nGiros,venc:g.venc,cuota:g.monto,
-                  capital:g.capital!=null?g.capital:null, interes:g.interes!=null?g.interes:null, abonado:g.abonado||0,
+      filas.push({obl:o.desc,n:g.n,de:o.nGiros||(o.giros||[]).length,venc:g.venc||g.vence||null,cuota:g.monto,
+                  capital:g.capital!=null?g.capital:null, interes:g.interes!=null?g.interes:null, exonerado:!!g.exonerado, abonado:g.abonado||0,
                   debido:antes,final:Math.max(0,restante),estado:g.estado,condicion:g.condicion||null});
     });
   });
@@ -3541,12 +3541,12 @@ function estadoCuentaHTML(ct,ec,completo){
       <td><b>${f.n}</b><span class="ec-de">/${f.de}</span><div class="ec-obl">${f.obl}</div></td>
       <td>${(f.condicion?'Al desmembrar':fmtD(f.venc))}</td>
       <td class="num">${Q(f.debido)}</td>
-      ${conDesglose?`<td class="num">${f.capital!=null?Q(f.capital):'—'}</td><td class="num">${f.interes!=null?Q(f.interes):'—'}</td>`:''}
+      ${conDesglose?`<td class="num">${f.capital!=null?Q(f.capital):'—'}</td><td class="num">${f.exonerado?'<span title="Interés exonerado por Finanzas">exonerado</span>':(f.interes!=null?Q(f.interes):'—')}</td>`:''}
       <td class="num"><b>${Q(f.cuota)}</b></td>
       <td class="num">${f.abonado?Q(f.abonado):'—'}</td>
       <td class="num">${Q(f.final)}</td>
       <td class="ec-st">${ic}</td></tr>`;});
-  if(conDesglose){ const tc=filas.reduce((s,f)=>s+(f.capital||0),0), ti=filas.reduce((s,f)=>s+(f.interes||0),0);
+  if(conDesglose){ const tc=filas.reduce((s,f)=>s+(f.capital||0),0), ti=filas.reduce((s,f)=>s+(f.exonerado?0:(f.interes||0)),0);
     h+=`<tr><td colspan="3"><b>Totales del plan</b></td><td class="num"><b>${Q(tc)}</b></td><td class="num"><b>${Q(ti)}</b></td><td class="num"><b>${Q(totalPlan)}</b></td><td class="num"><b>${Q(pagado)}</b></td><td></td><td></td></tr>`; }
   h+=`</tbody></table>`;
   if(!completo&&muestra.length<filas.length)
@@ -4140,7 +4140,9 @@ async function estadoCuentaPDF(ct){
   caja(M,'Pagado a la fecha',Q(pagado)); caja(M+176,'Saldo pendiente',Q(pend)); caja(M+352,venc.length?`${venc.length} cuota(s) vencida(s)`:'Próxima cuota',venc.length?Q(venc.reduce((s,f)=>s+f.cuota,0)):(prox?Q(prox.cuota)+'  '+fmtD(prox.venc):'Plan liquidado'),!!venc.length);
   y+=70;
   // tabla de cuotas
-  const cols=[M,M+52,M+150,M+240,M+330,M+420,W-M]; const th=['Cuota','Obligación','Vence','Cuota','Saldo después','Estado'];
+  const desg=filas.some(f=>f.capital!=null);
+  const cols=desg?[M,M+40,M+112,M+176,M+240,M+304,M+372,M+444,W-M]:[M,M+52,M+150,M+240,M+330,M+420,W-M];
+  const th=desg?['Cuota','Obligación','Vence','Capital','Interés','Cuota','Saldo después','Estado']:['Cuota','Obligación','Vence','Cuota','Saldo después','Estado'];
   const cab=()=>{ doc.setFillColor(244,246,245); doc.rect(M,y,W-2*M,18,'F'); doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(90);
     th.forEach((t,i)=>doc.text(t,cols[i]+4,y+12,{align:i>=3&&i<=4?'left':'left'})); doc.setTextColor(0); y+=18; };
   cab();
@@ -4149,9 +4151,11 @@ async function estadoCuentaPDF(ct){
     const est={pagado:['Pagada',46,107,79],vencido:['Vencida',184,69,46],parcial:['Parcial',138,95,18]}[f.estado]||['Pendiente',110,110,110];
     if(idx%2) { doc.setFillColor(250,251,250); doc.rect(M,y,W-2*M,16,'F'); }
     doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(0);
-    doc.text(`${f.n}/${f.de}`,cols[0]+4,y+11); doc.text(String(f.obl||'').slice(0,18),cols[1]+4,y+11); doc.text((f.condicion?'Al desmembrar':fmtD(f.venc)),cols[2]+4,y+11);
-    doc.text(Q(f.cuota),cols[3]+4,y+11); doc.text(Q(f.final),cols[4]+4,y+11);
-    doc.setTextColor(est[1],est[2],est[3]); doc.setFont('helvetica','bold'); doc.text(est[0],cols[5]+4,y+11); doc.setTextColor(0);
+    doc.text(`${f.n}/${f.de}`,cols[0]+4,y+11); doc.text(String(f.obl||'').slice(0,desg?14:18),cols[1]+4,y+11); doc.text((f.condicion?'Al desmembrar':fmtD(f.venc)),cols[2]+4,y+11);
+    let k=3;
+    if(desg){ doc.text(f.capital!=null?Q(f.capital):'—',cols[k++]+4,y+11); doc.text(f.exonerado?'exonerado':(f.interes!=null?Q(f.interes):'—'),cols[k++]+4,y+11); }
+    doc.text(Q(f.cuota),cols[k++]+4,y+11); doc.text(Q(f.final),cols[k++]+4,y+11);
+    doc.setTextColor(est[1],est[2],est[3]); doc.setFont('helvetica','bold'); doc.text(est[0],cols[k]+4,y+11); doc.setTextColor(0);
     y+=16;
   });
   y+=10; doc.setFontSize(8); doc.setTextColor(120); doc.setFont('helvetica','normal');
@@ -5039,6 +5043,17 @@ function modalEnganche(id){
       </div>
       <div class="hint">Rehace todas las cuotas del saldo con estos datos, desde la primera fecha, y vuelve a aplicar en orden los pagos confirmados. Sirve cuando se firma un contrato nuevo con otras condiciones.</div>
       <div class="btn-row" style="margin:8px 0 0"><button class="btn btn-ghost btn-sm" onclick="guardarPlan('${ct.id}')">Rehacer plan</button></div>
+      ${(()=>{ const sd=(ct.obligaciones||[]).find(o=>String(o.tipo||'').toLowerCase()==='saldo'); const gs=sd?(sd.giros||[]).filter(g=>g.capital!=null):[]; if(!gs.length) return '';
+        const pend=gs.filter(g=>g.estado!=='pagado'); const d0=pend.length?pend[0].n:1, d1=gs[gs.length-1].n; const yaEx=gs.filter(g=>g.exonerado).map(g=>g.n);
+        return `<div class="sect-t" style="margin-top:18px">Exonerar interés · cuotas del saldo</div>
+      <div class="form-grid">
+        <div class="field"><label>Desde la cuota</label><input id="ex-desde" type="number" min="1" max="${d1}" value="${d0}" oninput="pistaExonerar('${ct.id}')"></div>
+        <div class="field"><label>Hasta la cuota</label><input id="ex-hasta" type="number" min="1" max="${d1}" value="${d1}" oninput="pistaExonerar('${ct.id}')"></div>
+        <div class="field full"><label>Interés que se perdona</label><input id="ex-pista" readonly style="background:var(--tint)"></div>
+      </div>
+      <div class="hint">Esas cuotas quedan en su puro capital, como hacía el sistema anterior cuando Finanzas perdonaba el interés. Las cuotas ya pagadas no cambian. ${yaEx.length?'Hoy exoneradas: '+yaEx.join(', ')+'.':''}</div>
+      <div class="btn-row" style="margin:8px 0 0"><button class="btn btn-ghost btn-sm" onclick="exonerarInteres('${ct.id}',true)">Exonerar interés</button>
+        ${yaEx.length?`<button class="btn btn-ghost btn-sm" onclick="exonerarInteres('${ct.id}',false)">Restituir interés</button>`:''}</div>`; })()}
       <div class="sect-t" style="margin-top:18px">Pagar lo pendiente en cuotas · sin interés</div>
       <div class="form-grid">
         <div class="field"><label>Pendiente del enganche</label><input value="${Q(pend)}" readonly style="background:var(--tint)"></div>
@@ -5050,7 +5065,31 @@ function modalEnganche(id){
     </div>
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
       <button class="btn btn-primary" ${pend>0?'':'disabled'} onclick="fraccionarEnganche('${ct.id}')">Fraccionar enganche</button></div>`);
-  pistaPlan(ct.id);
+  pistaPlan(ct.id); pistaExonerar(ct.id);
+}
+function cuotasSaldoEntre(ct,desde,hasta){
+  const sd=(ct.obligaciones||[]).find(o=>String(o.tipo||'').toLowerCase()==='saldo');
+  return sd?(sd.giros||[]).filter(g=>g.n>=desde&&g.n<=hasta&&g.estado!=='pagado'):[];
+}
+function pistaExonerar(id){
+  const ct=getContrato(id), e=document.getElementById('ex-pista'); if(!ct||!e) return;
+  const gs=cuotasSaldoEntre(ct,+v('ex-desde')||1,+v('ex-hasta')||0);
+  const tot=gs.reduce((s,g)=>s+(g.exonerado?0:(g.interes||0)),0);
+  e.value=gs.length?`${Q(tot)} en ${gs.length} cuota(s) pendiente(s)`:'Ninguna cuota pendiente en ese rango';
+}
+async function exonerarInteres(id,exonerar){
+  const ct=getContrato(id); if(!ct) return;
+  const desde=+v('ex-desde'), hasta=+v('ex-hasta');
+  if(!(desde>=1)||!(hasta>=desde)) return toast('Indique las cuotas desde y hasta',4000,true);
+  if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se puede cambiar el plan',5000,true);
+  const gs=cuotasSaldoEntre(ct,desde,hasta); if(!gs.length) return toast('No hay cuotas pendientes en ese rango',4000,true);
+  const tot=gs.reduce((s,g)=>s+(g.interes||0),0);
+  if(!confirm(`${exonerar?'Exonerar':'Restituir'} el interés de las cuotas ${desde} a ${hasta} de ${ct.no} (${Q(tot)}). ¿Seguir?`)) return;
+  const r=await conBoton(()=>sbExonerarInteres(id,desde,hasta,exonerar)); if(!r||!r.ok) return;
+  const d=r.dato||{};
+  anotar('contrato.interes', ct.no+' · '+(exonerar?'exonera':'restituye')+' '+desde+'-'+hasta);
+  await registrarGestion(id,'Bitácora Socios','Contactado',`Interés ${exonerar?'exonerado':'restituido'} en cuotas ${desde} a ${hasta} (${Q(tot)}) · lo hizo ${(window.__user&&window.__user.name)||''}`);
+  closeModal(); toast(`Interés ${exonerar?'exonerado':'restituido'} en ${d.cuotas||gs.length} cuota(s) · saldo ${Q(+d.saldo||0)}`); await traerCartera(); if(typeof pintarContrato==='function') pintarContrato();
 }
 function pistaPlan(id){
   const ct=getContrato(id); if(!ct) return;

@@ -267,6 +267,7 @@ async function cargarDesdeSupabase() {
         id: g.id, n: g.numero, vence: _fecha(g.vencimiento),
         monto: _num(g.monto), estado: g.estado, abonado: _num(g.abonado),
         capital: g.capital != null ? _num(g.capital) : null, interes: g.interes != null ? _num(g.interes) : null,
+        exonerado: !!g.interes_exonerado,
         // 'desmembracion': no vence hasta que se libere (40)
         condicion: g.condicion || null,
         fechaEstimada: g.fecha_estimada ? _fecha(g.fecha_estimada) : null
@@ -360,7 +361,7 @@ async function cargarCartera() {
   try {
     const [obligaciones, giros] = await Promise.all([
       todas('obligacion', 'id,contrato_id,tipo,descripcion,monto_total,orden'),
-      conRespaldo('giro', 'id,obligacion_id,numero,vencimiento,monto,estado,abonado', 'condicion,fecha_estimada,capital,interes')
+      conRespaldo('giro', 'id,obligacion_id,numero,vencimiento,monto,estado,abonado', 'condicion,fecha_estimada,capital,interes,interes_exonerado')
     ]);
 
     const porContrato = new Map(DB.contratos.map(c => [c.id, c]));
@@ -380,7 +381,7 @@ async function cargarCartera() {
       if (dest) dest.giros.push({ id: g.id, n: g.numero, vence: _fecha(g.vencimiento),
                                   monto: _num(g.monto), estado: g.estado,
                                   abonado: _num(g.abonado), condicion: g.condicion || null,
-                                  capital: g.capital != null ? _num(g.capital) : null, interes: g.interes != null ? _num(g.interes) : null });
+                                  capital: g.capital != null ? _num(g.capital) : null, interes: g.interes != null ? _num(g.interes) : null, exonerado: !!g.interes_exonerado });
     }
     for (const ct of DB.contratos) {
       ct.obligaciones.sort((a, b) => a.orden - b.orden);

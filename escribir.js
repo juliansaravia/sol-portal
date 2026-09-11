@@ -336,6 +336,10 @@ async function sbReestructurarPlan(contrato_id, enganche, plazo, tasa, modalidad
     oExplota(await SB.rpc('reestructurar_plan', { p_contrato_id: Number(contrato_id), p_enganche: Number(enganche), p_plazo: Number(plazo),
       p_tasa: Number(tasa), p_modalidad: modalidad || null, p_primera: primera || null })));
 }
+async function sbExonerarInteres(contrato_id, desde, hasta, exonerar) {
+  return escribir(exonerar ? 'exonerar el interés' : 'restituir el interés', async () =>
+    oExplota(await SB.rpc('exonerar_interes', { p_contrato_id: Number(contrato_id), p_desde: Number(desde), p_hasta: Number(hasta), p_exonerar: !!exonerar })));
+}
 async function sbFraccionarEnganche(contrato_id, cuotas, primera) {
   return escribir('fraccionar el enganche', async () =>
     oExplota(await SB.rpc('fraccionar_enganche', { p_contrato_id: Number(contrato_id), p_cuotas: Number(cuotas), p_primera: primera })));
