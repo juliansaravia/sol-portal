@@ -961,9 +961,9 @@ async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, res
   saveDB();
   return ct;
 }
-async function registrarPago(contratoId, { monto, forma, cuenta, referencia, fecha, moneda, tipo_cambio, monto_original }) {
+async function registrarPago(contratoId, { monto, forma, cuenta, referencia, fecha, moneda, tipo_cambio, monto_original, giro_id, aplicacion }) {
   if (typeof hayBase === 'function' && hayBase()) {
-    const r = await sbRegistrarPago(contratoId, { monto, forma, cuenta, referencia, fecha, moneda, tipo_cambio, monto_original });
+    const r = await sbRegistrarPago(contratoId, { monto, forma, cuenta, referencia, fecha, moneda, tipo_cambio, monto_original, giro_id, aplicacion });
     if (!r.ok) { avisar(r.error); return null; }
     return DB.pagos[DB.pagos.length - 1];
   }
@@ -1014,12 +1014,12 @@ const motivoLabel = id => (MOTIVOS_NO_COBRO.find(m=>m.id===id)||{}).label || id;
  * Marca una cuota como COBRADA. Registra el pago en estado 'registrado':
  * quien cobra no confirma — eso lo hace el financiero (separación de funciones).
  */
-async function marcarCobrada(contrato, fecha, { monto, forma, cuenta, referencia, nota }) {
+async function marcarCobrada(contrato, fecha, { monto, forma, cuenta, referencia, nota, fechaPago, aplicacion, giroId }) {
   const ct = indices().contratosPorNo.get(String(contrato));
 
   if (typeof hayBase === 'function' && hayBase()) {
     if (!ct) { avisar('No se encontró el contrato ' + contrato); return null; }
-    const r = await sbMarcarCobrada(ct.id, fecha, { monto, forma, cuenta, referencia, nota });
+    const r = await sbMarcarCobrada(ct.id, fecha, { monto, forma, cuenta, referencia, nota, fecha: fechaPago, aplicacion, giro_id: giroId });
     if (!r.ok) { avisar(r.error); return null; }
     const reg = { id: r.dato.recaudo.id, clave: claveCuota(contrato, fecha), contrato, fecha,
                   estado: 'cobrada', monto: +monto, forma, cuenta, referencia, nota: nota || '',

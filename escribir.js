@@ -288,10 +288,11 @@ async function sbReasignarContratos(idsContrato, persona_id) {
    el financiero. Y hasta que no se confirma, la contabilidad no
    asienta nada — el disparador espera el estado 'confirmado'.
    ============================================================ */
-async function sbRegistrarPago(contrato_id, { monto, forma, cuenta, referencia, fecha, giro_id, moneda, tipo_cambio, monto_original }) {
+async function sbRegistrarPago(contrato_id, { monto, forma, cuenta, referencia, fecha, giro_id, moneda, tipo_cambio, monto_original, aplicacion }) {
   return escribir('registrar el pago', async () => {
     /* Pago en otra moneda (Hati en US$, cliente paga Q): las tres columnas llegan con 56_hati_y_moneda.sql. */
     const extraMoneda = (tipo_cambio && tipo_cambio !== 1) ? { moneda: moneda || 'GTQ', tipo_cambio, monto_original } : {};
+    if (aplicacion === 'capital') extraMoneda.aplicacion = 'capital';   // 59: lo que sobre se abona a capital
     const fila = oExplota(await SB.from('pago').insert({
       contrato_id,
       giro_id: giro_id || null,
@@ -416,17 +417,18 @@ async function giroDeVencimiento(contrato_id, vence) {
   return giros.length ? giros[0].id : null;
 }
 
-async function sbMarcarCobrada(contrato_id, vence, { monto, forma, cuenta, referencia, nota }) {
+async function sbMarcarCobrada(contrato_id, vence, { monto, forma, cuenta, referencia, nota, fecha, aplicacion, giro_id: giroElegido }) {
   return escribir('marcar la cuota como cobrada', async () => {
-    const giro_id = await giroDeVencimiento(contrato_id, vence);
-
+    const giro_id = giroElegido || await giroDeVencimiento(contrato_id, vence);
+    /* Fecha real del pago y, si pagó de más, a qué se aplica (59). */
+    const extra = aplicacion === 'capital' ? { aplicacion: 'capital' } : {};
     const pago = oExplota(await SB.from('pago').insert({
       contrato_id, giro_id,
       cuenta_bancaria_id: await idDeCuenta(cuenta),
       monto: +monto,
-      fecha_pago: new Date().toISOString().slice(0, 10),
+      fecha_pago: fecha || new Date().toISOString().slice(0, 10),
       forma_pago: forma || null, referencia: referencia || null,
-      estado: 'registrado', registrado_por: yo()
+      estado: 'registrado', registrado_por: yo(), ...extra
     }).select('id,contrato_id,monto,fecha_pago,forma_pago,referencia,estado').single());
 
     const fila = oExplota(await SB.from('recaudacion').upsert({

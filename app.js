@@ -1857,8 +1857,12 @@ function modalCobro(contrato,fecha){
   openModal(`<div class="modal-h"><h3>Registrar cobro</h3>
       <p>${esc(c.n)} · lote ${c.l} · cuota ${c.q}/${c.p}</p></div>
     <div class="modal-b">
-      <div class="field"><label>Monto recibido</label>
-        <input id="rcMonto" type="number" step="0.01" value="${(Math.round(c.m*100)/100)}" oninput="totalBoleta('rc')"></div>
+      <div class="field"><label>Monto de la boleta</label>
+        <input id="rcMonto" type="number" step="0.01" placeholder="cuota: ${Q(c.m)}" oninput="totalBoleta('rc');pistaCobro(${Math.round(c.m*100)/100})">
+        <div class="hint" id="rcPista">Si es menor, queda como pago parcial de esta cuota.</div></div>
+      <div class="field"><label>Fecha del pago</label><input id="rcFecha" type="date" value="${HOY_ISO}" max="${HOY_ISO}"></div>
+      <div class="field" id="rcAplicBox" hidden><label>Lo que sobra de la cuota</label>
+        <select id="rcAplic"><option value="cuotas">Adelanta las cuotas siguientes</option><option value="capital">Se abona a capital (recalcula las cuotas)</option></select></div>
       <div class="field"><label>Forma de pago</label>
         <input id="rcForma" value="Transferencia bancaria" readonly style="background:var(--tint)">
         <div class="hint">Solo se reciben transferencias a la cuenta recaudadora. Decisión del dueño.</div></div>
@@ -1877,9 +1881,16 @@ function modalCobro(contrato,fecha){
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarCobro('${contrato}','${fecha}')">Registrar cobro</button></div>`);
 }
+function pistaCobro(cuota){
+  const m=+v('rcMonto')||0; const caja=document.getElementById('rcAplicBox'), p=document.getElementById('rcPista');
+  if(caja) caja.hidden=!(m>cuota+0.005);
+  if(p) p.textContent = m>cuota+0.005 ? `Sobran ${Q(m-cuota)} sobre la cuota de ${Q(cuota)}.` : (m>0&&m<cuota-0.005 ? `Pago parcial: quedan ${Q(cuota-m)} de esta cuota.` : 'Si es menor, queda como pago parcial de esta cuota.');
+}
 async function guardarCobro(contrato,fecha){
   const monto=+document.getElementById('rcMonto').value;
   if(!(monto>0)){toast('El monto debe ser mayor que cero');return;}
+  const fechaPago=v('rcFecha')||HOY_ISO; if(fechaPago>HOY_ISO){toast('La fecha del pago no puede ser futura',5000,true);return;}
+  const aplicacion=(document.getElementById('rcAplicBox')&&!document.getElementById('rcAplicBox').hidden&&v('rcAplic')==='capital')?'capital':'cuotas';
   const ref=document.getElementById('rcRef').value.trim();
   if(!ref){toast('Anota el número de boleta o referencia');return;}
   const foto=(document.getElementById('rcFoto')||{}).files;
@@ -1889,7 +1900,7 @@ async function guardarCobro(contrato,fecha){
     const reg=await marcarCobrada(contrato,fecha,{monto,
       forma:document.getElementById('rcForma').value,
       cuenta:document.getElementById('rcCuenta').value,
-      referencia:ref, nota:document.getElementById('rcNota').value.trim()});
+      referencia:ref, nota:document.getElementById('rcNota').value.trim(), fechaPago, aplicacion});
     if(!reg) return null;
     /* La boleta cuelga del pago. Si la subida falla, el pago ya quedó
        registrado y se dice: es mejor un pago sin foto que un cobro
@@ -3475,6 +3486,7 @@ function filasEstadoCuenta(ct){
     o.giros.forEach(g=>{
       const antes=restante; restante=r2(restante-g.monto);
       filas.push({obl:o.desc,n:g.n,de:o.nGiros,venc:g.venc,cuota:g.monto,
+                  capital:g.capital!=null?g.capital:null, interes:g.interes!=null?g.interes:null, abonado:g.abonado||0,
                   debido:antes,final:Math.max(0,restante),estado:g.estado,condicion:g.condicion||null});
     });
   });
@@ -3516,9 +3528,12 @@ function estadoCuentaHTML(ct,ec,completo){
     </div>
     <div class="hint" style="margin:-6px 0 14px">La cuota inicial se constituye en <b>arras</b> y derecho de reserva (cláusula quinta del contrato).</div>`;
   const muestra = completo? filas : filas.slice(0, Math.min(filas.length, Math.max(8,(filas.findIndex(f=>f.estado!=='pagado')+6))));
+  /* Desglose capital / interés por cuota (59): se muestra cuando la base lo trae. */
+  const conDesglose=filas.some(f=>f.capital!=null);
   h+=`<table class="ec-tbl"><thead><tr>
       <th>Cuota</th><th>Vence</th><th class="num">Monto debido</th>
-      <th class="num">Cuota</th><th class="num">Monto final</th><th></th></tr></thead><tbody>`;
+      ${conDesglose?'<th class="num">Capital</th><th class="num">Interés</th>':''}
+      <th class="num">Cuota</th><th class="num">Pagado</th><th class="num">Monto final</th><th></th></tr></thead><tbody>`;
   muestra.forEach(f=>{
     const cls=f.estado==='pagado'?'pg':(f.estado==='vencido'?'vn':(f.estado==='parcial'?'pc':''));
     const ic={pagado:'✓',vencido:'!',parcial:'≈'}[f.estado]||'';
@@ -3526,9 +3541,13 @@ function estadoCuentaHTML(ct,ec,completo){
       <td><b>${f.n}</b><span class="ec-de">/${f.de}</span><div class="ec-obl">${f.obl}</div></td>
       <td>${(f.condicion?'Al desmembrar':fmtD(f.venc))}</td>
       <td class="num">${Q(f.debido)}</td>
+      ${conDesglose?`<td class="num">${f.capital!=null?Q(f.capital):'—'}</td><td class="num">${f.interes!=null?Q(f.interes):'—'}</td>`:''}
       <td class="num"><b>${Q(f.cuota)}</b></td>
+      <td class="num">${f.abonado?Q(f.abonado):'—'}</td>
       <td class="num">${Q(f.final)}</td>
       <td class="ec-st">${ic}</td></tr>`;});
+  if(conDesglose){ const tc=filas.reduce((s,f)=>s+(f.capital||0),0), ti=filas.reduce((s,f)=>s+(f.interes||0),0);
+    h+=`<tr><td colspan="3"><b>Totales del plan</b></td><td class="num"><b>${Q(tc)}</b></td><td class="num"><b>${Q(ti)}</b></td><td class="num"><b>${Q(totalPlan)}</b></td><td class="num"><b>${Q(pagado)}</b></td><td></td><td></td></tr>`; }
   h+=`</tbody></table>`;
   if(!completo&&muestra.length<filas.length)
     h+=`<div class="hint" style="text-align:center">Mostrando ${muestra.length} de ${filas.length} cuotas · <a href="#" onclick="verEstadoCuenta('${ct.id}');return false;">ver el plan completo</a></div>`;
@@ -3850,7 +3869,11 @@ function modalPago(id){
   const ct=getContrato(id), ec=estadoCuenta(ct);
   openModal(`<div class="modal-h"><h3>Registrar pago</h3><p>${ct.no} · ${esc(nombreCliente(ct.clienteId))}</p></div>
     <div class="modal-b"><div class="form-grid">
-      <div class="field"><label>Monto (Q) *</label><input id="p-monto" type="number" value="${ec.prox?ec.prox.monto:''}" oninput="totalBoleta('p')"></div>
+      <div class="field"><label>Cuota a la que se aplica</label><select id="p-giro" onchange="pistaAplicacion('${id}')">${opcionesCuotas(ct)}</select></div>
+      <div class="field"><label>Monto de la boleta *</label><input id="p-monto" type="number" step="0.01" placeholder="${ec.prox?'cuota: '+Q(ec.prox.monto):'monto que pagó'}" oninput="totalBoleta('p');pistaAplicacion('${id}')"></div>
+      <div class="field full" id="p-aplicBox" hidden><label id="p-aplicLbl">Pagó más que la cuota · ¿qué se hace con lo que sobra?</label>
+        <select id="p-aplic"><option value="cuotas">Adelantar las cuotas siguientes</option><option value="capital">Abonarlo a capital (se recalculan las cuotas, mismo plazo)</option></select>
+        <div class="hint" id="p-aplicPista"></div></div>
       <div class="field"><label>Forma de pago</label><input id="p-forma" value="Transferencia bancaria" readonly style="background:var(--tint)"></div>
       <div class="field"><label>Cuenta acreditada</label><select id="p-cta">${opcionesCuenta()}</select></div>
       <div class="field"><label>Fecha del pago</label><input id="p-fecha" type="date" value="${HOY_ISO}" max="${HOY_ISO}" onchange="pagoHistoricoPista()"></div>
@@ -3873,6 +3896,26 @@ function pagoHistoricoPista(){
   const ast=document.getElementById('p-fotoAst'); if(ast) ast.hidden=hist;
   const l=document.getElementById('p-leido'); if(l&&hist) l.textContent='Pago histórico: si no hay boleta, basta la referencia con la que el banco lo confirmó.';
 }
+/* Cuotas pendientes de un contrato, para elegir a cuál va el pago. */
+function cuotasPendientes(ct){
+  return (ct.obligaciones||[]).flatMap(o=>(o.giros||[]).map(g=>({...g, vence:g.vence||g.venc||null, obl:o.desc||o.tipo||'', de:(o.giros||[]).length})))
+    .filter(g=>g.estado!=='pagado'&&!g.condicion&&g.id!=null).sort((a,b)=>String(a.vence||'').localeCompare(String(b.vence||'')));
+}
+function opcionesCuotas(ct){
+  const L=cuotasPendientes(ct); if(!L.length) return `<option value="">Sin cuota fija · en orden</option>`;
+  return L.map((g,i)=>`<option value="${g.id}" data-pend="${Math.round(((g.monto||0)-(g.abonado||0))*100)/100}" data-vence="${g.vence||''}" ${i===0?'selected':''}>${esc(g.obl)} ${g.n}/${g.de} · vence ${fmtD(g.vence)} · pendiente ${Q((g.monto||0)-(g.abonado||0))}</option>`).join('')
+       +`<option value="">Sin cuota fija · en orden</option>`;
+}
+function pistaAplicacion(id){
+  const sel=document.getElementById('p-giro'), caja=document.getElementById('p-aplicBox'), pista=document.getElementById('p-aplicPista'); if(!sel||!caja) return;
+  const op=sel.options[sel.selectedIndex]; const pend=op?+op.dataset.pend||0:0; const m=+v('p-monto')||0;
+  const sobra=pend>0&&m>pend+0.005, parcial=pend>0&&m>0&&m<pend-0.005;
+  const sel2=document.getElementById('p-aplic'), lbl=document.getElementById('p-aplicLbl');
+  caja.hidden=!(sobra||parcial);
+  if(sel2) sel2.hidden=!sobra;
+  if(lbl) lbl.hidden=!sobra;
+  if(pista) pista.textContent = sobra ? `Cuota pendiente ${Q(pend)} · sobran ${Q(m-pend)}.` : (parcial ? `Pago parcial: quedan ${Q(pend-m)} de esta cuota.` : '');
+}
 function pistaMonedaPago(){
   const e=document.getElementById('p-monedaPista'); if(!e) return; const tc=PROYECTO.tipoCambio||7.8; const m=+v('p-monto')||0;
   e.textContent = v('p-moneda')==='GTQ' ? `Q ${m.toLocaleString('es-GT',{minimumFractionDigits:2})} ÷ ${tc} = US$ ${(m/tc).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2})} al contrato` : 'El contrato está en US$.';
@@ -3893,15 +3936,18 @@ async function guardarPago(id){
     /* Si hay una cuota pendiente, el pago se ata a ella y queda marcada
        como cobrada (misma ruta que Recaudación). Si no —abono libre—,
        se registra suelto y la base lo aplica al confirmarse. */
-    const ct=getContrato(id), ec=estadoCuenta(ct); const prox=ec&&ec.prox; const vence=prox&&(prox.venc||prox.vence);
+    const ct=getContrato(id);
+    const selG=document.getElementById('p-giro'); const opG=selG&&selG.options[selG.selectedIndex]; const giroId=opG&&opG.value?opG.value:null; const venceG=opG&&opG.dataset.vence||null;
+    const aplicacion=(document.getElementById('p-aplicBox')&&!document.getElementById('p-aplicBox').hidden&&v('p-aplic')==='capital')?'capital':'cuotas';
     let pago=null;
-    if(vence && !historico && tc===1 && typeof marcarCobrada==='function'){
-      const reg=await marcarCobrada(ct.no, vence, {monto,forma:v('p-forma'),cuenta:v('p-cta'),referencia:ref,nota:''});
+    if(giroId && venceG && !historico && tc===1 && typeof marcarCobrada==='function'){
+      /* A la cuota elegida: queda marcada en la agenda de cobranza y el pago apunta a ese giro. */
+      const reg=await marcarCobrada(ct.no, venceG, {monto,forma:v('p-forma'),cuenta:v('p-cta'),referencia:ref,nota:'',fechaPago:fecha,aplicacion,giroId});
       if(!reg) return null;
       pago=DB.pagos.find(x=>mismoId(x.id,reg.pagoId))||{id:reg.pagoId};
     } else {
-      /* Histórico: con su fecha real; la base lo aplica a las cuotas al confirmarse. */
-      pago=await registrarPago(id,{monto,forma:v('p-forma'),cuenta:v('p-cta'),referencia:ref,fecha, moneda:monedaPago, tipo_cambio:tc, monto_original:montoOriginal});
+      /* Sin cuota fija, histórico o en otra moneda: con su fecha real; la base lo aplica en orden al confirmarse. */
+      pago=await registrarPago(id,{monto,forma:v('p-forma'),cuenta:v('p-cta'),referencia:ref,fecha, moneda:monedaPago, tipo_cambio:tc, monto_original:montoOriginal, giro_id:giroId, aplicacion});
     }
     if(!pago) return null;
     if(archivo&&typeof hayBase==='function'&&hayBase()){
