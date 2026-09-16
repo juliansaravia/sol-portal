@@ -1176,11 +1176,27 @@ function zoomAt(cx,cy,scale){
 }
 function zoomBtn(s){const r=document.getElementById('mapSvg').getBoundingClientRect();zoomAt(r.left+r.width/2,r.top+r.height/2,s);}
 function zoomReset(){const c=window.PLAN_CLIP;setViewBox(c.x,c.y,c.w,c.h);}
+/* Ratón: rueda y arrastre. Teléfono: un dedo arrastra, dos dedos hacen
+   zoom (pellizco) y mueven a la vez, como una foto (16 sept 2026). */
 function panZoom(svg){
   let drag=false,sx=0,sy=0,pid=null,cap=false;
+  const dedos=new Map(); let pinch=null;
   svg.onwheel=e=>{e.preventDefault();zoomAt(e.clientX,e.clientY,e.deltaY<0?0.85:1.18);};
-  svg.onpointerdown=e=>{drag=true;dragMoved=false;cap=false;pid=e.pointerId;sx=e.clientX;sy=e.clientY;};
+  const geoPinch=()=>{ const [a,b]=[...dedos.values()]; return {d:Math.hypot(a.x-b.x,a.y-b.y)||1, mx:(a.x+b.x)/2, my:(a.y+b.y)/2}; };
+  svg.onpointerdown=e=>{
+    dedos.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(dedos.size===2){ pinch=geoPinch(); drag=false; dragMoved=true; try{svg.setPointerCapture(e.pointerId);}catch(_){} return; }
+    drag=true;dragMoved=false;cap=false;pid=e.pointerId;sx=e.clientX;sy=e.clientY;
+  };
   svg.onpointermove=e=>{
+    if(dedos.has(e.pointerId)) dedos.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(dedos.size>=2&&pinch){
+      e.preventDefault();
+      const g=geoPinch(); const r=svg.getBoundingClientRect();
+      if(Math.abs(g.d-pinch.d)>0.5) zoomAt(g.mx,g.my,pinch.d/g.d);
+      setViewBox(vb.x-(g.mx-pinch.mx)*vb.w/r.width, vb.y-(g.my-pinch.my)*vb.h/r.height, vb.w, vb.h);
+      pinch=g; return;
+    }
     if(!drag)return;
     if(!dragMoved&&Math.abs(e.clientX-sx)+Math.abs(e.clientY-sy)>3){dragMoved=true;cap=true;svg.classList.add('grabbing');try{svg.setPointerCapture(pid);}catch(_){}}
     if(!dragMoved)return;
@@ -1188,8 +1204,13 @@ function panZoom(svg){
     setViewBox(vb.x-(e.clientX-sx)*vb.w/r.width, vb.y-(e.clientY-sy)*vb.h/r.height, vb.w, vb.h);
     sx=e.clientX;sy=e.clientY;
   };
-  const end=()=>{drag=false;svg.classList.remove('grabbing');if(cap){try{svg.releasePointerCapture(pid);}catch(_){}cap=false;}};
-  svg.onpointerup=end;svg.onpointercancel=end;
+  const end=e=>{
+    if(e&&dedos.has(e.pointerId)){ dedos.delete(e.pointerId); try{svg.releasePointerCapture(e.pointerId);}catch(_){} }
+    if(dedos.size<2) pinch=null;
+    if(dedos.size===1){ const [q]=[...dedos.values()]; drag=true; sx=q.x; sy=q.y; dragMoved=true; return; }   // queda un dedo: sigue arrastrando
+    drag=false;svg.classList.remove('grabbing');if(cap){try{svg.releasePointerCapture(pid);}catch(_){}cap=false;}
+  };
+  svg.onpointerup=end;svg.onpointercancel=end;svg.onpointerleave=e=>{ if(dedos.size===0) end(e); };
 }
 
 /* ============================================================ VENDER */
