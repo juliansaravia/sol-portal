@@ -1269,6 +1269,7 @@ const FILTROS_CT={
   sin_boleta:{t:'Pagos sin respaldo',f:c=>c.estado==='aprobado'&&(indices().pagosPorContrato.get(String(c.id))||[]).some(p=>p.estado==='confirmado'&&!pagoRespaldado(p))},
   sin_firmado:{t:'Sin contrato firmado',f:c=>c.estado==='aprobado'&&!contratoFirmadoDe(c)},
   anulados:{t:'Anulados',f:c=>c.estado==='anulado'},
+  desistidos:{t:'Desistieron',f:c=>c.estado==='desistido'},
 };
 let ctBusca='', ctOrden={k:'no',asc:false};
 function ctOrdenar(k){ ctOrden = ctOrden.k===k ? {k,asc:!ctOrden.asc} : {k,asc:true}; renderContratos(); }
@@ -2515,6 +2516,47 @@ async function cambiarLoteContrato(id){
   await traerCartera();
   if(typeof pintarContrato==='function') pintarContrato();
 }
+/* ---------- El cliente desistió de la compra ----------
+   El contrato no se borra: queda marcado, el lote vuelve a inventario, lo
+   cobrado se anota como arras y las cuotas pendientes dejan de perseguirse.
+   La regla de comisión en dos tramos vive en desistimiento.js. */
+function modalDesistir(id){
+  const ct=getContrato(id); if(!ct) return;
+  const sim=(typeof simularDesistimiento==='function')?simularDesistimiento(ct):{avisos:[]};
+  openModal(`<div class="modal-h"><h3>Desistió de la compra</h3><p>${esc(ct.no)} · Lote ${esc(ct.lote)} · ${esc(nombreCliente(ct.clienteId))}</p></div>
+    <div class="modal-b">
+      <div class="form-grid">
+        <div class="field"><label>Fecha</label><input id="ds-fecha" type="date" value="${HOY_ISO}" max="${HOY_ISO}"></div>
+        <div class="field"><label>Motivo</label><select id="ds-motivo">
+          <option>No pudo seguir pagando</option><option>Cambió de opinión</option><option>Se pasó a otro lote</option><option>Problema con el terreno o la escritura</option><option>Otro</option></select></div>
+        <div class="field full"><label>Nota (qué se acordó con el cliente)</label><input id="ds-nota" placeholder="Ej. se le devuelve la mitad del enganche el 30/10"></div>
+      </div>
+      <div class="sect-t" style="margin-top:12px">Qué pasa al guardar</div>
+      <ul class="hint" style="margin:0;padding-left:18px">${(sim.avisos||[]).map(a=>`<li>${esc(a)}</li>`).join('')}<li>Sale de Cobranza, de los recordatorios de WhatsApp y de las comisiones pendientes. Queda en Contratos con el filtro «Desistieron».</li></ul>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" style="background:#B0562F" onclick="guardarDesistir('${ct.id}')">Marcar como desistido</button></div>`);
+}
+async function guardarDesistir(id){
+  const ct=getContrato(id); if(!ct) return;
+  const fecha=v('ds-fecha')||HOY_ISO, motivo=v('ds-motivo'), nota=v('ds-nota').trim();
+  if(!confirm(`${ct.no} · ${nombreCliente(ct.clienteId)} desiste de la compra del lote ${ct.lote}. El lote vuelve a inventario. ¿Seguir?`)) return;
+  if(typeof hayBase==='function'&&hayBase()){ const r=await conBoton(()=>sbEstadoContrato(ct.id,'desistido','disponible')); if(!r||!r.ok) return; }
+  try{ if(typeof registrarDesistimiento==='function') registrarDesistimiento(ct.id,{motivo,fecha,nota}); else { ct.estado='desistido'; ct.desistimiento={fecha,motivo,nota}; } }
+  catch(e){ toast(e.message,6000,true); return; }
+  await registrarGestion(ct.id,'Bitácora Socios','Contactado',`Desistió de la compra · ${motivo}${nota?' · '+nota:''} · lo registró ${(window.__user&&window.__user.name)||''}`);
+  closeModal(); toast(ct.no+' marcado como desistido · el lote '+ct.lote+' vuelve a estar disponible',6000);
+  if(typeof reindexar==='function') reindexar(); pintarContrato(); if(typeof traerCartera==='function') traerCartera();
+}
+async function revertirDesistir(id){
+  const ct=getContrato(id); if(!ct) return;
+  const motivo=prompt('¿Por qué vuelve a estar vigente? (queda en la bitácora)'); if(motivo===null) return;
+  if(typeof hayBase==='function'&&hayBase()){ const r=await conBoton(()=>sbEstadoContrato(ct.id,'activo','vendido')); if(!r||!r.ok) return; }
+  try{ if(typeof revertirDesistimiento==='function') revertirDesistimiento(ct.id,motivo||'sin motivo'); else ct.estado='aprobado'; }
+  catch(e){ toast(e.message,6000,true); return; }
+  await registrarGestion(ct.id,'Bitácora Socios','Contactado',`Desistimiento revertido · ${motivo||'sin motivo'}`);
+  toast(ct.no+' vuelve a estar vigente'); if(typeof reindexar==='function') reindexar(); pintarContrato(); if(typeof traerCartera==='function') traerCartera();
+}
 function modalVendedorContrato(id){
   const ct=getContrato(id); if(!ct) return;
   const opts=vendedores();
@@ -3555,8 +3597,8 @@ function pintarContrato(){
   const ct=getContrato(drawerCt); if(!ct)return;
   const ec=estadoCuenta(ct), cli=getCliente(ct.clienteId);
   let h=drawerHead(ct.no,`Lote ${ct.lote} · ${esc(nombreCliente(ct.clienteId))}`,
-    ct.estado==='aprobado'?'b-ok':(ct.estado==='anulado'?'b-mora':'b-pend'),
-    {aprobado:'Aprobado',en_aprobacion:'En aprobación',anulado:'Anulado'}[ct.estado]||ct.estado);
+    ct.estado==='aprobado'?'b-ok':(ct.estado==='anulado'||ct.estado==='desistido'?'b-mora':'b-pend'),
+    {aprobado:'Aprobado',en_aprobacion:'En aprobación',anulado:'Anulado',desistido:'Desistió de la compra'}[ct.estado]||ct.estado);
   h+=`<div class="tabs">`+[['ficha','Ficha'],['cuenta','Estado de cuenta'],['gestiones','Gestiones'],['docs','Documentos']]
     .map(([k,l])=>`<button class="tab ${drawerTab===k?'active':''}" onclick="drawerTab='${k}';pintarContrato()">${l}</button>`).join('')+`</div>`;
   h+=`<div class="drawer-b">`;
@@ -3564,7 +3606,13 @@ function pintarContrato(){
      un pago (con su boleta) y anotar una gestión. */
   if(ct.estado==='aprobado')
     h+=`<div class="btn-row drawer-acciones" style="margin:0 0 14px">${['vendedor','practicante','consulta'].includes(ROLE)?'':`<button class="btn btn-primary btn-sm" onclick="modalPago('${ct.id}')">＋ Aplicar pago</button>`}
-      <button class="btn btn-ghost btn-sm" onclick="modalGestion('${ct.id}')">＋ Registrar gestión</button></div>`;
+      <button class="btn btn-ghost btn-sm" onclick="modalGestion('${ct.id}')">＋ Registrar gestión</button>
+      ${['admin','gerencia','financiero'].includes(ROLE)?`<button class="btn btn-ghost btn-sm" style="margin-left:auto;color:#B0562F" onclick="modalDesistir('${ct.id}')">Desistió de la compra</button>`:''}</div>`;
+  if(ct.estado==='desistido'){
+    const d=ct.desistimiento||{};
+    h+=`<div class="aviso-err" style="margin:0 0 14px"><b>El cliente desistió de la compra</b>${d.fecha?' el '+fmtD(d.fecha):''}${d.motivo?' · '+esc(d.motivo):''}${d.nota?'<br>'+esc(d.nota):''}<br>El lote volvió al inventario; lo pagado queda anotado y no se persigue lo pendiente.
+      ${['admin','gerencia'].includes(ROLE)?`<div style="margin-top:8px"><button class="btn btn-ghost btn-sm" onclick="revertirDesistir('${ct.id}')">Revertir · el cliente sigue</button></div>`:''}</div>`;
+  }
 
   if(drawerTab==='ficha'){
     h+=`<div class="sect-t">Datos del contrato</div><div class="fgrid">
