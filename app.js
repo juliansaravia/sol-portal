@@ -874,10 +874,21 @@ const FASES_SIN_PLANO=[];
 /* Está en el plano si es de FASE 1 o FASE 2 según la base (los agrícolas, no). La letra ya no decide: L-08 y L-09 son de Fase 2 en el inventario. */
 const enPlano=l=>!!l&&(!l.fase||(/^FASE\s*(1|2|I|II)$/i.test(String(l.fase).trim())&&!FASES_SIN_PLANO.includes(String(l.fase).toUpperCase())));
 const esFase2=l=>!!l&&(/^FASE\s*(2|II)$/i.test(String(l.fase||'').trim())||(!l.fase&&fasePlano(l.codigo)==='FASE 2'));
+/* La Esperanza tiene dos planos: el residencial (Fases 1 y 2) y el de los
+   agrolotes (assets/plano-agro.jpg, 16 sept 2026). Se elige con un chip. */
+let mapaRLE='res';
+const esAgro=l=>!!l&&/AGR/i.test(String(l.fase||''));
+function planoActivo(){
+  if(mapaRLE==='agro'&&window.PLAN_AGRO) return {src:window.PLAN_AGRO.src, clip:{x:0,y:0,w:window.PLAN_AGRO.w,h:window.PLAN_AGRO.h}, shapes:window.LOT_SHAPE_AGRO||{}, agro:true};
+  return {src:'assets/plano.jpg', clip:RLE_CLIP||window.PLAN_CLIP, shapes:window.LOT_SHAPE||{}, agro:false};
+}
+/* ¿Este lote va en el plano que se está viendo? */
+const enMapa=l=>mapaRLE==='agro'?esAgro(l):enPlano(l);
+function cambiarMapaRLE(m){ mapaRLE=m; geomLista=false; ubicando=null; renderInventario(); }
 function calcularGeometria(){
   if(geomLista) return;
   // 1) Geometría exacta medida del plano (assets/lotes-shape.js)
-  const S=window.LOT_SHAPE||{};
+  const PA=planoActivo(); const S=PA.shapes;
   const centro=p=>{ const n=p.length; return [p.reduce((a,q)=>a+q[0],0)/n, p.reduce((a,q)=>a+q[1],0)/n]; };
   /* 0) Contornos guardados en la base con «Ubicar lotes» (63): mandan. Una
         celda así reclamada deja de valer para el lote que el archivo del plano
@@ -886,13 +897,13 @@ function calcularGeometria(){
   DB.lotes.forEach(l=>{
     if(l.x0===undefined){ l.x0=l.x; l.y0=l.y; }   // posición del marcador (lotes-geo) como respaldo
     l.x=l.x0; l.y=l.y0; l.poly=null; l.exacto=false; l.deBase=false;
-    if(!enPlano(l)){ l.x=null; l.y=null; return; }
-    if(!l.polyDB) return;
+    if(!enMapa(l)){ l.x=null; l.y=null; return; }
+    if(!l.polyDB||PA.agro) return;
     const c=centro(l.polyDB); l.x=l.cx!=null?l.cx:c[0]; l.y=l.cy!=null?l.cy:c[1]; l.poly=l.polyDB; l.exacto=true; l.deBase=true; reclamadas.push(c);
   });
   const reclamada=(x,y)=>reclamadas.some(c=>Math.hypot(c[0]-x,c[1]-y)<4);
   DB.lotes.forEach(l=>{
-    if(!enPlano(l)||l.deBase) return;
+    if(!enMapa(l)||l.deBase) return;
     const s=S[l.codigo];
     if(s&&!reclamada(s.x,s.y)){ l.x=s.x; l.y=s.y; l.poly=s.p; l.exacto=true; }
     else if(l.x!=null&&reclamada(l.x,l.y)){ l.x=null; l.y=null; }   // su marcador cae en una celda que ya es de otro lote
@@ -903,7 +914,7 @@ function calcularGeometria(){
   const ocup=DB.lotes.filter(l=>l.poly&&l.poly.length>2).map(l=>[l.x,l.y]);
   const libre=c=>!ocup.some(o=>Math.hypot(o[0]-c.x,o[1]-c.y)<4);
   DB.lotes.forEach(l=>{
-    if(l.poly||l.x==null||!enPlano(l)||!esFase2(l)) return;
+    if(PA.agro||l.poly||l.x==null||!enMapa(l)||!esFase2(l)) return;
     const c=(window.CELDAS_F2||[]).find(c=>libre(c)&&dentro([l.x,l.y],c.p));
     if(c){ l.poly=c.p; l.x=c.x; l.y=c.y; l.exacto=true; ocup.push([c.x,c.y]); }
   });
@@ -966,15 +977,17 @@ function renderInventario(){
     C().innerHTML=h; return;
   }
   if(typeof calcularGeometria==='function') calcularGeometria();
-  const conCoord=DB.lotes.filter(l=>l.x!=null&&enPlano(l)).length;
+  const conCoord=DB.lotes.filter(l=>l.x!=null&&enMapa(l)).length;
+  const hayAgro=!!window.PLAN_AGRO&&DB.lotes.some(esAgro);
   let h=`<div class="chips">`+
     [['todos','Todos'],['disponible','Disponibles'],['reservado','Reservados'],['vendido','Vendidos']].map(([k,l])=>
       `<button class="chip ${filtro===k?'active':''}" onclick="setFiltro('${k}')">${l}</button>`).join('')+
     `<input id="qmap" class="chip" style="min-width:220px" placeholder="Buscar lote o cliente…" value="${esc(busqueda)}" oninput="busqueda=this.value;pintarMapa()">
-     ${['admin','gerencia'].includes(ROLE)?`<button class="chip ${ubicando?'active':''}" onclick="ubicando=ubicando?null:{};renderInventario()">${ubicando?'Terminar de ubicar':'Ubicar lotes'}</button>`:''}</div>`;
+     ${hayAgro?`<span style="width:100%"></span><button class="chip ${mapaRLE!=='agro'?'active':''}" onclick="cambiarMapaRLE('res')">Residencial</button><button class="chip ${mapaRLE==='agro'?'active':''}" onclick="cambiarMapaRLE('agro')">Agrícola</button>`:''}
+     ${['admin','gerencia'].includes(ROLE)&&mapaRLE!=='agro'?`<button class="chip ${ubicando?'active':''}" onclick="ubicando=ubicando?null:{};renderInventario()">${ubicando?'Terminar de ubicar':'Ubicar lotes'}</button>`:''}</div>`;
   h+=`<div class="map-legend">`+Object.keys(ESTADO_MAP).map(k=>
       `<span><i class="dot" style="background:${ESTADO_MAP[k].fill}"></i>${ESTADO_MAP[k].label}</span>`).join('')+
-      `<span style="margin-left:auto;color:var(--muted)">${conCoord} de ${DB.lotes.length} lotes ubicados en el plano</span></div>`;
+      `<span style="margin-left:auto;color:var(--muted)">${conCoord} de ${DB.lotes.filter(l=>mapaRLE==='agro'?esAgro(l):!esAgro(l)).length} lotes ubicados en el plano${hayAgro?(mapaRLE==='agro'?' agrícola':' residencial'):''}</span></div>`;
   if(ubicando) h+=`<div class="aviso-info" style="margin:0 0 10px">Modo ubicar: tocá una celda de Fase 2 (las grises están sin dueño) y elegí qué lote es. Si un lote está en la celda equivocada, tocá la celda correcta y elegilo: se pasa. Queda guardado en la base para todos.</div>`;
   h+=`<div class="card"><div class="map-wrap">
       <svg id="mapSvg" preserveAspectRatio="xMidYMid meet"></svg>
@@ -988,7 +1001,8 @@ function renderInventario(){
   /* Lo que no está en el plano, por fase: los agrícolas son otro terreno
      (no un error), y los de Fase 2 sin ubicación esperan el plano con
      la numeración real de esa fase. */
-  const sin=DB.lotes.filter(l=>l.x==null||!enPlano(l));
+  /* Los del otro plano no se listan como «sin ubicación»: están en su propio plano. */
+  const sin=DB.lotes.filter(l=>(l.x==null||!enMapa(l))&&!(hayAgro&&(mapaRLE==='agro'?!esAgro(l):esAgro(l))));
   const grupos=new Map(); sin.forEach(l=>{ const k=String(l.fase||'Sin fase'); if(!grupos.has(k)) grupos.set(k,[]); grupos.get(k).push(l); });
   grupos.forEach((L,fase)=>{
     const agro=/AGR/i.test(fase);
@@ -1056,7 +1070,8 @@ function dibujarMapaImagen(pl){
   setViewBox(0,0,pl.w,pl.h); panZoom(svg); pintarMapa();
 }
 function dibujarMapa(){
-  if(RLE_CLIP) window.PLAN_CLIP=RLE_CLIP;   // volver al recorte de La Esperanza
+  if(!RLE_CLIP&&window.PLAN_CLIP) RLE_CLIP=window.PLAN_CLIP;   // el recorte del plano residencial, antes de que Hati lo pise
+  const PA=planoActivo(); window.PLAN_CLIP=PA.clip;
   const svg=document.getElementById('mapSvg'); if(!svg||!window.PLAN_CLIP)return;
   const clip=window.PLAN_CLIP, NS='http://www.w3.org/2000/svg';
   svg.innerHTML='';
@@ -1064,8 +1079,8 @@ function dibujarMapa(){
   img.setAttribute('x',clip.x);img.setAttribute('y',clip.y);
   img.setAttribute('width',clip.w);img.setAttribute('height',clip.h);
   img.setAttribute('preserveAspectRatio','none');
-  img.setAttribute('href','assets/plano.jpg');
-  img.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href','assets/plano.jpg');
+  img.setAttribute('href',PA.src);
+  img.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href',PA.src);
   svg.appendChild(img);
   calcularGeometria();
   DB.lotes.forEach(l=>{
@@ -1075,7 +1090,7 @@ function dibujarMapa(){
     if(l.poly&&l.poly.length>2){                       // contorno exacto del plano
       r=document.createElementNS(NS,'polygon');
       r.setAttribute('points', l.poly.map(p=>p.join(',')).join(' '));
-    } else if(esFase2(l)){                              // Fase 2: sólo se conoce el centro → marcador redondo sobre el lote
+    } else if(esFase2(l)&&!PA.agro){                    // Fase 2: sólo se conoce el centro → marcador redondo sobre el lote
       r=document.createElementNS(NS,'circle');
       r.setAttribute('cx',l.x); r.setAttribute('cy',l.y); r.setAttribute('r',Math.max(6,Math.min(11,(l.w||17)*0.36)));
     } else {                                            // respaldo: rectángulo estimado
@@ -1099,7 +1114,7 @@ function dibujarMapa(){
   });
   /* Celdas de Fase 2 que ningún lote ocupa: contorno gris. En modo ubicar se tocan. */
   const ocupadas=DB.lotes.filter(l=>l.poly&&l.poly.length>2).map(l=>[l.x,l.y]);
-  (window.CELDAS_F2||[]).forEach(c=>{
+  (PA.agro?[]:(window.CELDAS_F2||[])).forEach(c=>{
     if(ocupadas.some(o=>Math.hypot(o[0]-c.x,o[1]-c.y)<4)) return;
     const r=document.createElementNS(NS,'polygon'); r.setAttribute('points',c.p.map(p=>p.join(',')).join(' '));
     r.setAttribute('fill',ubicando?'#9aa':'#fff'); r.setAttribute('fill-opacity',ubicando?0.35:0.01); r.setAttribute('stroke','#8a8f8c'); r.setAttribute('stroke-width',ubicando?1:0.5); r.setAttribute('stroke-dasharray','3 2');
@@ -2677,7 +2692,7 @@ function cartaCartera(){
     const accion = ec.enMora ? (dias>60?'Escalar':'Gestionar') : (ec.prox?'Recordar':'—');
     h+=`<tr class="click" onclick="abrirContrato('${c.id}','cuenta')"><td><b>${c.no}</b></td>
       <td>${esc(cli)}</td><td>${esc(c.lote)}</td>
-      <td class="num">${ec.montoVencido?`<span style="color:var(--mora);font-weight:600">${Qk(ec.montoVencido)}</span>`:'—'}</td>
+      <td class="num">${ec.montoVencido?`<span style="color:var(--mora);font-weight:600">${Qk(ec.montoVencido)}</span>`:'—'}${(()=>{const n=DB.pagos.filter(p=>mismoId(p.contratoId,c.id)&&p.estado==='registrado').length; return n?`<div class="hint" title="Hay boleta registrada que Finanzas aún no confirma: hasta entonces la cuota sigue vencida">${n} boleta(s) por confirmar</div>`:'';})()}</td>
       <td class="num">${dias||'—'}</td><td class="num">${ec.vencidas||'—'}</td><td class="num">${Qk(ec.saldo)}</td>
       <td>${ult?esc(ult):'<span class="hint">Sin gestión</span>'}</td><td>${c.vendedor?esc(c.vendedor):'<span class="hint">Sin vendedor</span>'}</td>
       <td>${accion==='—'?'—':`<a href="#" onclick="event.stopPropagation();abrirContrato('${c.id}','gestiones');return false;">${accion} ›</a>`}</td></tr>`;});
