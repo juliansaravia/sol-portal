@@ -1,8 +1,8 @@
 /* ============================================================
    SUITE SOL INMOBILIARIA — motor de la aplicación
    ============================================================ */
-/* El símbolo lo pone el proyecto activo: Q en La Esperanza, US$ en Hati. */
-const SIMBOLO = () => (typeof PROYECTO !== 'undefined' && PROYECTO && PROYECTO.moneda === 'USD') ? 'US$ ' : 'Q ';
+/* El símbolo lo pone el proyecto activo: Q en La Esperanza, USD en Hati (sin «$», 16 sept 2026). */
+const SIMBOLO = () => (typeof PROYECTO !== 'undefined' && PROYECTO && PROYECTO.moneda === 'USD') ? 'USD ' : 'Q ';
 const Q  = n => SIMBOLO() + (Math.round(n*100)/100).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2});
 const Qk = n => SIMBOLO() + Math.round(n).toLocaleString('es-GT');
 const QQ = n => 'Q ' + (Math.round(n*100)/100).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2});   // siempre quetzales
@@ -582,9 +582,12 @@ function pintarSelectorProyecto(){
   /* Con la base conectada sólo se ofrecen los proyectos que existen en ella
      (con id); uno sólo declarado en el portal dejaría todo en cero. */
   const remoto=typeof hayRemoto==='function'&&hayRemoto();
-  const lista=Object.values(PROYECTOS).filter(p=>p.activo!==false&&(!remoto||p.id!=null));
+  let lista=Object.values(PROYECTOS).filter(p=>p.activo!==false&&(!remoto||p.id!=null));
+  /* Cada quien ve sólo sus proyectos (persona_proyecto). Sin asignación, todos; administración siempre todos. */
+  const mios=(typeof SESION!=='undefined'&&SESION.persona&&SESION.persona.proyectos)||[];
+  if(remoto&&mios.length&&ROLE!=='admin'){ const f=lista.filter(p=>mios.map(String).includes(String(p.id))); if(f.length) lista=f; }
   if(remoto&&!lista.some(p=>p.codigo===PROYECTO_ACTIVO)&&lista.length){ PROYECTO_ACTIVO=lista[0].codigo; PROYECTO=PROYECTOS[PROYECTO_ACTIVO]; }
-  sel.innerHTML=lista.map(p=>`<option value="${esc(p.codigo)}" ${p.codigo===PROYECTO_ACTIVO?'selected':''}>${esc(p.corto||p.nombre)}${p.moneda==='USD'?' · US$':''}</option>`).join('');
+  sel.innerHTML=lista.map(p=>`<option value="${esc(p.codigo)}" ${p.codigo===PROYECTO_ACTIVO?'selected':''}>${esc(p.corto||p.nombre)}${p.moneda==='USD'?' · USD':''}</option>`).join('');
   const caja=sel.closest('.proyecto-sel'); if(caja) caja.style.display='';
 }
 async function cambiarProyecto(codigo){
@@ -594,7 +597,7 @@ async function cambiarProyecto(codigo){
   try{ localStorage.setItem('sol.proyecto', codigo); }catch(e){}
   aplicarProyecto();
   closeDrawer(); closeModal();
-  toast('Proyecto: ' + PROYECTO.corto + (PROYECTO.moneda==='USD'?' · montos en US$':''));
+  toast('Proyecto: ' + PROYECTO.corto + (PROYECTO.moneda==='USD'?' · montos en USD':''));
   setView(ROLES[ROLE]&&ROLES[ROLE].views.includes(vista)?vista:ROLES[ROLE].home);
   if(typeof traerCartera==='function') traerCartera();   // los giros de este proyecto
 }
@@ -862,11 +865,11 @@ const DEPTH_PX = 40, MAX_NEIGHBOR = 36;
 /* ¿Este lote está en el plano de assets/plano.png? Las manzanas A–L son
    Fase 1 y M–W Fase 2. Los agrícolas repiten códigos y no están acá. */
 const fasePlano=codigo=>String(codigo||'').charAt(0)<='L'?'FASE 1':'FASE 2';
-/* FASE 2 no se dibuja todavía (10 sept 2026): las etiquetas del plano en esa
-   zona están corruptas y la numeración no coincide con la del CRM, así que
-   pintarla ponía «vendido» y «disponible» en lotes que no son. Se dibuja
-   cuando llegue el DWG con la numeración real. */
-const FASES_SIN_PLANO=['FASE 2'];
+/* FASE 2 se dibuja desde el 16 sept 2026: sus marcadores (lotes-geo.js)
+   caen sobre los lotes del plano y la numeración M–W coincide con la de
+   las etiquetas. Los lotes son más anchos y más hondos que en Fase 1, así
+   que la geometría estimada se calibra por manzana (calcularGeometria). */
+const FASES_SIN_PLANO=[];
 const enPlano=l=>!!l&&(!l.fase||(String(l.fase).toUpperCase()===fasePlano(l.codigo)&&!FASES_SIN_PLANO.includes(String(l.fase).toUpperCase())));
 function calcularGeometria(){
   if(geomLista) return;
@@ -882,16 +885,23 @@ function calcularGeometria(){
   DB.lotes.filter(l=>l.x!=null&&!l.exacto).forEach(l=>{(by[l.manzana]=by[l.manzana]||[]).push(l);});
   Object.values(by).forEach(list=>{
     // ángulo mediano de la manzana (respaldo estable)
+    /* Radio de vecindad por manzana: Fase 1 mide ~17 px entre lotes; en
+       Fase 2 las manzanas M–R y U–W van de 26 a 39 px. Se toma la
+       distancia mediana al vecino más cercano y se le da holgura. */
+    const cerc=list.map(l=>Math.min(...list.filter(o=>o!==l).map(o=>Math.hypot(o.x-l.x,o.y-l.y)).concat([Infinity])));
+    const medCerc=cerc.filter(d=>isFinite(d)).length?mediana(cerc.filter(d=>isFinite(d))):17;
+    const MAXV=Math.min(56,Math.max(MAX_NEIGHBOR,medCerc*1.5));
+    const esF2=fasePlano((list[0]||{}).codigo)==='FASE 2';
     const angs=[];
     for(let i=1;i<list.length;i++){
       const a=list[i-1],b=list[i], d=Math.hypot(b.x-a.x,b.y-a.y);
-      if(d<MAX_NEIGHBOR) angs.push(norm(Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI));
+      if(d<MAXV) angs.push(norm(Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI));
     }
     const angMz = angs.length? mediana(angs) : -51.5;
     const spans=[];
     list.forEach(l=>{
       const cercanos=list.filter(o=>o!==l).map(o=>({o,d:Math.hypot(o.x-l.x,o.y-l.y)}))
-                         .filter(x=>x.d<MAX_NEIGHBOR).sort((a,b)=>a.d-b.d).slice(0,2);
+                         .filter(x=>x.d<MAXV).sort((a,b)=>a.d-b.d).slice(0,2);
       // solo vecinos alineados con la fila (descarta el de la fila de enfrente)
       const enFila=cercanos.filter(c=>{
         const a=norm(Math.atan2(c.o.y-l.y,c.o.x-l.x)*180/Math.PI);
@@ -903,10 +913,10 @@ function calcularGeometria(){
         l.w = Math.max(11, enFila[0].d*0.94);
         spans.push(enFila[0].d);
       } else { l.ang=angMz; l.w=null; }
-      l.h = DEPTH_PX;
     });
     const wMz = spans.length? mediana(spans)*0.94 : 17;
-    list.forEach(l=>{ if(l.w==null) l.w=wMz; });
+    /* Fondo: 15 m ≈ 40 px en Fase 1; en Fase 2 el fondo crece con el frente. */
+    list.forEach(l=>{ if(l.w==null) l.w=wMz; l.h = esF2 ? Math.min(64, Math.max(DEPTH_PX, l.w*1.9)) : DEPTH_PX; });
   });
   geomLista=true;
 }
@@ -2055,7 +2065,7 @@ function renderEquipo(){
       <td><b>${esc(p.nombre)}</b>${p.nota?`<div class="ec-obl">${esc(p.nota)}</div>`:''}</td>
       <td><span class="pill">${esc(p.codigo||'—')}</span></td>
       <td>${rolLabel(p.rol)}</td>
-      <td class="num">${cts.length}</td>
+      <td class="num">${cts.length?`<a href="#" onclick="event.preventDefault();modalContratosDe('${esc(p.nombre)}')" title="Ver qué contratos se le atribuyen">${cts.length} ›</a>`:'0'}</td>
       <td class="num">${val?Qk(val):'—'}</td>
       <td class="num">${com?Q(com):(cts.length?`<span title="Su rol no genera comisión" style="color:#B0562F">sin comisión</span>`:'—')}</td>
       <td>${p.activo
@@ -2101,6 +2111,18 @@ function renderEquipo(){
 /* Filtros de la tabla de Equipo. A nivel superior, para que los
    onclick los encuentren siempre (y la prueba de botones también). */
 function setEq(k,v){ window.__eqFiltro={...(window.__eqFiltro||{rol:'',estado:'',q:''}),[k]:v}; renderEquipo(); }
+/* Qué contratos tiene a su nombre una persona (los que suman en «Vendido»). */
+function modalContratosDe(nombre){
+  const p=buscarPersona(nombre); const cts=contratosDe(nombre).slice().sort((a,b)=>String(b.fecha||'').localeCompare(String(a.fecha||'')));
+  if(!cts.length) return toast('No tiene contratos a su nombre',4000,true);
+  const val=cts.reduce((s,c)=>s+(c.precio||0),0);
+  openModal(`<div class="modal-h"><h3>Contratos de ${esc(nombre)}</h3><p>${cts.length} contrato(s) · ${Qk(val)} vendido${p&&!comisionaEn(p,HOY_ISO)?' · su rol de hoy no comisiona':''}</p></div>
+    <div class="modal-b" style="padding:0"><table class="data"><thead><tr><th>Contrato</th><th>Lote</th><th>Cliente</th><th>Fecha</th><th class="num">Precio</th><th>Estado</th></tr></thead><tbody>
+      ${cts.map(c=>`<tr class="click" onclick="closeModal();abrirContratoNo('${esc(c.no)}')" title="Abrir el contrato"><td><b>${esc(c.no)}</b> ›</td><td>${esc(c.lote||'')}</td><td>${esc(nombreCliente(c.clienteId))}</td><td>${fmtD(c.fecha)}</td><td class="num">${Qk(c.precio||0)}</td><td>${esc(c.estado||'')}</td></tr>`).join('')}
+    </tbody></table>
+    <div class="hint" style="padding:10px 12px">«Vendido» es la suma de los precios de estos contratos, no una comisión. Si alguno no es suyo, usá «Reasignar» o abrilo y cambiá el vendedor.</div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>`);
+}
 function modalPersona(id){
   const p=id?DB.equipo.find(x=>mismoId(x.id,id)):null;
   openModal(`<div class="modal-h"><h3>${p?'Editar persona':'Agregar persona'}</h3>
@@ -2127,6 +2149,9 @@ function modalPersona(id){
         <div style="display:flex;gap:8px"><input id="e-org" value="${esc(p?(p.organizacion||''):'')}" placeholder="Ej. Manus, NUO" style="flex:1">
         <input id="e-hasta" type="date" value="${esc(p&&p.accesoHasta?p.accesoHasta:'')}"></div>
         <div class="hint">Un externo siempre vence: ese día deja de poder entrar, solo. Para revisar UX/UI alcanza «Solo lectura».</div></div>
+      ${ROLE==='admin'&&typeof hayRemoto==='function'&&hayRemoto()?`<div class="field full"><label>Proyectos que ve</label>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;padding:6px 0">${Object.values(PROYECTOS).filter(x=>x.id!=null).map(x=>`<label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" class="e-proy" value="${x.id}" ${p&&(p.proyectos||[]).map(String).includes(String(x.id))?'checked':''}> ${esc(x.corto||x.nombre)}</label>`).join('')}</div>
+        <div class="hint">Sin ninguno marcado ve todos los proyectos. Con uno o más, en el portal sólo le aparecen esos (los de Hati no ven La Esperanza y al revés).</div></div>`:''}
       <div class="field full"><label>Vendió hasta</label>
         <input id="e-vhasta" type="date" value="${esc(p&&p.vendedorHasta?p.vendedorHasta:'')}">
         <div class="hint">Solo si vendió y después cambió de puesto: sus ventas con fecha hasta ese día
@@ -2145,6 +2170,13 @@ async function guardarEquipo(id){
     externo:v('e-ext')==='1', organizacion:v('e-org').trim()||null, accesoHasta:v('e-hasta')||null}));
   if(!r) return;
   if(antes&&antes!==nom) await reasignarContratos(antes,nom);   // mantiene el historial ligado
+  /* Proyectos que ve (persona_proyecto): sólo administración, sólo con base. */
+  const cajas=[...document.querySelectorAll('.e-proy')];
+  if(cajas.length&&typeof sbAsignarProyectos==='function'){
+    const pid=id||(r&&(r.id||(r.dato&&r.dato.id)))||((DB.equipo.find(x=>x.nombre===nom)||{}).id);
+    const ids=cajas.filter(c=>c.checked).map(c=>c.value);
+    if(pid){ const rp=await sbAsignarProyectos(pid,ids); if(rp&&rp.ok){ const per=DB.equipo.find(x=>mismoId(x.id,pid)); if(per) per.proyectos=ids; } else if(rp) toast(rp.error,7000,true); }
+  }
   closeModal(); toast('Equipo actualizado ✓'); renderEquipo();
 }
 /* ---------- Restablecer contraseña · solo administración ----------
@@ -3977,7 +4009,7 @@ function pistaAplicacion(id){
 }
 function pistaMonedaPago(){
   const e=document.getElementById('p-monedaPista'); if(!e) return; const tc=PROYECTO.tipoCambio||7.8; const m=+v('p-monto')||0;
-  e.textContent = v('p-moneda')==='GTQ' ? `Q ${m.toLocaleString('es-GT',{minimumFractionDigits:2})} ÷ ${tc} = US$ ${(m/tc).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2})} al contrato` : 'El contrato está en US$.';
+  e.textContent = v('p-moneda')==='GTQ' ? `Q ${m.toLocaleString('es-GT',{minimumFractionDigits:2})} ÷ ${tc} = USD ${(m/tc).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2})} al contrato` : 'El contrato está en US$.';
 }
 async function guardarPago(id){
   let monto=+v('p-monto'); if(!monto||monto<=0){toast('Ingresa un monto válido');return;}

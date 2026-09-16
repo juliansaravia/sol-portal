@@ -653,6 +653,15 @@ async function sbIntegrante(contrato_id, nombre, cargo) {
 /* ============================================================
    EQUIPO
    ============================================================ */
+/* Qué proyectos ve una persona: se reemplaza la lista completa (política pp_admin: sólo administración). */
+async function sbAsignarProyectos(persona_id, proyecto_ids) {
+  return escribir('asignar los proyectos', async () => {
+    oExplota(await SB.from('persona_proyecto').delete().eq('persona_id', Number(persona_id)).select('persona_id'));
+    const filas = (proyecto_ids || []).map(id => ({ persona_id: Number(persona_id), proyecto_id: Number(id) }));
+    if (filas.length) oExplota(await SB.from('persona_proyecto').insert(filas).select('persona_id'));
+    return { persona_id, proyectos: filas.length };
+  });
+}
 async function sbGuardarPersona(datos) {
   return escribir('guardar la persona', async () => {
     /* El correo y el rol son llaves de acceso, no datos de contacto:

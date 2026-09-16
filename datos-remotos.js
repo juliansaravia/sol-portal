@@ -71,7 +71,7 @@ async function cargarDesdeSupabase() {
 
        Los pagos se quedan acá: son 738 y de ellos depende cuánto lleva
        recaudado cada contrato, que es de lo primero que se mira. */
-    const [lotes, contratos, clientes, pagos, equipo, documentos, comisiones, adjuntos, recibos, liquidaciones, requeridos, proyectos] = await Promise.all([
+    const [lotes, contratos, clientes, pagos, equipo, documentos, comisiones, adjuntos, recibos, liquidaciones, requeridos, proyectos, personaProyectos] = await Promise.all([
       todas('v_inventario', 'proyecto_id,proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado,centro_x,centro_y'),
       conRespaldo('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,origen,banco,boleta,lote_id,cliente_id,persona_id',
                   'expediente_de,modalidad'),
@@ -102,7 +102,9 @@ async function cargarDesdeSupabase() {
          lista de respaldo — no se cae por un catálogo que no está. */
       opcional('documento_requerido', 'codigo,nombre,descripcion,bucket,caras,obligatorio,orden'),
       /* Los proyectos con sus reglas y su moneda (56_hati_y_moneda.sql trae moneda/tipo_cambio). */
-      conRespaldo('proyecto', 'id,codigo,nombre,municipio,departamento,tasa_mensual,tasa_mora,enganche_minimo,plazos,comision_pct', 'moneda,tipo_cambio,metodo_interes,tasa_anual,enganche_pct,expediente_robusto')
+      conRespaldo('proyecto', 'id,codigo,nombre,municipio,departamento,tasa_mensual,tasa_mora,enganche_minimo,plazos,comision_pct', 'moneda,tipo_cambio,metodo_interes,tasa_anual,enganche_pct,expediente_robusto'),
+      /* Proyectos que ve cada persona (persona_proyecto): sin filas, ve todos. */
+      opcional('persona_proyecto', 'persona_id,proyecto_id')
     ]);
 
     const porLote = new Map(lotes.map(l => [l.lote_id, l]));
@@ -181,8 +183,12 @@ async function cargarDesdeSupabase() {
       // Hasta cuándo fue vendedor, si cambió de puesto (26_vendedor_hasta.sql)
       vendedorHasta: _fecha(p.vendedor_hasta) || null,
       // Excepción de segundo factor (39)
-      exige2fa: p.exige_2fa !== false
+      exige2fa: p.exige_2fa !== false,
+      // Proyectos asignados (persona_proyecto); vacío = todos
+      proyectos: (personaProyectos || []).filter(pp => pp.persona_id === p.id).map(pp => String(pp.proyecto_id))
     }));
+    if (typeof SESION !== 'undefined' && SESION.persona && SESION.persona.id != null)
+      SESION.persona.proyectos = (personaProyectos || []).filter(pp => String(pp.persona_id) === String(SESION.persona.id)).map(pp => String(pp.proyecto_id));
 
     /* Cada proyecto de la base entra a PROYECTOS con sus reglas; el portal
        recorta lotes y contratos al activo (aplicarProyecto en app.js). */
