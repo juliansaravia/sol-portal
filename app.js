@@ -3701,7 +3701,7 @@ function pintarContrato(){
          primeros no se genera el contrato. */
       const reqs=requeridosPara(ct,(DB.documentosRequeridos&&DB.documentosRequeridos.length?DB.documentosRequeridos.filter(r=>r.obligatorio):DOCS_REQ().filter(r=>r.obligatorio))).slice().sort((a,b)=>ordenFlujo(a.codigo)-ordenFlujo(b.codigo));
       const pre=previosAlContrato(ct);
-      const ds=(typeof documentosExpediente==='function'?documentosExpediente(ct):documentosDe(ct.id)); const conArchivo=t=>ds.filter(d=>d.tipo===t&&d.bucket&&d.ruta).reduce((n,d)=>n+(d.cara==='ambas'?2:1),0);
+      const ds=(typeof documentosExpediente==='function'?documentosExpediente(ct):documentosDe(ct.id)); const conArchivo=t=>ds.filter(d=>d.tipo===t&&d.bucket&&d.ruta).reduce((n,d)=>n+(typeof carasDe==='function'?carasDe(d):(d.cara==='ambas'?2:1)),0);
       const filas=reqs.map(r=>({...r, tiene:conArchivo(r.codigo), ok:conArchivo(r.codigo)>=(r.caras||1)}));
       const completo=filas.every(f=>f.ok);
       h+=`<div class="card" style="margin:0 0 14px;border-left:3px solid ${completo?'var(--green)':'var(--gold)'}"><div class="card-b">

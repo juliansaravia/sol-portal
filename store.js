@@ -847,6 +847,16 @@ function esContado(ct) {
   const plan = ct.plan || planFinanciamiento(ct.precio, ct.enganche != null ? ct.enganche : ENGANCHE_MIN, ct.plazo || 60, ct.tasa);
   return !!plan && plan.saldo <= 0;
 }
+/* Cuántas caras cubre un archivo: un PDF escaneado trae las dos caras del DPI en
+   una sola pieza, igual que un escaneo marcado como 'ambas' (16 sept 2026). */
+function carasDe(d) {
+  if (!d) return 0;
+  if (d.cara === 'ambas') return 2;
+  const esPdf = /pdf$/i.test(String(d.mime || '')) || /\.pdf$/i.test(String(d.ruta || d.nombre || ''));
+  return esPdf ? 2 : 1;
+}
+/* Contrato histórico: entró por Excel/CRM o se registró como histórico (sin origen de portal). */
+const esHistoricoCt = ct => !!ct && (!!ct.historico || !ct.origen);
 function requeridosPara(ct, reqs) {
   const P = (typeof PROYECTO !== 'undefined' && PROYECTO) || {};
   reqs = (reqs || []).slice();
@@ -858,6 +868,8 @@ function requeridosPara(ct, reqs) {
   return reqs.filter(r => {
     if (r.codigo === 'dpi_pariente') return !!ct.origen && String(ct.fecha || '') >= EXIGE_DPI_PARIENTE_DESDE;
     if (r.codigo === 'plan_pagos')   return !esContado(ct);
+    /* Históricos: sin DPI del cónyuge ni constancia de ingresos (16 sept 2026). */
+    if (esHistoricoCt(ct) && (r.codigo === 'dpi_conyuge' || r.codigo === 'constancia_ingresos')) return false;
     return true;
   });
 }

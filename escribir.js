@@ -578,6 +578,8 @@ async function sbSubirDocumento(contrato_id, codigo, archivo, cara) {
       .select('codigo,nombre,bucket,caras').eq('codigo', codigo).maybeSingle());
     if (!reqs) throw new Error(`«${codigo}» no está en el catálogo de documentos.`);
 
+    /* Un PDF de un documento de dos caras trae las dos: queda marcado 'ambas' (16 sept 2026). */
+    if (!cara && (reqs.caras || 1) > 1 && tipo === 'application/pdf') cara = 'ambas';
     const tope = TOPE[reqs.bucket] || 10485760;
     if (archivo.size > tope)
       throw new Error(`El archivo pesa ${(archivo.size/1048576).toFixed(1)} MB y el máximo es `

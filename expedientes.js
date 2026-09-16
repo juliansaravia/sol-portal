@@ -33,7 +33,7 @@ function faltantesDe(ct) {
      portal anotaba nombres (`pendiente:dpi_frente.pdf`) y el expediente
      se daba por completo con papeles que nadie había subido. */
   /* Un escaneo con las dos caras en una hoja (cara = 'ambas') vale por dos. */
-  const conArchivo = t => docs.filter(d => d.tipo === t && d.bucket && d.ruta).reduce((n, d) => n + (d.cara === 'ambas' ? 2 : 1), 0);
+  const conArchivo = t => docs.filter(d => d.tipo === t && d.bucket && d.ruta).reduce((n, d) => n + (typeof carasDe === 'function' ? carasDe(d) : (d.cara === 'ambas' ? 2 : 1)), 0);
 
   /* Qué se exige lo dice el catálogo de la base. La lista de aquí abajo
      es el respaldo para cuando el portal corre sin conexión. */
@@ -269,15 +269,17 @@ function verExpediente(id) {
 
   /* Lo obligatorio, y si está o no. Un expediente se lee por lo que le
      falta, no por lo que tiene. */
-  const reqs = (typeof DB !== 'undefined' && DB.documentosRequeridos && DB.documentosRequeridos.length)
+  const reqsBase = (typeof DB !== 'undefined' && DB.documentosRequeridos && DB.documentosRequeridos.length)
     ? DB.documentosRequeridos
     : [{codigo:'dpi',nombre:'DPI del titular',caras:2,obligatorio:true},
        {codigo:'contrato',nombre:'Contrato firmado',caras:1,obligatorio:true},
        {codigo:'plan_pagos',nombre:'Plan de pagos firmado',caras:1,obligatorio:true}];
+  /* Lo que se le pide a ESTE contrato (histórico, contado, robusto…), no el catálogo entero. */
+  const reqs = typeof requeridosPara === 'function' ? requeridosPara(ct, reqsBase) : reqsBase;
 
   h += `<div class="card-b" style="padding:0"><table class="data"><tbody>`;
   for (const r of reqs) {
-    const hay = conArchivo.filter(d => d.tipo === r.codigo).length;
+    const hay = conArchivo.filter(d => d.tipo === r.codigo).reduce((n, d) => n + (typeof carasDe === 'function' ? carasDe(d) : 1), 0);
     const caras = r.caras || 1;
     const listo = hay >= caras;
     h += `<tr>
