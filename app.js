@@ -2309,6 +2309,47 @@ async function reactivarPersona(id){
 /* Un contrato, un vendedor: los históricos llegaron sin responsable y
    «Asignarlos» de Equipo los manda todos al mismo. Acá se pone uno a uno,
    desde la ficha. Con él va la comisión y el seguimiento. */
+/* El cliente se pasa a otro lote: el contrato, sus pagos y su historial se quedan. */
+function modalCambiarLote(id){
+  const ct=getContrato(id); if(!ct) return;
+  const libres=(DB.todosLotes||DB.lotes).filter(l=>l.estado==='disponible'&&(!ct.proyecto_id||!l.proyecto_id||String(l.proyecto_id)===String(ct.proyecto_id)))
+    .sort((a,b)=>String(a.fase||'').localeCompare(String(b.fase||''))||String(a.codigo).localeCompare(String(b.codigo),undefined,{numeric:true}));
+  if(!libres.length) return toast('No hay lotes disponibles en este proyecto',5000,true);
+  openModal(`<div class="modal-h"><h3>Cambiar de lote</h3><p>${esc(ct.no)} · hoy en ${esc(ct.lote)} · ${esc(nombreCliente(ct.clienteId))}</p></div>
+    <div class="modal-b">
+      <div class="form-grid">
+        <div class="field"><label>Lote nuevo</label><select id="cl-lote" onchange="pistaCambiarLote('${ct.id}')">
+          ${libres.map(l=>`<option value="${l.id}" data-precio="${l.precio||0}">${esc(l.codigo)}${l.fase?' · '+esc(l.fase):''}${l.precio?' · lista '+Q(l.precio):''}</option>`).join('')}</select></div>
+        <div class="field"><label>Precio de venta</label><input id="cl-precio" type="number" step="0.01" min="1" value="${ct.precio||''}"><div class="hint" id="cl-pista"></div></div>
+      </div>
+      <div class="hint">El lote ${esc(ct.lote)} vuelve a disponible y el nuevo queda vendido. Los pagos, recibos y bitácora se quedan en el contrato. Si el precio cambia, las cuotas del saldo se rehacen con el mismo enganche, plazo, tasa y fechas, y los pagos confirmados se vuelven a aplicar.</div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="cambiarLoteContrato('${ct.id}')">Cambiar lote</button></div>`);
+  pistaCambiarLote(ct.id);
+}
+function pistaCambiarLote(id){
+  const ct=getContrato(id), sel=document.getElementById('cl-lote'), e=document.getElementById('cl-pista'); if(!ct||!sel||!e) return;
+  const op=sel.options[sel.selectedIndex]; const lista=+((op&&op.dataset.precio)||0);
+  e.textContent = lista ? `Precio de lista del ${op.textContent.split(' ·')[0]}: ${Q(lista)} · el contrato hoy dice ${Q(ct.precio||0)}.` : `El contrato hoy dice ${Q(ct.precio||0)}.`;
+}
+async function cambiarLoteContrato(id){
+  const ct=getContrato(id); if(!ct) return;
+  const loteId=v('cl-lote'), precio=+v('cl-precio'); if(!loteId) return toast('Elegí el lote',4000,true);
+  if(!(precio>0)) return toast('El precio debe ser mayor que cero',4000,true);
+  if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se puede cambiar el lote',5000,true);
+  const nuevo=(DB.todosLotes||DB.lotes).find(l=>String(l.id)===String(loteId)); const cod=nuevo?nuevo.codigo:loteId;
+  if(!confirm(`Pasar ${ct.no} de ${ct.lote} a ${cod}${precio!==+ct.precio?` con precio ${Q(precio)} (antes ${Q(ct.precio)})`:''}. ¿Seguir?`)) return;
+  const r=await conBoton(()=>sbCambiarLote(id,loteId,precio)); if(!r||!r.ok) return;
+  const d=r.dato||{};
+  anotar('contrato.lote', ct.no+' · '+ct.lote+' → '+cod);
+  await registrarGestion(id,'Bitácora Socios','Contactado',`Cambio de lote: ${ct.lote} → ${cod}${precio!==+ct.precio?` · precio ${Q(precio)}`:''} · lo hizo ${(window.__user&&window.__user.name)||''}`);
+  closeModal(); toast(`${ct.no} ahora en ${d.a||cod} · saldo ${Q(+d.saldo||0)}`);
+  /* Lotes y contratos de nuevo desde la base (el lote viejo queda libre, el nuevo vendido). */
+  if(typeof cargarDesdeSupabase==='function'){ await cargarDesdeSupabase(); DB.todosLotes=null; DB.todosContratos=null; if(typeof aplicarProyecto==='function') aplicarProyecto(); }
+  await traerCartera();
+  if(typeof pintarContrato==='function') pintarContrato();
+}
 function modalVendedorContrato(id){
   const ct=getContrato(id); if(!ct) return;
   const opts=vendedores();
@@ -3347,7 +3388,8 @@ function pintarContrato(){
     h+=`<div class="sect-t">Datos del contrato</div><div class="fgrid">
       <div><div class="f-lbl">No. contrato</div><div class="f-val">${ct.no}</div></div>
       <div><div class="f-lbl">Fecha</div><div class="f-val">${fmtD(ct.fecha)}</div></div>
-      <div><div class="f-lbl">Lote</div><div class="f-val">${ct.lote}</div></div>
+      <div><div class="f-lbl">Lote</div><div class="f-val">${ct.lote}
+        ${PUEDE_DIFERIR()&&ct.estado!=='anulado'&&ct.loteId?`<button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="modalCambiarLote('${ct.id}')">Cambiar</button>`:''}</div></div>
       <div><div class="f-lbl">Precio de venta</div><div class="f-val">${Q(ct.precio)}</div></div>
       <div><div class="f-lbl">Enganche</div><div class="f-val">${Q(ct.enganche!=null?ct.enganche:((ct.plan||{}).enganche||0))}
         ${PUEDE_DIFERIR()&&ct.estado!=='anulado'&&!/contado_diferido|desmembrado/.test(ct.modalidad||'')?`<button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="modalEnganche('${ct.id}')">Editar</button>`:''}</div></div>
@@ -5034,6 +5076,7 @@ function modalEnganche(id){
     <div class="modal-b">
       <div class="sect-t">Plan del contrato · enganche, plazo y tasa</div>
       <div class="form-grid">
+        <div class="field"><label>Precio de venta (Q)</label><input id="en-precio" type="number" step="0.01" min="1" value="${ct.precio||''}" oninput="pistaPlan('${ct.id}')"></div>
         <div class="field"><label>Enganche (Q)</label><input id="en-monto" type="number" step="0.01" min="0" value="${eng}" oninput="pistaPlan('${ct.id}')"></div>
         <div class="field"><label>Pagado del enganche</label><input value="${Q(pagadoEng)}" readonly style="background:var(--tint)"></div>
         <div class="field"><label>Plazo del saldo (meses)</label><input id="en-plazo" type="number" min="1" max="120" value="${ct.plazo||60}" oninput="pistaPlan('${ct.id}')"></div>
@@ -5093,17 +5136,20 @@ async function exonerarInteres(id,exonerar){
 }
 function pistaPlan(id){
   const ct=getContrato(id); if(!ct) return;
-  const p=planFinanciamiento(ct.precio,+v('en-monto')||0,+v('en-plazo')||1,+v('en-tasa'));
+  const precio=+v('en-precio')||ct.precio;
+  const p=planFinanciamiento(precio,+v('en-monto')||0,+v('en-plazo')||1,+v('en-tasa'));
   const e=document.getElementById('en-cuotaPlan'); if(e) e.value=`${Q(p.cuota)} × ${p.plazo}`;
 }
 async function guardarPlan(id){
   const ct=getContrato(id); if(!ct) return;
   const eng=+v('en-monto'), plazo=+v('en-plazo'), tasa=+v('en-tasa'), primera=v('en-primeraSaldo')||null;
-  if(!(eng>=0)||eng>ct.precio) return toast('El enganche va de 0 al precio de venta',5000,true);
+  const precio=+v('en-precio')||ct.precio;
+  if(!(precio>0)) return toast('El precio debe ser mayor que cero',4000,true);
+  if(!(eng>=0)||eng>precio) return toast('El enganche va de 0 al precio de venta',5000,true);
   if(!(plazo>=1&&plazo<=120)) return toast('El plazo va de 1 a 120 meses',4000,true);
   if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se puede rehacer',5000,true);
-  if(!confirm(`Rehacer el plan de ${ct.no}: enganche ${Q(eng)}, ${plazo} cuotas ${tasa?'al 1.5% mensual':'sin interés'}${primera?' desde el '+fmtD(primera):''}. Los pagos confirmados se vuelven a aplicar. ¿Seguir?`)) return;
-  const r=await conBoton(()=>sbReestructurarPlan(id,eng,plazo,tasa,null,primera)); if(!r||!r.ok) return;
+  if(!confirm(`Rehacer el plan de ${ct.no}: ${precio!==+ct.precio?`precio ${Q(precio)} (antes ${Q(ct.precio)}), `:''}enganche ${Q(eng)}, ${plazo} cuotas ${tasa?'al 1.5% mensual':'sin interés'}${primera?' desde el '+fmtD(primera):''}. Los pagos confirmados se vuelven a aplicar. ¿Seguir?`)) return;
+  const r=await conBoton(()=>sbReestructurarPlan(id,eng,plazo,tasa,null,primera,precio)); if(!r||!r.ok) return;
   const d=r.dato||{};
   anotar('contrato.plan', ct.no+' · '+Q(eng)+' · '+plazo+'m · '+tasa);
   await registrarGestion(id,'Bitácora Socios','Contactado',`Plan rehecho: enganche ${Q(eng)}, ${plazo} cuotas de ${Q(d.cuota||0)} ${tasa?'al 1.5%':'sin interés'}${primera?' desde '+fmtD(primera):''} · lo hizo ${(window.__user&&window.__user.name)||''}`);

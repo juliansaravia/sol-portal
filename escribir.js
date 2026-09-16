@@ -327,14 +327,18 @@ async function sbUbicarLote(lote_id, x, y) {
   return escribir('ubicar el lote', async () =>
     oExplota(await SB.rpc('ubicar_lote', { p_lote_id: Number(lote_id), p_x: Number(x), p_y: Number(y) })));
 }
+async function sbCambiarLote(contrato_id, lote_id, precio) {
+  return escribir('cambiar el lote del contrato', async () =>
+    oExplota(await SB.rpc('cambiar_lote', { p_contrato_id: Number(contrato_id), p_lote_id: Number(lote_id), p_precio: precio != null ? Number(precio) : null })));
+}
 async function sbCambiarEnganche(contrato_id, enganche) {
   return escribir('cambiar el enganche', async () =>
     oExplota(await SB.rpc('cambiar_enganche', { p_contrato_id: Number(contrato_id), p_enganche: Number(enganche) })));
 }
-async function sbReestructurarPlan(contrato_id, enganche, plazo, tasa, modalidad, primera) {
+async function sbReestructurarPlan(contrato_id, enganche, plazo, tasa, modalidad, primera, precio) {
   return escribir('rehacer el plan', async () =>
     oExplota(await SB.rpc('reestructurar_plan', { p_contrato_id: Number(contrato_id), p_enganche: Number(enganche), p_plazo: Number(plazo),
-      p_tasa: Number(tasa), p_modalidad: modalidad || null, p_primera: primera || null })));
+      p_tasa: Number(tasa), p_modalidad: modalidad || null, p_primera: primera || null, p_precio: precio != null ? Number(precio) : null })));
 }
 async function sbExonerarInteres(contrato_id, desde, hasta, exonerar) {
   return escribir(exonerar ? 'exonerar el interés' : 'restituir el interés', async () =>
