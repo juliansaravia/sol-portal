@@ -7,7 +7,7 @@
    Supabase y los CDN nunca se guardan: datos y sesión siempre vivos.
    ============================================================ */
 'use strict';
-const CACHE = 'sol-portal-v1';
+const CACHE = 'sol-portal-v2';   // v2: plano nuevo (16 sept 2026)
 const NUCLEO = ['/', 'vendedor.html', 'admin.html', 'styles.css', 'app.js', 'store.js', 'escribir.js', 'datos-remotos.js',
   'supabase.js', 'mfa.js', 'comisiones.js', 'contrato.js', 'cotizacion.js', 'ocr.js', 'expedientes.js', 'permisos.js',
   'data.js', 'datos-julio.js', 'config-supabase.js', 'version.js', 'assets/lotes-geo.js', 'assets/lotes-shape.js', 'assets/celdas-f2.js',
