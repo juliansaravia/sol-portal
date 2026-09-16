@@ -871,7 +871,9 @@ const fasePlano=codigo=>String(codigo||'').charAt(0)<='L'?'FASE 1':'FASE 2';
    y varias manzanas son irregulares (P, Q, U–W), se pintan como marcadores
    redondos con el color del estado; el contorno llegará con el DWG. */
 const FASES_SIN_PLANO=[];
-const enPlano=l=>!!l&&(!l.fase||(String(l.fase).toUpperCase()===fasePlano(l.codigo)&&!FASES_SIN_PLANO.includes(String(l.fase).toUpperCase())));
+/* Está en el plano si es de FASE 1 o FASE 2 según la base (los agrícolas, no). La letra ya no decide: L-08 y L-09 son de Fase 2 en el inventario. */
+const enPlano=l=>!!l&&(!l.fase||(/^FASE\s*(1|2|I|II)$/i.test(String(l.fase).trim())&&!FASES_SIN_PLANO.includes(String(l.fase).toUpperCase())));
+const esFase2=l=>!!l&&(/^FASE\s*(2|II)$/i.test(String(l.fase||'').trim())||(!l.fase&&fasePlano(l.codigo)==='FASE 2'));
 function calcularGeometria(){
   if(geomLista) return;
   // 1) Geometría exacta medida del plano (assets/lotes-shape.js)
@@ -901,7 +903,7 @@ function calcularGeometria(){
   const ocup=DB.lotes.filter(l=>l.poly&&l.poly.length>2).map(l=>[l.x,l.y]);
   const libre=c=>!ocup.some(o=>Math.hypot(o[0]-c.x,o[1]-c.y)<4);
   DB.lotes.forEach(l=>{
-    if(l.poly||l.x==null||!enPlano(l)||fasePlano(l.codigo)!=='FASE 2') return;
+    if(l.poly||l.x==null||!enPlano(l)||!esFase2(l)) return;
     const c=(window.CELDAS_F2||[]).find(c=>libre(c)&&dentro([l.x,l.y],c.p));
     if(c){ l.poly=c.p; l.x=c.x; l.y=c.y; l.exacto=true; ocup.push([c.x,c.y]); }
   });
@@ -916,7 +918,7 @@ function calcularGeometria(){
     const cerc=list.map(l=>Math.min(...list.filter(o=>o!==l).map(o=>Math.hypot(o.x-l.x,o.y-l.y)).concat([Infinity])));
     const medCerc=cerc.filter(d=>isFinite(d)).length?mediana(cerc.filter(d=>isFinite(d))):17;
     const MAXV=Math.min(56,Math.max(MAX_NEIGHBOR,medCerc*1.5));
-    const esF2=fasePlano((list[0]||{}).codigo)==='FASE 2';
+    const esF2=esFase2(list[0]||{});
     const angs=[];
     for(let i=1;i<list.length;i++){
       const a=list[i-1],b=list[i], d=Math.hypot(b.x-a.x,b.y-a.y);
@@ -1073,7 +1075,7 @@ function dibujarMapa(){
     if(l.poly&&l.poly.length>2){                       // contorno exacto del plano
       r=document.createElementNS(NS,'polygon');
       r.setAttribute('points', l.poly.map(p=>p.join(',')).join(' '));
-    } else if(fasePlano(l.codigo)==='FASE 2'){          // Fase 2: sólo se conoce el centro → marcador redondo sobre el lote
+    } else if(esFase2(l)){                              // Fase 2: sólo se conoce el centro → marcador redondo sobre el lote
       r=document.createElementNS(NS,'circle');
       r.setAttribute('cx',l.x); r.setAttribute('cy',l.y); r.setAttribute('r',Math.max(6,Math.min(11,(l.w||17)*0.36)));
     } else {                                            // respaldo: rectángulo estimado
@@ -1087,7 +1089,7 @@ function dibujarMapa(){
     r.setAttribute('fill',m.fill); r.setAttribute('fill-opacity',redondo?0.85:0.55);
     r.setAttribute('stroke',redondo?'#fff':m.stroke); r.setAttribute('stroke-width',redondo?1.2:0.6);
     r.setAttribute('class','lotm'); r.dataset.id=l.codigo;
-    r.addEventListener('click',()=>{ if(dragMoved) return; if(ubicando&&fasePlano(l.codigo)==='FASE 2'){ modalAsignarCelda({p:l.poly,x:l.x,y:l.y},l); return; } abrirLote(claveDe(l)); });
+    r.addEventListener('click',()=>{ if(dragMoved) return; if(ubicando&&esFase2(l)){ modalAsignarCelda({p:l.poly,x:l.x,y:l.y},l); return; } abrirLote(claveDe(l)); });
     r.addEventListener('mousemove',e=>mostrarTip(e,l));
     r.addEventListener('mouseleave',()=>{document.getElementById('tip').hidden=true;});
     svg.appendChild(r);
@@ -1108,7 +1110,7 @@ function dibujarMapa(){
 }
 /* Qué lote es esta celda (Fase 2). Se guarda en la base con su contorno. */
 function modalAsignarCelda(celda, actual){
-  const L=DB.lotes.filter(l=>String(l.fase||'').toUpperCase()==='FASE 2').sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo),undefined,{numeric:true}));
+  const L=DB.lotes.filter(esFase2).sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo),undefined,{numeric:true}));
   if(!L.length) return toast('No hay lotes de Fase 2 en el inventario',5000,true);
   const sug=actual?actual.codigo:(celda.codigo||'');
   openModal(`<div class="modal-h"><h3>¿Qué lote es esta celda?</h3><p>Fase 2 · ${celda.codigo?'el plano dice '+esc(celda.codigo):'sin etiqueta legible en el plano'}${actual?' · hoy es '+esc(actual.codigo):''}</p></div>
@@ -1122,7 +1124,7 @@ function modalAsignarCelda(celda, actual){
   window.__celda=celda;
 }
 async function guardarCelda(){
-  const c=window.__celda; const cod=v('uc-lote'); const l=DB.lotes.find(x=>x.codigo===cod&&String(x.fase||'').toUpperCase()==='FASE 2'); if(!c||!l) return;
+  const c=window.__celda; const cod=v('uc-lote'); const l=DB.lotes.find(x=>x.codigo===cod&&esFase2(x)); if(!c||!l) return;
   const x=Math.round(c.x*10)/10, y=Math.round(c.y*10)/10, poly=c.p.map(p=>[Math.round(p[0]*10)/10,Math.round(p[1]*10)/10]);
   if(typeof hayBase==='function'&&hayBase()){ const r=await conBoton(()=>sbUbicarLote(l.id,x,y,poly)); if(!r||!r.ok) return; }
   /* Si otro lote tenía esta misma celda, la suelta. */
