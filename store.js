@@ -543,19 +543,25 @@ function recalcular(ct) {
 /* ---------- Mora ---------- */
 const diasEntre = (a, b) => Math.floor((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
 /* Devuelve la mora acumulada de un contrato a la fecha */
+/* Tasa de mora y días de gracia: los del proyecto (proyecto.tasa_mora, dias_gracia); si no, los de acá. */
+function tasaMoraDe() { const P = (typeof PROYECTO !== 'undefined' && PROYECTO) || {}; return (P.tasaMora != null && P.tasaMora >= 0) ? +P.tasaMora : TASA_MORA; }
+function diasGraciaDe() { const P = (typeof PROYECTO !== 'undefined' && PROYECTO) || {}; return (P.diasGracia != null) ? +P.diasGracia : DIAS_GRACIA; }
 function calcularMora(ct, hasta) {
   hasta = hasta || HOY_ISO;
+  const tasa = tasaMoraDe(), gracia = diasGraciaDe();
   let total = 0; const detalle = [];
-  ct.obligaciones.forEach(o => o.giros.forEach(g => {
+  (ct.obligaciones || []).forEach(o => (o.giros || []).forEach(g => {
     if (g.estado !== 'vencido' && g.estado !== 'parcial') return;
-    const dias = diasEntre(g.venc, hasta) - DIAS_GRACIA;
-    if (dias <= 0) return;
+    if (g.condicion) return;                       // saldo al desmembrar: no es mora
+    const venc = g.venc || g.vence; if (!venc) return;
+    const dias = diasEntre(String(venc).slice(0, 10), hasta) - gracia;
+    if (!(dias > 0)) return;
     const base = g.estado === 'parcial' ? r2(g.monto - (g.abonado || 0)) : g.monto;
-    const mora = r2(base * TASA_MORA * (dias / 30));
+    const mora = r2(base * tasa * (dias / 30));   // tasa mensual, proporcional a los días
     total += mora;
-    detalle.push({ giro: g.n, obl: o.desc, venc: g.venc, dias, base, mora });
+    detalle.push({ giro: g.n, obl: o.desc, venc, dias, base, mora, tasa });
   }));
-  return { total: r2(total), detalle };
+  return { total: r2(total), detalle, tasa, gracia };
 }
 /* Comisión del vendedor: 2 % del valor del lote */
 /* La comisión que dice la base manda sobre la que calcularía el portal.

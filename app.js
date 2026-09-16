@@ -2727,7 +2727,7 @@ function cartaCartera(){
     return {c,ec,cli:nombreCliente(c.clienteId),dias:diasAtraso(ec),ult:g?`${fmtD(g.fecha)} · ${g.tipo||''}`:'',ultF:g?g.fecha:''};
   }).filter(x=>F==='todos'||(F==='mora'&&x.ec.enMora)||(F==='aldia'&&!x.ec.enMora)||(F==='nunca'&&nunca.has(x.c.no)))
     .filter(x=>!q||`${x.c.no} ${x.c.lote} ${x.cli} ${x.c.vendedor}`.toLowerCase().includes(q));
-  const val={contrato:x=>x.c.no,cliente:x=>x.cli,vencido:x=>x.ec.montoVencido||0,dias:x=>x.dias,cuotas:x=>x.ec.vencidas||0,ult:x=>x.ultF,saldo:x=>x.ec.saldo}[cobOrden.k]||(x=>x.ec.montoVencido||0);
+  const val={contrato:x=>x.c.no,cliente:x=>x.cli,vencido:x=>x.ec.montoVencido||0,mora:x=>(typeof calcularMora==='function'?calcularMora(x.c).total:0),dias:x=>x.dias,cuotas:x=>x.ec.vencidas||0,ult:x=>x.ultF,saldo:x=>x.ec.saldo}[cobOrden.k]||(x=>x.ec.montoVencido||0);
   filas.sort((a,b)=>{const A=val(a),B=val(b);const r=typeof A==='number'?A-B:String(A).localeCompare(String(B));return cobOrden.asc?r:-r;});
   const th=(k,t,num)=>`<th class="${num?'num ':''}click" onclick="cobOrdenar('${k}')">${t}${cobOrden.k===k?(cobOrden.asc?' ↑':' ↓'):''}</th>`;
   let h=`<div class="card"><div class="card-h" style="flex-wrap:wrap;gap:10px"><h2>Cartera · ${filas.length}</h2>
@@ -2736,14 +2736,15 @@ function cartaCartera(){
            onfocus="sugerirBusqueda(this)" onkeydown="sugTecla(event,0,this)" onblur="setTimeout(cerrarSugerencias,150)"></div>
     <div class="card-b chips">${Object.entries(FILTROS_COB).map(([k,t])=>`<button class="chip ${k===F?'on':''}" onclick="irA('cobranza',{f:'${k}'})">${t}</button>`).join('')}</div>
     <div class="card-b" style="padding:0;overflow-x:auto"><table class="data" id="tblCartera"><thead><tr>
-    ${th('contrato','Contrato')}${th('cliente','Cliente')}<th>Lote</th>${th('vencido','Vencido',1)}${th('dias','Días',1)}${th('cuotas','Cuotas venc.',1)}
+    ${th('contrato','Contrato')}${th('cliente','Cliente')}<th>Lote</th>${th('vencido','Vencido',1)}${th('mora','Mora',1)}${th('dias','Días',1)}${th('cuotas','Cuotas venc.',1)}
     ${th('saldo','Saldo',1)}${th('ult','Último contacto')}<th>Responsable</th><th>Próxima acción</th></tr></thead><tbody>`;
-  if(!filas.length) h+=`<tr><td colspan="10"><div class="empty">${q?'Nada coincide con la búsqueda.':'Nada en este filtro.'}</div></td></tr>`;
+  if(!filas.length) h+=`<tr><td colspan="11"><div class="empty">${q?'Nada coincide con la búsqueda.':'Nada en este filtro.'}</div></td></tr>`;
   filas.forEach(({c,ec,cli,dias,ult})=>{
     const accion = ec.enMora ? (dias>60?'Escalar':'Gestionar') : (ec.prox?'Recordar':'—');
     h+=`<tr class="click" onclick="abrirContrato('${c.id}','cuenta')"><td><b>${c.no}</b></td>
       <td>${esc(cli)}</td><td>${esc(c.lote)}</td>
       <td class="num">${ec.montoVencido?`<span style="color:var(--mora);font-weight:600">${Qk(ec.montoVencido)}</span>`:'—'}${(()=>{const n=DB.pagos.filter(p=>mismoId(p.contratoId,c.id)&&p.estado==='registrado').length; return n?`<div class="hint" title="Hay boleta registrada que Finanzas aún no confirma: hasta entonces la cuota sigue vencida">${n} boleta(s) por confirmar</div>`:'';})()}</td>
+      <td class="num">${(()=>{const m=(typeof calcularMora==='function')?calcularMora(c).total:0; return m>0?`<span style="color:var(--mora)">${Qk(m)}</span>`:'—';})()}</td>
       <td class="num">${dias||'—'}</td><td class="num">${ec.vencidas||'—'}</td><td class="num">${Qk(ec.saldo)}</td>
       <td>${ult?esc(ult):'<span class="hint">Sin gestión</span>'}</td><td>${c.vendedor?esc(c.vendedor):'<span class="hint">Sin vendedor</span>'}</td>
       <td>${accion==='—'?'—':`<a href="#" onclick="event.stopPropagation();abrirContrato('${c.id}','gestiones');return false;">${accion} ›</a>`}</td></tr>`;});
@@ -3793,7 +3794,7 @@ function estadoCuentaHTML(ct,ec,completo){
               :(ec&&ec.diferido>0?`<div class="ec-next"><span>Saldo al desmembrar</span><b>${Q(ec.diferido)}</b><i>se cobra al desmembrar · no es mora</i></div>`
               :`<div class="ec-next ok"><span>Plan</span><b>Liquidado</b><i>sin saldo</i></div>`)}
         ${venc.length?`<div class="ec-mora"><span>${venc.length} cuota(s) vencida(s)</span><b>${Q(venc.reduce((s,f)=>s+f.cuota,0))}</b>
-          ${mora.total>0?`<i style="display:block;font-size:11.5px;color:#f3cfc8;font-style:normal;margin-top:4px">+ ${Q(mora.total)} de mora (${(TASA_MORA*100).toFixed(0)}% mensual)</i>`:''}</div>`:''}
+          ${mora.total>0?`<i style="display:block;font-size:11.5px;color:#f3cfc8;font-style:normal;margin-top:4px">+ ${Q(mora.total)} de mora (${(mora.tasa*100).toFixed(1).replace(/\.0$/,'')}% mensual${mora.gracia?', '+mora.gracia+' días de gracia':''}) · a pagar hoy <b>${Q(venc.reduce((s,f)=>s+f.cuota,0)+mora.total)}</b></i>`:''}</div>`:''}
       </div>
     </div>
     <div class="ec-grid">
@@ -3810,10 +3811,11 @@ function estadoCuentaHTML(ct,ec,completo){
   const muestra = completo? filas : filas.slice(0, Math.min(filas.length, Math.max(8,(filas.findIndex(f=>f.estado!=='pagado')+6))));
   /* Desglose capital / interés por cuota (59): se muestra cuando la base lo trae. */
   const conDesglose=filas.some(f=>f.capital!=null);
+  const moraDe=new Map(mora.detalle.map(d=>[String(d.obl)+'#'+d.giro,d])); const conMora=mora.total>0;
   h+=`<table class="ec-tbl"><thead><tr>
       <th>Cuota</th><th>Vence</th><th class="num">Monto debido</th>
       ${conDesglose?'<th class="num">Capital</th><th class="num">Interés</th>':''}
-      <th class="num">Cuota</th><th class="num">Pagado</th><th class="num">Monto final</th><th></th></tr></thead><tbody>`;
+      <th class="num">Cuota</th><th class="num">Pagado</th><th class="num">Monto final</th>${conMora?'<th class="num">Mora</th>':''}<th></th></tr></thead><tbody>`;
   muestra.forEach(f=>{
     const cls=f.estado==='pagado'?'pg':(f.estado==='vencido'?'vn':(f.estado==='parcial'?'pc':''));
     const ic={pagado:'✓',vencido:'!',parcial:'≈'}[f.estado]||'';
@@ -3825,9 +3827,11 @@ function estadoCuentaHTML(ct,ec,completo){
       <td class="num"><b>${Q(f.cuota)}</b></td>
       <td class="num">${f.abonado?Q(f.abonado):'—'}</td>
       <td class="num">${Q(f.final)}</td>
+      ${conMora?`<td class="num">${(()=>{const d=moraDe.get(String(f.obl)+'#'+f.n); return d?`<span style="color:var(--mora)">${Q(d.mora)}</span><div class="ec-obl">${d.dias} día(s)</div>`:'—';})()}</td>`:''}
       <td class="ec-st">${ic}</td></tr>`;});
   if(conDesglose){ const tc=filas.reduce((s,f)=>s+(f.capital||0),0), ti=filas.reduce((s,f)=>s+(f.exonerado?0:(f.interes||0)),0);
-    h+=`<tr><td colspan="3"><b>Totales del plan</b></td><td class="num"><b>${Q(tc)}</b></td><td class="num"><b>${Q(ti)}</b></td><td class="num"><b>${Q(totalPlan)}</b></td><td class="num"><b>${Q(pagado)}</b></td><td></td><td></td></tr>`; }
+    h+=`<tr><td colspan="3"><b>Totales del plan</b></td><td class="num"><b>${Q(tc)}</b></td><td class="num"><b>${Q(ti)}</b></td><td class="num"><b>${Q(totalPlan)}</b></td><td class="num"><b>${Q(pagado)}</b></td><td></td>${conMora?`<td class="num"><b style="color:var(--mora)">${Q(mora.total)}</b></td>`:''}<td></td></tr>`; }
+  if(conMora) h+=`<div class="hint" style="margin:6px 0 0">Mora: ${(mora.tasa*100).toFixed(1).replace(/\.0$/,'')}% mensual sobre lo vencido, proporcional a los días de atraso${mora.gracia?`, después de ${mora.gracia} días de gracia`:''}. Se calcula al día; no se suma al saldo hasta que Finanzas la cobre.</div>`;
   h+=`</tbody></table>`;
   if(!completo&&muestra.length<filas.length)
     h+=`<div class="hint" style="text-align:center">Mostrando ${muestra.length} de ${filas.length} cuotas · <a href="#" onclick="verEstadoCuenta('${ct.id}');return false;">ver el plan completo</a></div>`;
@@ -4419,6 +4423,9 @@ async function estadoCuentaPDF(ct){
     doc.setFontSize(15); doc.setFont('helvetica','bold'); doc.setTextColor(rojo?184:46,rojo?69:107,rojo?46:79); doc.text(v,x+10,y+38); doc.setTextColor(0); };
   caja(M,'Pagado a la fecha',Q(pagado)); caja(M+176,'Saldo pendiente',Q(pend)); caja(M+352,venc.length?`${venc.length} cuota(s) vencida(s)`:'Próxima cuota',venc.length?Q(venc.reduce((s,f)=>s+f.cuota,0)):(prox?Q(prox.cuota)+'  '+fmtD(prox.venc):'Plan liquidado'),!!venc.length);
   y+=70;
+  { const mo=(typeof calcularMora==='function')?calcularMora(ct):{total:0};
+    if(mo.total>0){ doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(184,69,46);
+      doc.text(`Mora acumulada al ${fmtD(HOY_ISO)}: ${Q(mo.total)} (${(mo.tasa*100).toFixed(1).replace(/\.0$/,'')}% mensual sobre lo vencido) · Total a pagar hoy: ${Q(venc.reduce((s,f)=>s+f.cuota,0)+mo.total)}`,M,y); doc.setTextColor(0); y+=18; } }
   // tabla de cuotas
   const desg=filas.some(f=>f.capital!=null);
   const cols=desg?[M,M+40,M+112,M+176,M+240,M+304,M+372,M+444,W-M]:[M,M+52,M+150,M+240,M+330,M+420,W-M];
