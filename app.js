@@ -895,6 +895,16 @@ function calcularGeometria(){
     if(s&&!reclamada(s.x,s.y)){ l.x=s.x; l.y=s.y; l.poly=s.p; l.exacto=true; }
     else if(l.x!=null&&reclamada(l.x,l.y)){ l.x=null; l.y=null; }   // su marcador cae en una celda que ya es de otro lote
   });
+  /* Fase 2 sin contorno pero con marcador: si el marcador (la etiqueta del
+     plano) cae dentro de una celda que nadie ocupa, esa celda es suya. */
+  const dentro=(pt,poly)=>{ let d=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){ const [xi,yi]=poly[i],[xj,yj]=poly[j]; if(((yi>pt[1])!==(yj>pt[1]))&&(pt[0]<(xj-xi)*(pt[1]-yi)/(yj-yi)+xi)) d=!d; } return d; };
+  const ocup=DB.lotes.filter(l=>l.poly&&l.poly.length>2).map(l=>[l.x,l.y]);
+  const libre=c=>!ocup.some(o=>Math.hypot(o[0]-c.x,o[1]-c.y)<4);
+  DB.lotes.forEach(l=>{
+    if(l.poly||l.x==null||!enPlano(l)||fasePlano(l.codigo)!=='FASE 2') return;
+    const c=(window.CELDAS_F2||[]).find(c=>libre(c)&&dentro([l.x,l.y],c.p));
+    if(c){ l.poly=c.p; l.x=c.x; l.y=c.y; l.exacto=true; ocup.push([c.x,c.y]); }
+  });
   // 2) Los que no tengan forma exacta se estiman por vecinos
   const by={};
   DB.lotes.filter(l=>l.x!=null&&!l.exacto).forEach(l=>{(by[l.manzana]=by[l.manzana]||[]).push(l);});
