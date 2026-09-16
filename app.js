@@ -1064,8 +1064,8 @@ function dibujarMapa(){
   img.setAttribute('x',clip.x);img.setAttribute('y',clip.y);
   img.setAttribute('width',clip.w);img.setAttribute('height',clip.h);
   img.setAttribute('preserveAspectRatio','none');
-  img.setAttribute('href','assets/plano.png');
-  img.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href','assets/plano.png');
+  img.setAttribute('href','assets/plano.jpg');
+  img.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href','assets/plano.jpg');
   svg.appendChild(img);
   calcularGeometria();
   DB.lotes.forEach(l=>{
@@ -1089,6 +1089,9 @@ function dibujarMapa(){
     r.setAttribute('fill',m.fill); r.setAttribute('fill-opacity',redondo?0.85:0.55);
     r.setAttribute('stroke',redondo?'#fff':m.stroke); r.setAttribute('stroke-width',redondo?1.2:0.6);
     r.setAttribute('class','lotm'); r.dataset.id=l.codigo;
+    /* Número del lote como texto vectorial: nítido a cualquier zoom (se muestra al acercar). */
+    if(l.poly&&l.poly.length>2){ const t=document.createElementNS(NS,'text'); t.setAttribute('x',l.x); t.setAttribute('y',l.y); t.setAttribute('class','lot-lbl'); t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','middle');
+      const w=Math.max(...l.poly.map(p=>p[0]))-Math.min(...l.poly.map(p=>p[0])); t.setAttribute('font-size',Math.max(9,Math.min(16,w*0.22))); t.textContent=l.codigo; t.style.pointerEvents='none'; svg.appendChild(t); }
     r.addEventListener('click',()=>{ if(dragMoved) return; if(ubicando&&esFase2(l)){ modalAsignarCelda({p:l.poly,x:l.x,y:l.y},l); return; } abrirLote(claveDe(l)); });
     r.addEventListener('mousemove',e=>mostrarTip(e,l));
     r.addEventListener('mouseleave',()=>{document.getElementById('tip').hidden=true;});
@@ -1167,7 +1170,8 @@ function mostrarTip(e,l){
   const r=wrap.getBoundingClientRect();
   tip.style.left=(e.clientX-r.left+12)+'px'; tip.style.top=(e.clientY-r.top-10)+'px';
 }
-function setViewBox(x,y,w,h){vb={x,y,w,h};document.getElementById('mapSvg').setAttribute('viewBox',`${x} ${y} ${w} ${h}`);}
+function setViewBox(x,y,w,h){vb={x,y,w,h};const svg=document.getElementById('mapSvg');svg.setAttribute('viewBox',`${x} ${y} ${w} ${h}`);
+  const clip=window.PLAN_CLIP; if(clip) svg.classList.toggle('zoomed', w < clip.w*0.45);}
 function zoomAt(cx,cy,scale){
   const svg=document.getElementById('mapSvg'),clip=window.PLAN_CLIP,r=svg.getBoundingClientRect();
   const mx=vb.x+(cx-r.left)/r.width*vb.w, my=vb.y+(cy-r.top)/r.height*vb.h;

@@ -1,4 +1,4 @@
-/* Polígono real de cada lote, extraído del plano (assets/plano.png, versión del
+/* Polígono real de cada lote, extraído del plano (assets/plano.jpg, versión del
    16 sept 2026 «RLE - RESIDENCIA L», escalada ×3: 2844×3102 px; las coordenadas
    son píxeles de esa imagen). Fase 1 (A–L) y Fase 2 (M, N, O, P, Q, W) con la
    numeración del plano. p = vértices [x,y] · x,y = centroide. */

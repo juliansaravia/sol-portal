@@ -92,8 +92,8 @@ function dibujarPlano(){
   img.setAttribute('x',clip.x);img.setAttribute('y',clip.y);
   img.setAttribute('width',clip.w);img.setAttribute('height',clip.h);
   img.setAttribute('preserveAspectRatio','none');
-  img.setAttribute('href','assets/plano.png');
-  img.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href','assets/plano.png');
+  img.setAttribute('href','assets/plano.jpg');
+  img.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href','assets/plano.jpg');
   svg.appendChild(img);
   const S=window.LOT_SHAPE||{};
   DB.lotes.forEach(l=>{

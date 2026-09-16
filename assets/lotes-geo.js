@@ -1,4 +1,4 @@
-// Lotes: posición real del plano (assets/plano.png, 16 sept 2026, 2844×3102 px) + datos del Excel de inventario.
+// Lotes: posición real del plano (assets/plano.jpg, 16 sept 2026, 2844×3102 px) + datos del Excel de inventario.
 window.PLAN_CLIP = {x:0, y:0, w:2844, h:3102};
 // Cada lote dice su fase del plano (A–L = FASE 1, M–W = FASE 2): los agrícolas repiten
 // códigos (A-01, D-02…) y NO están en este plano; sin la fase se pintaban encima de Fase 1.
