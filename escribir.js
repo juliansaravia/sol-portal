@@ -323,9 +323,9 @@ async function sbContadoDiferido(contrato_id, saldo, fecha_estimada) {
 }
 /** Enganche: cambiar el monto (se rehace el plan) o repartir lo pendiente en N pagos sin interés (54). */
 /** Posición de un lote en el plano de su proyecto (58). */
-async function sbUbicarLote(lote_id, x, y) {
+async function sbUbicarLote(lote_id, x, y, poligono) {
   return escribir('ubicar el lote', async () =>
-    oExplota(await SB.rpc('ubicar_lote', { p_lote_id: Number(lote_id), p_x: Number(x), p_y: Number(y) })));
+    oExplota(await SB.rpc('ubicar_lote', { p_lote_id: Number(lote_id), p_x: Number(x), p_y: Number(y), p_poligono: poligono || null })));
 }
 async function sbCambiarLote(contrato_id, lote_id, precio) {
   return escribir('cambiar el lote del contrato', async () =>

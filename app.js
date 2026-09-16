@@ -876,10 +876,24 @@ function calcularGeometria(){
   if(geomLista) return;
   // 1) Geometría exacta medida del plano (assets/lotes-shape.js)
   const S=window.LOT_SHAPE||{};
+  const centro=p=>{ const n=p.length; return [p.reduce((a,q)=>a+q[0],0)/n, p.reduce((a,q)=>a+q[1],0)/n]; };
+  /* 0) Contornos guardados en la base con «Ubicar lotes» (63): mandan. Una
+        celda así reclamada deja de valer para el lote que el archivo del plano
+        le tenía asignado (las etiquetas de Fase 2 vienen revueltas). */
+  const reclamadas=[];
   DB.lotes.forEach(l=>{
-    if(!enPlano(l)){ l.x=null; l.y=null; l.poly=null; l.exacto=false; return; }
+    if(l.x0===undefined){ l.x0=l.x; l.y0=l.y; }   // posición del marcador (lotes-geo) como respaldo
+    l.x=l.x0; l.y=l.y0; l.poly=null; l.exacto=false; l.deBase=false;
+    if(!enPlano(l)){ l.x=null; l.y=null; return; }
+    if(!l.polyDB) return;
+    const c=centro(l.polyDB); l.x=l.cx!=null?l.cx:c[0]; l.y=l.cy!=null?l.cy:c[1]; l.poly=l.polyDB; l.exacto=true; l.deBase=true; reclamadas.push(c);
+  });
+  const reclamada=(x,y)=>reclamadas.some(c=>Math.hypot(c[0]-x,c[1]-y)<4);
+  DB.lotes.forEach(l=>{
+    if(!enPlano(l)||l.deBase) return;
     const s=S[l.codigo];
-    if(s){ l.x=s.x; l.y=s.y; l.poly=s.p; l.exacto=true; }
+    if(s&&!reclamada(s.x,s.y)){ l.x=s.x; l.y=s.y; l.poly=s.p; l.exacto=true; }
+    else if(l.x!=null&&reclamada(l.x,l.y)){ l.x=null; l.y=null; }   // su marcador cae en una celda que ya es de otro lote
   });
   // 2) Los que no tengan forma exacta se estiman por vecinos
   const by={};
@@ -944,10 +958,12 @@ function renderInventario(){
   let h=`<div class="chips">`+
     [['todos','Todos'],['disponible','Disponibles'],['reservado','Reservados'],['vendido','Vendidos']].map(([k,l])=>
       `<button class="chip ${filtro===k?'active':''}" onclick="setFiltro('${k}')">${l}</button>`).join('')+
-    `<input id="qmap" class="chip" style="min-width:220px" placeholder="Buscar lote o cliente…" value="${esc(busqueda)}" oninput="busqueda=this.value;pintarMapa()"></div>`;
+    `<input id="qmap" class="chip" style="min-width:220px" placeholder="Buscar lote o cliente…" value="${esc(busqueda)}" oninput="busqueda=this.value;pintarMapa()">
+     ${['admin','gerencia'].includes(ROLE)?`<button class="chip ${ubicando?'active':''}" onclick="ubicando=ubicando?null:{};renderInventario()">${ubicando?'Terminar de ubicar':'Ubicar lotes'}</button>`:''}</div>`;
   h+=`<div class="map-legend">`+Object.keys(ESTADO_MAP).map(k=>
       `<span><i class="dot" style="background:${ESTADO_MAP[k].fill}"></i>${ESTADO_MAP[k].label}</span>`).join('')+
       `<span style="margin-left:auto;color:var(--muted)">${conCoord} de ${DB.lotes.length} lotes ubicados en el plano</span></div>`;
+  if(ubicando) h+=`<div class="aviso-info" style="margin:0 0 10px">Modo ubicar: tocá una celda de Fase 2 (las grises están sin dueño) y elegí qué lote es. Si un lote está en la celda equivocada, tocá la celda correcta y elegilo: se pasa. Queda guardado en la base para todos.</div>`;
   h+=`<div class="card"><div class="map-wrap">
       <svg id="mapSvg" preserveAspectRatio="xMidYMid meet"></svg>
       <div class="map-zoom">
@@ -968,7 +984,7 @@ function renderInventario(){
       <div class="card-b"><div class="lot-grid">`+
       L.map(l=>`<div class="lot ${l.estado==='vendido'?'vend':(l.estado==='reservado'?'apar':'disp')}" onclick="abrirLote('${esc(claveDe(l))}')">
         <div class="lc">${esc(l.codigo)}</div><div class="la">${l.area} m²</div></div>`).join('')+
-      `</div><div class="hint">${agro?'Los lotes agrícolas están en otro terreno: este plano es de las fases residenciales. Sus códigos se repiten con la Fase 1, por eso no se dibujan encima.':'El plano de esta fase trae los números corruptos y no coinciden con los del CRM: mientras no llegue el dibujo correcto, no se pinta, para no marcar vendido un lote que no lo está. La lista sí es la real.'}</div></div></div>`;
+      `</div><div class="hint">${agro?'Los lotes agrícolas están en otro terreno: este plano es de las fases residenciales. Sus códigos se repiten con la Fase 1, por eso no se dibujan encima.':'Estos lotes no tienen celda en el plano todavía. Administración los ubica con «Ubicar lotes» (tocá la celda y elegí el lote). Detalle: el plano de esta fase trae los números corruptos y no coinciden con los del CRM: mientras no llegue el dibujo correcto, no se pinta, para no marcar vendido un lote que no lo está. La lista sí es la real.'}</div></div></div>`;
   });
   C().innerHTML=h;
   dibujarMapa();
@@ -1061,14 +1077,49 @@ function dibujarMapa(){
     r.setAttribute('fill',m.fill); r.setAttribute('fill-opacity',redondo?0.85:0.55);
     r.setAttribute('stroke',redondo?'#fff':m.stroke); r.setAttribute('stroke-width',redondo?1.2:0.6);
     r.setAttribute('class','lotm'); r.dataset.id=l.codigo;
-    r.addEventListener('click',()=>{if(!dragMoved)abrirLote(claveDe(l));});
+    r.addEventListener('click',()=>{ if(dragMoved) return; if(ubicando&&fasePlano(l.codigo)==='FASE 2'){ modalAsignarCelda({p:l.poly,x:l.x,y:l.y},l); return; } abrirLote(claveDe(l)); });
     r.addEventListener('mousemove',e=>mostrarTip(e,l));
     r.addEventListener('mouseleave',()=>{document.getElementById('tip').hidden=true;});
+    svg.appendChild(r);
+  });
+  /* Celdas de Fase 2 que ningún lote ocupa: contorno gris. En modo ubicar se tocan. */
+  const ocupadas=DB.lotes.filter(l=>l.poly&&l.poly.length>2).map(l=>[l.x,l.y]);
+  (window.CELDAS_F2||[]).forEach(c=>{
+    if(ocupadas.some(o=>Math.hypot(o[0]-c.x,o[1]-c.y)<4)) return;
+    const r=document.createElementNS(NS,'polygon'); r.setAttribute('points',c.p.map(p=>p.join(',')).join(' '));
+    r.setAttribute('fill',ubicando?'#9aa':'#fff'); r.setAttribute('fill-opacity',ubicando?0.35:0.01); r.setAttribute('stroke','#8a8f8c'); r.setAttribute('stroke-width',ubicando?1:0.5); r.setAttribute('stroke-dasharray','3 2');
+    r.setAttribute('class','celda-libre'); if(ubicando) r.style.cursor='pointer';
+    r.addEventListener('click',()=>{ if(dragMoved) return; if(ubicando) modalAsignarCelda(c,null); });
     svg.appendChild(r);
   });
   setViewBox(clip.x,clip.y,clip.w,clip.h);
   panZoom(svg);
   pintarMapa();
+}
+/* Qué lote es esta celda (Fase 2). Se guarda en la base con su contorno. */
+function modalAsignarCelda(celda, actual){
+  const L=DB.lotes.filter(l=>String(l.fase||'').toUpperCase()==='FASE 2').sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo),undefined,{numeric:true}));
+  if(!L.length) return toast('No hay lotes de Fase 2 en el inventario',5000,true);
+  const sug=actual?actual.codigo:(celda.codigo||'');
+  openModal(`<div class="modal-h"><h3>¿Qué lote es esta celda?</h3><p>Fase 2 · ${celda.codigo?'el plano dice '+esc(celda.codigo):'sin etiqueta legible en el plano'}${actual?' · hoy es '+esc(actual.codigo):''}</p></div>
+    <div class="modal-b">
+      <div class="field"><label>Lote</label><select id="uc-lote">
+        ${L.map(l=>`<option value="${esc(l.codigo)}" ${l.codigo===sug?'selected':''}>${esc(l.codigo)} · ${l.estado}${l.poly&&l.poly.length?' · ya ubicado':''}</option>`).join('')}</select></div>
+      <div class="hint">El contorno de la celda queda guardado en la base para ese lote. Si el lote ya estaba en otra celda, se pasa a esta.</div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarCelda()">Guardar</button></div>`);
+  window.__celda=celda;
+}
+async function guardarCelda(){
+  const c=window.__celda; const cod=v('uc-lote'); const l=DB.lotes.find(x=>x.codigo===cod&&String(x.fase||'').toUpperCase()==='FASE 2'); if(!c||!l) return;
+  const x=Math.round(c.x*10)/10, y=Math.round(c.y*10)/10, poly=c.p.map(p=>[Math.round(p[0]*10)/10,Math.round(p[1]*10)/10]);
+  if(typeof hayBase==='function'&&hayBase()){ const r=await conBoton(()=>sbUbicarLote(l.id,x,y,poly)); if(!r||!r.ok) return; }
+  /* Si otro lote tenía esta misma celda, la suelta. */
+  DB.lotes.forEach(o=>{ if(o!==l&&o.polyDB&&Math.hypot(o.cx-x,o.cy-y)<4){ o.polyDB=null; o.cx=null; o.cy=null; } });
+  l.polyDB=poly; l.cx=x; l.cy=y; geomLista=false;
+  anotar('lote.ubicar', l.codigo+' · '+x+','+y);
+  closeModal(); toast(l.codigo+' ubicado ✓'); renderInventario();
 }
 function pintarMapa(){
   const t=(busqueda||'').toLowerCase();

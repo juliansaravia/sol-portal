@@ -72,7 +72,7 @@ async function cargarDesdeSupabase() {
        Los pagos se quedan acá: son 738 y de ellos depende cuánto lleva
        recaudado cada contrato, que es de lo primero que se mira. */
     const [lotes, contratos, clientes, pagos, equipo, documentos, comisiones, adjuntos, recibos, liquidaciones, requeridos, proyectos, personaProyectos] = await Promise.all([
-      todas('v_inventario', 'proyecto_id,proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado,centro_x,centro_y'),
+      todas('v_inventario', 'proyecto_id,proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado,centro_x,centro_y,poligono'),
       conRespaldo('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,origen,banco,boleta,lote_id,cliente_id,persona_id',
                   'expediente_de,modalidad'),
       todas('cliente', 'id,nombre,dpi,nit,telefono,email,direccion,ocupacion'),
@@ -124,7 +124,9 @@ async function cargarDesdeSupabase() {
       precio: _num(l.precio_lista),
       estado: l.estado,
       // Posición en el plano del proyecto (ubicar_lote, 58): la usan los proyectos con imagen de plano.
-      cx: l.centro_x != null ? _num(l.centro_x) : null, cy: l.centro_y != null ? _num(l.centro_y) : null
+      cx: l.centro_x != null ? _num(l.centro_x) : null, cy: l.centro_y != null ? _num(l.centro_y) : null,
+      // Contorno guardado con «Ubicar lotes» (63): manda sobre el del archivo del plano.
+      polyDB: Array.isArray(l.poligono) && l.poligono.length > 2 ? l.poligono : null
     }));
 
     /* La posición en el plano vive en assets/lotes-geo.js (438 lotes,

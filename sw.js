@@ -10,7 +10,7 @@
 const CACHE = 'sol-portal-v1';
 const NUCLEO = ['/', 'vendedor.html', 'admin.html', 'styles.css', 'app.js', 'store.js', 'escribir.js', 'datos-remotos.js',
   'supabase.js', 'mfa.js', 'comisiones.js', 'contrato.js', 'cotizacion.js', 'ocr.js', 'expedientes.js', 'permisos.js',
-  'data.js', 'datos-julio.js', 'config-supabase.js', 'version.js', 'assets/lotes-geo.js', 'assets/lotes-shape.js',
+  'data.js', 'datos-julio.js', 'config-supabase.js', 'version.js', 'assets/lotes-geo.js', 'assets/lotes-shape.js', 'assets/celdas-f2.js',
   'assets/marca.js', 'assets/icono-192.png', 'assets/icono-512.png', 'assets/icono.svg', 'assets/logo.svg'];
 const ESPERA_MS = 6000;
 
