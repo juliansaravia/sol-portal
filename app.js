@@ -867,8 +867,9 @@ const DEPTH_PX = 40, MAX_NEIGHBOR = 36;
 const fasePlano=codigo=>String(codigo||'').charAt(0)<='L'?'FASE 1':'FASE 2';
 /* FASE 2 se dibuja desde el 16 sept 2026: sus marcadores (lotes-geo.js)
    caen sobre los lotes del plano y la numeración M–W coincide con la de
-   las etiquetas. Los lotes son más anchos y más hondos que en Fase 1, así
-   que la geometría estimada se calibra por manzana (calcularGeometria). */
+   las etiquetas. Como sólo se conoce el centro de cada lote (no su contorno)
+   y varias manzanas son irregulares (P, Q, U–W), se pintan como marcadores
+   redondos con el color del estado; el contorno llegará con el DWG. */
 const FASES_SIN_PLANO=[];
 const enPlano=l=>!!l&&(!l.fase||(String(l.fase).toUpperCase()===fasePlano(l.codigo)&&!FASES_SIN_PLANO.includes(String(l.fase).toUpperCase())));
 function calcularGeometria(){
@@ -1046,6 +1047,9 @@ function dibujarMapa(){
     if(l.poly&&l.poly.length>2){                       // contorno exacto del plano
       r=document.createElementNS(NS,'polygon');
       r.setAttribute('points', l.poly.map(p=>p.join(',')).join(' '));
+    } else if(fasePlano(l.codigo)==='FASE 2'){          // Fase 2: sólo se conoce el centro → marcador redondo sobre el lote
+      r=document.createElementNS(NS,'circle');
+      r.setAttribute('cx',l.x); r.setAttribute('cy',l.y); r.setAttribute('r',Math.max(6,Math.min(11,(l.w||17)*0.36)));
     } else {                                            // respaldo: rectángulo estimado
       const w=l.w||17, h=l.h||DEPTH_PX;
       r=document.createElementNS(NS,'rect');
@@ -1053,8 +1057,9 @@ function dibujarMapa(){
       r.setAttribute('width',w); r.setAttribute('height',h); r.setAttribute('rx',1.5);
       r.setAttribute('transform',`rotate(${l.ang||-51.5} ${l.x} ${l.y})`);
     }
-    r.setAttribute('fill',m.fill); r.setAttribute('fill-opacity',0.55);
-    r.setAttribute('stroke',m.stroke); r.setAttribute('stroke-width',0.6);
+    const redondo=r.tagName==='circle';
+    r.setAttribute('fill',m.fill); r.setAttribute('fill-opacity',redondo?0.85:0.55);
+    r.setAttribute('stroke',redondo?'#fff':m.stroke); r.setAttribute('stroke-width',redondo?1.2:0.6);
     r.setAttribute('class','lotm'); r.dataset.id=l.codigo;
     r.addEventListener('click',()=>{if(!dragMoved)abrirLote(claveDe(l));});
     r.addEventListener('mousemove',e=>mostrarTip(e,l));
