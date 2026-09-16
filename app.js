@@ -2087,6 +2087,7 @@ function renderEquipo(){
             : `<span class="hint" title="Sin correo no se le puede invitar">sin correo</span>`) : ''}
         ${p.activo && p.email && SESION.rol==='admin'
             ? `<button class="btn btn-ghost btn-sm" onclick="modalContrasena('${p.id}')">Contraseña</button>` : ''}
+        ${p.activo && (p.tel||p.telefono) ? `<button class="btn btn-ghost btn-sm" title="Mandarle el enlace del portal y su usuario por WhatsApp" onclick="whatsappAcceso('${p.id}')">WhatsApp</button>` : ''}
       </td></tr>`;
   };
   /* Cuando alguien tiene contratos a su nombre pero su rol no comisiona,
@@ -2232,13 +2233,36 @@ async function asignarContrasena(id){
   ['pw-1','pw-2'].forEach(i=>{ const e=document.getElementById(i); if(e) e.value=''; });
   if(r.dato.creada) p.entra=true;
   anotar('equipo.contrasena', p.nombre+' · asignada'+(r.dato.creada?' · cuenta creada':''));
-  closeModal(); toast(r.dato.creada?`Cuenta creada para ${p.nombre}. Ya puede entrar.`:`Contraseña de ${p.nombre} cambiada.`, 6000);
-  renderEquipo();
+  closeModal(); renderEquipo();
+  const tel=telWhatsApp(p.tel||p.telefono);
+  openModal(`<div class="modal-h"><h3>${r.dato.creada?'Cuenta creada':'Contraseña cambiada'}</h3><p>${esc(p.nombre)} · ${esc(p.email)}</p></div>
+    <div class="modal-b">
+      <p>Ya puede entrar en <b>${URL_PORTAL_DE(p)}</b> con su correo y esta contraseña temporal. Al entrar se le pide cambiarla.</p>
+      <div class="hint" style="margin-top:8px">${tel?'Mandale el enlace, el usuario y la contraseña temporal por WhatsApp con un toque.':'No tiene teléfono en su ficha: ponéselo en Editar para mandarle el acceso por WhatsApp.'}</div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
+      ${tel?`<button class="btn btn-primary" onclick="whatsappAcceso('${p.id}', ${JSON.stringify(a)}); closeModal()">Mandar acceso por WhatsApp</button>`:''}</div>`);
 }
 
 /* ---------- Invitar al equipo ----------
    El correo lo manda Supabase; cada quien pone su propia contraseña.
    Nadie tiene que repartir claves por WhatsApp. */
+/* El acceso por WhatsApp (16 sept 2026): el enlace del portal que le toca
+   y su usuario. La contraseña temporal sólo va si administración la acaba
+   de asignar (la persona la cambia al entrar). */
+const URL_PORTAL_DE = p => (p && p.rol==='vendedor') ? 'https://vender.editorialsol.com' : 'https://app.editorialsol.com';
+function telWhatsApp(t){ const d=String(t||'').replace(/\D/g,''); if(!d) return ''; return d.length===8?'502'+d:(d.length===10?'1'+d:d); }
+function whatsappAcceso(id, clave){
+  const p=DB.equipo.find(x=>mismoId(x.id,id)); if(!p) return;
+  const tel=telWhatsApp(p.tel||p.telefono); if(!tel) return toast('Primero ponele su teléfono en Editar',5000,true);
+  const nombre=String(p.nombre||'').split(' ')[0];
+  const txt=`Hola ${nombre}, ya tenés acceso al portal de Sol Inmobiliaria.\n\n`+
+    `Entrá aquí: ${URL_PORTAL_DE(p)}\nUsuario: ${p.email||'(tu correo)'}`+
+    (clave?`\nContraseña temporal: ${clave}\n\nAl entrar te pide cambiarla por una tuya.`:`\n\nSi no tenés contraseña, avisame y te la asigno.`)+
+    `\n\nEn el celular: abrí el enlace en Chrome, menú ⋮ → «Agregar a pantalla de inicio», y queda como app.`;
+  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(txt)}`,'_blank');
+  anotar('equipo.whatsapp', p.nombre+(clave?' · con contraseña temporal':''));
+}
 async function invitarA(id){
   const p=DB.equipo.find(x=>mismoId(x.id,id)); if(!p) return;
   if(!p.email) return toast('Primero ponele su correo: es la llave con la que entra', 6000, true);
@@ -3435,7 +3459,7 @@ function pintarContrato(){
   /* Lo que se hace con un contrato, a mano en cualquier pestaña: aplicar
      un pago (con su boleta) y anotar una gestión. */
   if(ct.estado==='aprobado')
-    h+=`<div class="btn-row drawer-acciones" style="margin:0 0 14px"><button class="btn btn-primary btn-sm" onclick="modalPago('${ct.id}')">＋ Aplicar pago</button>
+    h+=`<div class="btn-row drawer-acciones" style="margin:0 0 14px">${['vendedor','practicante','consulta'].includes(ROLE)?'':`<button class="btn btn-primary btn-sm" onclick="modalPago('${ct.id}')">＋ Aplicar pago</button>`}
       <button class="btn btn-ghost btn-sm" onclick="modalGestion('${ct.id}')">＋ Registrar gestión</button></div>`;
 
   if(drawerTab==='ficha'){
@@ -5137,6 +5161,8 @@ function modalEnganche(id){
         <div class="field"><label>Tasa</label><select id="en-tasa" onchange="pistaPlan('${ct.id}')"><option value="0.015" ${(ct.tasa==null||+ct.tasa===0.015)?'selected':''}>Crédito · 1.5% mensual</option><option value="0" ${+ct.tasa===0?'selected':''}>Sin interés (contado en pagos)</option></select></div>
         <div class="field"><label>Primera cuota del saldo</label><input id="en-primeraSaldo" type="date" value="${prox.toISOString().slice(0,10)}"></div>
         <div class="field"><label>Cuota resultante</label><input id="en-cuotaPlan" readonly style="background:var(--tint)"></div>
+        <div class="field full"><label>Cuota pactada (opcional)</label><input id="en-cuotaFija" type="number" step="0.01" min="0" placeholder="Ej. 7707.58 · el precio se ajusta para que cuadre" oninput="precioDesdeCuota('${ct.id}')">
+          <div class="hint">Si el contrato dice «N pagos de Q X», poné X aquí: se calcula el precio de venta que da exactamente esa cuota con el enganche, plazo y tasa de arriba.</div></div>
       </div>
       <div class="hint">Rehace todas las cuotas del saldo con estos datos, desde la primera fecha, y vuelve a aplicar en orden los pagos confirmados. Sirve cuando se firma un contrato nuevo con otras condiciones.</div>
       <div class="btn-row" style="margin:8px 0 0"><button class="btn btn-ghost btn-sm" onclick="guardarPlan('${ct.id}')">Rehacer plan</button></div>
@@ -5187,6 +5213,16 @@ async function exonerarInteres(id,exonerar){
   anotar('contrato.interes', ct.no+' · '+(exonerar?'exonera':'restituye')+' '+desde+'-'+hasta);
   await registrarGestion(id,'Bitácora Socios','Contactado',`Interés ${exonerar?'exonerado':'restituido'} en cuotas ${desde} a ${hasta} (${Q(tot)}) · lo hizo ${(window.__user&&window.__user.name)||''}`);
   closeModal(); toast(`Interés ${exonerar?'exonerado':'restituido'} en ${d.cuotas||gs.length} cuota(s) · saldo ${Q(+d.saldo||0)}`); await traerCartera(); if(typeof pintarContrato==='function') pintarContrato();
+}
+/* Precio que produce una cuota pactada: sin interés, precio = enganche + cuota × plazo;
+   con interés plano, capital = cuota / (1/plazo + tasa). */
+function precioDesdeCuota(id){
+  const ct=getContrato(id); if(!ct) return;
+  const cuota=+v('en-cuotaFija'); if(!(cuota>0)) return;
+  const eng=+v('en-monto')||0, n=Math.max(1,+v('en-plazo')||1), tasa=+v('en-tasa')||0;
+  const capital = tasa>0 ? cuota/(1/n+tasa) : cuota*n;
+  const e=document.getElementById('en-precio'); if(e) e.value=(Math.round((eng+capital)*100)/100).toFixed(2);
+  pistaPlan(id);
 }
 function pistaPlan(id){
   const ct=getContrato(id); if(!ct) return;
