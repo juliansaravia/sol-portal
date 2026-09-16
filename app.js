@@ -89,7 +89,7 @@ function renderAuth(reanudando){
       <button id="au-entrar" class="btn btn-primary" style="width:100%" onclick="entrar()" ${reanudando?'disabled':''}>${reanudando?'Reanudando tu sesión…':'Entrar'}</button>
       <div class="login-foot">
         <div id="au-err" class="err" style="min-height:18px;margin:8px 0 4px;color:#C0492B;font-weight:600"></div>
-        <div class="hint">¿Olvidaste tu contraseña? Solo administración puede restablecerla: pedísela a Julián.</div>
+        <div class="hint">¿Olvidaste tu contraseña? Solo administración puede restablecerla. <a href="#" onclick="solicitarCambioContrasena();return false;"><b>Solicitar cambio a administración</b></a></div>
         <div class="hint" style="margin-top:8px"><a href="#" onclick="pantallaCodigoCorreo();return false;"><b>Tengo un código</b></a> de administración (invitación o contraseña nueva).</div>
         <br>Si el correo no te llega, pídele a administración que te reenvíe la invitación.</div></div>`;
     setTimeout(()=>document.getElementById('au-email')?.focus(),50);
@@ -140,6 +140,14 @@ function submit2FA(){
    Correo y contraseña contra Supabase. El rol NO lo elige quien entra:
    sale de la tabla persona, que es la misma que consultan las políticas
    de la base. Así la pantalla y la base no pueden contradecirse. */
+/* A quién le llega la solicitud de contraseña. Si hay WhatsApp se usa; si no, correo. */
+const CONTACTO_ADMIN = { correo: 'julian@desarrollosol.com', whatsapp: '' };
+function solicitarCambioContrasena(){
+  const u=(document.getElementById('au-email')||{}).value||'';
+  const txt=`Hola, necesito que me restablezcan la contraseña del portal de Sol Inmobiliaria.${u?' Mi usuario es '+u+'.':''} Gracias.`;
+  if(CONTACTO_ADMIN.whatsapp) window.open(`https://wa.me/${String(CONTACTO_ADMIN.whatsapp).replace(/\D/g,'')}?text=${encodeURIComponent(txt)}`,'_blank');
+  else location.href=`mailto:${CONTACTO_ADMIN.correo}?subject=${encodeURIComponent('Solicitud de cambio de contraseña · portal')}&body=${encodeURIComponent(txt)}`;
+}
 async function entrar(){
   /* Carrera: al abrir con sesión viva, el formulario se pinta y
      reanudarSesion() corre en paralelo. Si en esos segundos el gestor
