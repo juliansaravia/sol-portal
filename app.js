@@ -2620,6 +2620,13 @@ async function doConfirmar(id,ok){
    Tres pestañas: lo que se debe, lo que está en proceso, y el
    historial de lo ya pagado. Nada se borra nunca. */
 let comTab='pendientes';
+/* Por liquidar se ve un vendedor a la vez (16 sept 2026): el nombre elegido. */
+let comVend=null;
+function abrirContratoNo(no){
+  const ct=indices().contratosPorNo.get(String(no)); if(!ct) return toast('No se encontró el contrato '+no,4000,true);
+  abrirContrato(ct.id,'ficha');
+}
+function elegirVendedorCom(nombre){ comVend=nombre; renderComisiones(); }
 
 /* El vendedor ve SUS comisiones y nada más: cobradas, en proceso, por
    liquidar, y cada una de sus ventas con su comisión. Ni totales de la
@@ -2692,15 +2699,25 @@ function renderComisiones(){
 function comPendientes(R){
   if(!R.pendientes.length) return `<div class="card"><div class="empty">No hay comisiones pendientes de liquidar.</div></div>`;
   const puedeLiberar = (typeof puede==='function') ? puede('comision.liberar') : false;
-  let h='';
-  R.pendientes.forEach(p=>{
+  /* Un vendedor a la vez: selector arriba, anterior / siguiente, y cada contrato se abre con un clic. */
+  const L=R.pendientes; let i=L.findIndex(p=>p.persona.nombre===comVend); if(i<0){ i=0; comVend=L[0].persona.nombre; }
+  const p=L[i];
+  let h=`<div class="card"><div class="card-b" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <button class="btn btn-ghost btn-sm" ${i>0?`onclick="elegirVendedorCom('${esc(L[i-1].persona.nombre)}')"`:'disabled'}>‹ Anterior</button>
+    <select id="com-vend" style="flex:1;min-width:220px" onchange="elegirVendedorCom(this.value)">
+      ${L.map(x=>`<option value="${esc(x.persona.nombre)}" ${x===p?'selected':''}>${esc(x.persona.nombre)} · ${x.contratos.length} contrato(s) · ${Qk(x.total)}${x.retenidos.length?' · '+x.retenidos.length+' retenido(s)':''}</option>`).join('')}
+    </select>
+    <button class="btn btn-ghost btn-sm" ${i<L.length-1?`onclick="elegirVendedorCom('${esc(L[i+1].persona.nombre)}')"`:'disabled'}>Siguiente ›</button>
+    <span class="hint" style="width:100%">Vendedor ${i+1} de ${L.length}. Tocá un contrato para abrirlo.</span>
+  </div></div>`;
+  [p].forEach(p=>{
     h+=`<div class="card"><div class="card-h">
       <h2>${esc(p.persona.nombre)} <span class="pill">${p.persona.codigo}</span></h2>
       <div><b>${Q(p.total)}</b> · ${p.contratos.length} contrato(s)${p.retenidos.length?` <span class="hint">· ${Q(p.totalRetenido)} retenidos</span>`:''}</div></div>`;
     if(p.contratos.length){
       h+=`<div class="card-b" style="padding:0"><table class="data"><thead><tr>
         <th>Contrato</th><th>Lote</th><th class="num">Valor del lote</th><th class="num">Comisión</th></tr></thead><tbody>`;
-      p.contratos.forEach(c=>h+=`<tr><td><b>${c.no}</b></td><td>${c.lote}</td>
+      p.contratos.forEach(c=>h+=`<tr class="click" onclick="abrirContratoNo('${esc(c.no)}')" title="Abrir el contrato"><td><b>${c.no}</b> <span class="hint">›</span></td><td>${c.lote}</td>
         <td class="num">${Qk(c.precio)}</td><td class="num">${Q(c.comision)}</td></tr>`);
       h+=`</tbody><tfoot><tr><td colspan="3" style="text-align:right;font-weight:800;padding:10px 12px">Total</td>
         <td class="num" style="font-weight:800">${Q(p.total)}</td></tr></tfoot></table></div>
@@ -2713,10 +2730,10 @@ function comPendientes(R){
         <span class="hint" style="font-weight:400">— se liquidan solas en cuanto se suba lo que falta</span></div>
         <table class="data"><thead><tr><th>Contrato</th><th>Lote</th><th>Qué falta</th>
         <th class="num">Comisión</th>${puedeLiberar?'<th></th>':''}</tr></thead><tbody>`;
-      p.retenidos.forEach(c=>h+=`<tr><td><b>${c.no}</b></td><td>${c.lote}</td>
+      p.retenidos.forEach(c=>h+=`<tr class="click" onclick="abrirContratoNo('${esc(c.no)}')" title="Abrir el contrato"><td><b>${c.no}</b> <span class="hint">›</span></td><td>${c.lote}</td>
         <td style="color:#B0562F">${c.falta.map(esc).join(' · ')}</td>
         <td class="num">${Q(c.comision)}</td>
-        ${puedeLiberar?`<td><button class="btn btn-ghost btn-sm" onclick="doLiberar('${esc(c.no)}')">Liberar</button></td>`:''}</tr>`);
+        ${puedeLiberar?`<td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();doLiberar('${esc(c.no)}')">Liberar</button></td>`:''}</tr>`);
       h+=`</tbody><tfoot><tr><td colspan="3" style="text-align:right;font-weight:800;padding:10px 12px">Retenido</td>
         <td class="num" style="font-weight:800">${Q(p.totalRetenido)}</td>${puedeLiberar?'<td></td>':''}</tr></tfoot></table></div>`;
     }
@@ -2844,7 +2861,7 @@ function tarjetaLiq(l,acciones){
     <h2>${l.numero} · ${esc(l.vendedor)} <span class="badge ${e.clase}">${e.label}</span></h2>
     <div><b>${Q(l.total)}</b> · ${etiquetaPeriodo(l.periodo)}</div></div>
     <div class="card-b">
-    <div class="hint" style="margin-bottom:10px">${l.contratos.length} contrato(s): ${l.contratos.map(c=>c.no).join(', ')}</div>`;
+    <div class="hint" style="margin-bottom:10px">${l.contratos.length} contrato(s): ${l.contratos.map(c=>`<a href="#" onclick="event.preventDefault();abrirContratoNo('${esc(c.no)}')" title="Abrir el contrato">${esc(c.no)}</a>`).join(', ')}</div>`;
 
   if(l.factura){
     const f=l.factura;
@@ -2948,8 +2965,8 @@ function comPorVendedor(){
     <th class="num">Pagado</th><th class="num">Liquidaciones</th></tr></thead><tbody>`;
   vendedores().forEach(p=>{
     const e=estadoVendedor(p.nombre);
-    h+=`<tr><td><b>${esc(p.nombre)}</b> <span class="pill">${p.codigo}</span>
-        ${e.contratosPend?`<div class="hint">${e.contratosPend} contrato(s) sin liquidar</div>`:''}</td>
+    h+=`<tr class="${e.contratosPend?'click':''}" ${e.contratosPend?`onclick="comTab='pendientes';elegirVendedorCom('${esc(p.nombre)}')" title="Ver sus contratos por liquidar"`:''}><td><b>${esc(p.nombre)}</b> <span class="pill">${p.codigo}</span>
+        ${e.contratosPend?`<div class="hint">${e.contratosPend} contrato(s) sin liquidar ›</div>`:''}</td>
       <td class="num">${e.porLiquidar?Q(e.porLiquidar):'—'}</td>
       <td class="num">${e.enProceso?Q(e.enProceso):'—'}</td>
       <td class="num">${e.pagado?Q(e.pagado):'—'}</td>
