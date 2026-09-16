@@ -693,7 +693,8 @@ function asuntos(){
   const sinCli=activos.filter(c=>!c.clienteId||!getCliente(c.clienteId)).length;
   const sinAcceso=DB.equipo.filter(p=>p.activo&&p.entra===false).length;
   const sinAlta=DB.lotes.filter(l=>l.estado===LOTE_ALTA_PENDIENTE).length;
-  const sinUbic=DB.lotes.filter(l=>l.x==null).length;
+  /* Cada lote se mide contra su propio plano: los agrolotes contra el agrícola. */
+  const sinUbic=DB.lotes.filter(l=>esAgro(l)?!(window.LOT_SHAPE_AGRO||{})[l.codigo]:(l.x==null&&!(typeof LOT_SHAPE!=='undefined'&&LOT_SHAPE[l.codigo]))).length;
   const A=[];
   if(M.enMora) A.push({sev:'alta',n:M.enMora,t:M.enMora===1?'contrato en mora':'contratos en mora',d:`${Qk(M.saldoVencido)} vencidos · requieren gestión`,ir:()=>irA('cobranza',{f:'mora'})});
   if(M.nuncaPagaron.length) A.push({sev:'alta',n:M.nuncaPagaron.length,t:M.nuncaPagaron.length===1?'venta que nunca pagó una cuota':'ventas que nunca pagaron una cuota',d:'Entró el enganche y nada más',ir:()=>irA('cobranza',{f:'nunca'})});
