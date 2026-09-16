@@ -2847,32 +2847,61 @@ function elegirVendedorCom(nombre){ comVend=nombre; renderComisiones(); }
 /* El vendedor ve SUS comisiones y nada más: cobradas, en proceso, por
    liquidar, y cada una de sus ventas con su comisión. Ni totales de la
    empresa, ni otros vendedores, ni «registrar lo ya pagado». */
+/* Tramos de la comisión para la vista del vendedor, sin cargar desistimiento.js
+   (ese módulo es interno): 40% al aprobarse la venta, 60% a la tercera cuota. */
+const cuotasPagadasDe=ct=>{ if(typeof cuotasPagadas==='function') return cuotasPagadas(ct);
+  if(typeof cuotasDelSaldoPagadas==='function'){ const n=cuotasDelSaldoPagadas(ct.no); if(n>0) return n; }
+  const e=estadoCuenta(ct); return e.cuotasPagadasModelo!=null?e.cuotasPagadasModelo:e.pagadas; };
+const devengadoDe=(ct,total)=>ct.estado!=='aprobado'?0:(cuotasPagadasDe(ct)>=3?total:r2(total*0.4));
 function renderMisComisiones(){
   const yo=(window.__user&&window.__user.name)||'';
   const E=estadoVendedor(yo);
   const pend=comisionesPendientes().find(x=>x.persona&&x.persona.nombre===yo)||{contratos:[],retenidos:[],total:0,totalRetenido:0};
   const EST={borrador:['Esperando tu factura','b-pend'],facturada:['Factura recibida · por pagar','b-info'],pagada:['Pagada','b-ok'],anulada:['Anulada','b-nod']};
+  /* Lo cobrado por contrato sale de las liquidaciones pagadas; lo devengado, de los dos
+     tramos (40% al aprobarse, 60% a la tercera cuota). Debido = devengado − cobrado. */
+  const cobradoPor=new Map(); (DB.liquidaciones||[]).filter(l=>l.estado==='pagada').forEach(l=>(l.contratos||[]).forEach(c=>cobradoPor.set(c.no,(cobradoPor.get(c.no)||0)+(c.comision||0))));
+  const enProcesoPor=new Map(); (DB.liquidaciones||[]).filter(l=>l.estado==='borrador'||l.estado==='facturada').forEach(l=>(l.contratos||[]).forEach(c=>enProcesoPor.set(c.no,(enProcesoPor.get(c.no)||0)+(c.comision||0))));
+  const mias=DB.contratos.filter(c=>c.vendedor===yo&&!['anulado','desistido'].includes(c.estado)).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+  const filas=mias.map(c=>{
+    const total=calcularComision(c);
+    const devengado=devengadoDe(c,total);
+    const cobrado=r2(cobradoPor.get(c.no)||0), enProceso=r2(enProcesoPor.get(c.no)||0);
+    const debido=r2(Math.max(0,devengado-cobrado-enProceso)); const porConsolidar=r2(Math.max(0,total-devengado));
+    const ret=(pend.retenidos||[]).find(r=>r.no===c.no); const cp=c.estado==='aprobado'?cuotasPagadasDe(c):0;
+    return {c,total,devengado,cobrado,enProceso,debido,porConsolidar,ret,cp};
+  });
+  const sum=k=>r2(filas.reduce((s,f)=>s+f[k],0));
+  const T={total:sum('total'),devengado:sum('devengado'),cobrado:sum('cobrado'),enProceso:sum('enProceso'),debido:sum('debido'),porConsolidar:sum('porConsolidar')};
   let h=`<div class="kpis">
-    <div class="kpi accent"><div class="kpi-label">Cobrado</div><div class="kpi-value sm">${Qk(E.pagado)}</div><div class="kpi-sub">total pagado a la fecha</div></div>
-    <div class="kpi"><div class="kpi-label">En proceso</div><div class="kpi-value sm">${Qk(E.enProceso)}</div><div class="kpi-sub">liquidado, pendiente de pago</div></div>
-    <div class="kpi"><div class="kpi-label">Por liquidar</div><div class="kpi-value sm">${Qk(pend.total)}</div><div class="kpi-sub">${pend.contratos.length} venta(s) devengadas</div></div>
+    <div class="kpi accent"><div class="kpi-label">Cobrado</div><div class="kpi-value sm">${Qk(T.cobrado)}</div><div class="kpi-sub">pagado a la fecha</div></div>
+    <div class="kpi ${T.debido?'warn':''}"><div class="kpi-label">Me deben</div><div class="kpi-value sm">${Qk(T.debido)}</div><div class="kpi-sub">devengado y aún no pagado${T.enProceso?` · ${Qk(T.enProceso)} ya en liquidación`:''}</div></div>
+    <div class="kpi"><div class="kpi-label">Por consolidar</div><div class="kpi-value sm">${Qk(T.porConsolidar)}</div><div class="kpi-sub">el 60% que entra a la 3.ª cuota</div></div>
+    <div class="kpi"><div class="kpi-label">Comisión total</div><div class="kpi-value sm">${Qk(T.total)}</div><div class="kpi-sub">${filas.length} venta(s) · 2% del lote</div></div>
     ${pend.totalRetenido?`<div class="kpi warn"><div class="kpi-label">Retenido</div><div class="kpi-value sm">${Qk(pend.totalRetenido)}</div><div class="kpi-sub">${pend.retenidos.length} venta(s) sin expediente</div></div>`:''}
-  </div>`;
-  h+=`<div class="sect-t">Mis liquidaciones · ${E.liquidaciones.length}</div>`;
-  if(!E.liquidaciones.length) h+=`<div class="card"><div class="empty">Todavía no tenés liquidaciones. Se arman cada quincena con las ventas cobradas.</div></div>`;
+  </div>
+  <div class="hint" style="margin:-6px 0 14px">Cómo se gana: 40% al aprobarse la venta y 60% cuando el cliente paga su tercera cuota. Se liquida cada quincena con factura; lo retenido por expediente incompleto se libera solo al subir lo que falta.</div>`;
+  h+=`<div class="sect-t">Mis ventas · cobrado vs. debido</div>`;
+  if(!filas.length) h+=`<div class="card"><div class="empty">Sin ventas todavía.</div></div>`;
+  else {
+    h+=`<div class="card"><div class="card-b" style="padding:0;overflow-x:auto"><table class="data"><thead><tr>
+      <th>Contrato</th><th>Cliente · lote</th><th>Fecha</th><th class="num">Venta</th><th class="num">Comisión</th><th class="num">Devengado</th><th class="num">Cobrado</th><th class="num">Me deben</th><th>Estado</th></tr></thead><tbody>`;
+    filas.forEach(f=>{ const c=f.c;
+      const est=c.estado!=='aprobado'?(c.estado==='en_aprobacion'?['En comité','b-info']:['Borrador','b-pend'])
+        : f.ret?['Retenida · falta expediente','b-pend'] : (f.devengado>=f.total-0.01?['100% devengada','b-ok'] : [`40% · faltan ${Math.max(0,3-f.cp)} cuota(s) para el 60%`,'b-info']);
+      h+=`<tr class="click" onclick="abrirContrato('${c.id}')"><td><b>${esc(c.no)}</b></td><td>${esc(nombreCliente(c.clienteId))}<div class="hint">lote ${esc(c.lote)}</div></td><td>${fmtD(c.fecha)}</td>
+        <td class="num">${Qk(c.precio)}</td><td class="num">${Q(f.total)}</td><td class="num">${Q(f.devengado)}</td><td class="num">${f.cobrado?Q(f.cobrado):'—'}</td>
+        <td class="num">${f.debido?`<b style="color:#8A5F12">${Q(f.debido)}</b>`:(f.enProceso?`<span class="hint">${Q(f.enProceso)} en liquidación</span>`:'—')}</td>
+        <td><span class="badge ${est[1]}">${est[0]}</span>${f.ret&&f.ret.falta?`<div class="hint">falta: ${esc(Array.isArray(f.ret.falta)?f.ret.falta.join(' · '):f.ret.falta)}</div>`:''}</td></tr>`; });
+    h+=`</tbody><tfoot><tr><td colspan="4" style="text-align:right;font-weight:800;padding:10px 12px">Totales</td><td class="num"><b>${Q(T.total)}</b></td><td class="num"><b>${Q(T.devengado)}</b></td><td class="num"><b>${Q(T.cobrado)}</b></td><td class="num"><b>${Q(T.debido)}</b></td><td></td></tr></tfoot></table></div></div>`;
+  }
+  h+=`<div class="sect-t" style="margin-top:16px">Mis liquidaciones · ${E.liquidaciones.length}</div>`;
+  if(!E.liquidaciones.length) h+=`<div class="card"><div class="empty">Todavía no tenés liquidaciones. Se arman cada quincena con las ventas devengadas.</div></div>`;
   else { h+=`<div class="tarjetas">`; E.liquidaciones.forEach(l=>{ const e=EST[l.estado]||[l.estado,'b-nod'];
     h+=`<div class="tarjeta"><div class="tarjeta-top"><b>${esc(l.numero||'')}</b><span class="badge ${e[1]}">${e[0]}</span></div>
       <div style="font-size:18px;font-weight:700;color:var(--green)">${Q(l.total)}</div>
-      <div class="hint">Período ${esc(l.periodo||'')}${l.pagadaEn?` · pagada el ${fmtD(l.pagadaEn)}`:''}${l.factura?` · factura ${esc(l.factura.numero)}`:''}</div>
+      <div class="hint">Período ${esc(l.periodo||'')}${l.pagadaEn?` · pagada el ${fmtD(l.pagadaEn)}`:''}${l.factura?` · factura ${esc(l.factura.numero)}`:''} · ${(l.contratos||[]).map(c=>c.no).join(', ')}</div>
       ${l.estado==='borrador'?`<div style="margin-top:8px"><button class="btn btn-gold btn-sm" onclick="modalFactura('${l.id}')">Subir mi factura</button></div>`:''}</div>`; }); h+=`</div>`; }
-  h+=`<div class="sect-t" style="margin-top:16px">Mis ventas y su comisión</div>`;
-  const mias=DB.contratos.filter(c=>c.vendedor===yo&&c.estado!=='anulado').sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
-  if(!mias.length) h+=`<div class="card"><div class="empty">Sin ventas todavía.</div></div>`;
-  else { h+=`<div class="tarjetas">`; mias.forEach(c=>{ const ret=(pend.retenidos||[]).find(r=>r.no===c.no); const com=calcularComision(c);
-    const est=c.estado==='aprobado'?(['liquidada','pagada'].includes(c.comisionEstado)?['Comisión '+c.comisionEstado,'b-ok']:(ret?['Retenida · falta expediente','b-pend']:['Devengada','b-info'])):(c.estado==='en_aprobacion'?['En comité','b-info']:['Borrador','b-nod']);
-    h+=`<div class="tarjeta" onclick="abrirContrato('${c.id}')"><div class="tarjeta-top"><b>${c.no}</b><span class="badge ${est[1]}">${est[0]}</span></div>
-      <div>${esc(nombreCliente(c.clienteId))} · lote ${esc(c.lote)}</div>
-      <div class="hint">${fmtD(c.fecha)} · venta ${Qk(c.precio)} · comisión <b>${Q(com)}</b>${ret&&ret.falta?` · falta: ${esc(ret.falta)}`:''}</div></div>`; }); h+=`</div>`; }
   C().innerHTML=h;
 }
 function renderComisiones(){
