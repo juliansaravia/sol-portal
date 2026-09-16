@@ -80,7 +80,7 @@ function renderAuth(reanudando){
         <span><span class="brand-name">SOL</span><span class="brand-sub">Inmobiliaria</span></span></div>
       <div class="login-sub">${cfg.titulo}</div>
       <p class="login-hint">${cfg.sub}</p>
-      <div class="field" style="text-align:left;margin-bottom:12px"><label>Correo</label>
+      <div class="field" style="text-align:left;margin-bottom:12px"><label>Correo o usuario</label>
         <input id="au-email" type="email" autocomplete="username"
                onkeydown="if(event.key==='Enter')entrar()"></div>
       <div class="field" style="text-align:left;margin-bottom:18px"><label>Contraseña</label>
@@ -2198,8 +2198,8 @@ function renderEquipo(){
         ${p.activo && !p.entra ? (p.email
             ? `<button class="btn btn-gold btn-sm" onclick="invitarA('${p.id}')">Invitar</button>`
             : `<span class="hint" title="Sin correo no se le puede invitar">sin correo</span>`) : ''}
-        ${p.activo && p.email && SESION.rol==='admin'
-            ? `<button class="btn btn-ghost btn-sm" onclick="modalContrasena('${p.id}')">Contraseña</button>` : ''}
+        ${p.activo && SESION.rol==='admin'
+            ? `<button class="btn btn-ghost btn-sm" onclick="modalContrasena('${p.id}')">${p.email?'Contraseña':'Usuario y contraseña'}</button>` : ''}
         ${p.activo && (p.tel||p.telefono) ? `<button class="btn btn-ghost btn-sm" title="Mandarle el enlace del portal y su usuario por WhatsApp" onclick="whatsappAcceso('${p.id}')">WhatsApp</button>` : ''}
       </td></tr>`;
   };
@@ -2317,14 +2317,25 @@ async function restablecerContrasenaDe(id){
    asignarle una ahora (para quien no tiene bandeja, como un agente).
    La contraseña se escribe acá y viaja a la función; el portal no la
    guarda ni la muestra en ningún otro sitio. */
+/* Usuario de acceso para quien no tiene correo (comisionistas): un identificador con
+   forma de correo en un dominio nuestro. No recibe mensajes; sólo sirve para entrar. */
+const DOMINIO_USUARIOS='usuarios.editorialsol.com';
+function usuarioSugerido(p){
+  const base=(p.codigo||String(p.nombre||'').split(/\s+/).slice(0,2).join('.')).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9.]/g,'');
+  return (base||'usuario')+'@'+DOMINIO_USUARIOS;
+}
 function modalContrasena(id){
   const p=DB.equipo.find(x=>mismoId(x.id,id)); if(!p) return;
-  openModal(`<div class="modal-h"><h3>Contraseña de ${esc(p.nombre)}</h3><p>${esc(p.email)}</p></div>
+  const sinCorreo=!p.email;
+  openModal(`<div class="modal-h"><h3>${sinCorreo?'Usuario y contraseña de ':'Contraseña de '}${esc(p.nombre)}</h3><p>${esc(p.email||'sin correo')}</p></div>
     <div class="modal-b">
-      <div class="sect-t">Opción 1 · que la elija la persona</div>
+      ${sinCorreo?`<div class="sect-t">Usuario de acceso</div>
+      <p class="hint" style="margin-bottom:8px">No tiene correo. Se le crea un usuario con forma de correo en nuestro dominio: no recibe mensajes, sólo sirve para entrar al portal. Se lo mandás por WhatsApp junto con la contraseña.</p>
+      <div class="field"><label>Usuario</label><input id="pw-usuario" value="${esc(usuarioSugerido(p))}" autocomplete="off"></div>`
+      :`<div class="sect-t">Opción 1 · que la elija la persona</div>
       <p class="hint" style="margin-bottom:8px">Le llega un correo con un enlace. ${p.entra?'La actual sigue sirviendo hasta que la cambie.':'Necesita tener cuenta: usá «Invitar» primero.'}</p>
-      <button class="btn btn-ghost" ${p.entra?'':'disabled'} onclick="closeModal();restablecerContrasenaDe('${p.id}')">Mandar enlace</button>
-      <div class="sect-t" style="margin-top:18px">Opción 2 · asignarle una ahora</div>
+      <button class="btn btn-ghost" ${p.entra?'':'disabled'} onclick="closeModal();restablecerContrasenaDe('${p.id}')">Mandar enlace</button>`}
+      <div class="sect-t" style="margin-top:18px">${sinCorreo?'Contraseña temporal':'Opción 2 · asignarle una ahora'}</div>
       <p class="hint" style="margin-bottom:8px">${p.entra?'Reemplaza la actual de inmediato.':'Le crea la cuenta ya confirmada — no espera ningún correo.'} 12+ caracteres con mayúscula, minúscula, número y símbolo. <b>Es temporal:</b> al entrar tiene que cambiarla por una suya y activar el segundo factor.</p>
       <div class="form-grid">
         <div class="field"><label>Contraseña nueva</label><input id="pw-1" type="password" autocomplete="new-password"></div>
@@ -2338,6 +2349,14 @@ function modalContrasena(id){
 async function asignarContrasena(id){
   const p=DB.equipo.find(x=>mismoId(x.id,id)); if(!p) return;
   const a=v('pw-1'), b=v('pw-2');
+  /* Sin correo: primero se le guarda el usuario de acceso, que es lo que Auth usa como llave. */
+  if(!p.email){
+    const u=v('pw-usuario').trim().toLowerCase();
+    if(!/^[a-z0-9._-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(u)) return toast('El usuario tiene que tener forma de correo, por ejemplo andy@'+DOMINIO_USUARIOS,6000,true);
+    if(DB.equipo.some(x=>!mismoId(x.id,p.id)&&String(x.email||'').toLowerCase()===u)) return toast('Ese usuario ya lo tiene otra persona',5000,true);
+    const rg=await conBoton(()=>guardarPersona({id:p.id,nombre:p.nombre,codigo:p.codigo,rol:p.rol,activo:true,telefono:p.tel||p.telefono||'',email:u,nota:p.nota||'',vendedorHasta:p.vendedorHasta||null,exige2fa:p.exige2fa!==false,externo:!!p.externo,organizacion:p.organizacion||null,accesoHasta:p.accesoHasta||null}));
+    if(!rg) return; p.email=u;
+  }
   const vf=validarContrasenaFuerte(a,[p.email,p.nombre]);
   if(!vf.ok) return toast('Falta: '+vf.faltan.join(' · '), 7000, true);
   if(a!==b) return toast('No coinciden', 5000, true);
