@@ -43,6 +43,14 @@ const ESTADO_PORTAL = {
   liquidado: 'aprobado'     // terminó de pagar · sigue siendo una venta
 };
 const estadoDePortal = e => ESTADO_PORTAL[e] || e;
+/* La base sólo pasa una cuota a 'vencido' cuando alguien recalcula el contrato. Para que la mora
+   no dependa de eso, una cuota pendiente cuya fecha ya pasó se lee como vencida (no aplica al
+   saldo «al desmembrar», que no vence por fecha). */
+const estadoGiroAlDia = g => {
+  const hoy = new Date().toISOString().slice(0, 10);
+  if (g.estado === 'pendiente' && !g.condicion && g.vencimiento && String(g.vencimiento).slice(0, 10) < hoy) return 'vencido';
+  return g.estado;
+};
 
 const _num = v => (v === null || v === undefined ? 0 : Number(v));
 const _fecha = v => (v ? String(v).slice(0, 10) : null);
@@ -273,7 +281,7 @@ async function cargarDesdeSupabase() {
       const dest = ct.obligaciones.find(x => x.id === g.obligacion_id);
       if (dest) dest.giros.push({
         id: g.id, n: g.numero, vence: _fecha(g.vencimiento),
-        monto: _num(g.monto), estado: g.estado, abonado: _num(g.abonado),
+        monto: _num(g.monto), estado: estadoGiroAlDia(g), abonado: _num(g.abonado),
         capital: g.capital != null ? _num(g.capital) : null, interes: g.interes != null ? _num(g.interes) : null,
         exonerado: !!g.interes_exonerado,
         // 'desmembracion': no vence hasta que se libere (40)
@@ -387,8 +395,9 @@ async function cargarCartera() {
       if (!ct) continue;
       const dest = ct.obligaciones.find(x => x.id === g.obligacion_id);
       if (dest) dest.giros.push({ id: g.id, n: g.numero, vence: _fecha(g.vencimiento),
-                                  monto: _num(g.monto), estado: g.estado,
+                                  monto: _num(g.monto), estado: estadoGiroAlDia(g),
                                   abonado: _num(g.abonado), condicion: g.condicion || null,
+                                  fechaEstimada: g.fecha_estimada ? _fecha(g.fecha_estimada) : null,
                                   capital: g.capital != null ? _num(g.capital) : null, interes: g.interes != null ? _num(g.interes) : null, exonerado: !!g.interes_exonerado });
     }
     for (const ct of DB.contratos) {

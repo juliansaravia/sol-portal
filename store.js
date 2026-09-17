@@ -1158,7 +1158,7 @@ const diaSemana = iso => DIAS_SEM[new Date(iso + 'T00:00:00').getDay()] || '';
 function calendarioDeCartera() {
   const salida = [];
   for (const ct of DB.contratos) {
-    if (ct.estado === 'anulado') continue;
+    if (ct.estado !== 'aprobado') continue;     // anulados, desistidos y borradores no se cobran
     const giros = (ct.obligaciones || []).flatMap(o => o.giros || []);
     if (!giros.length) continue;
     const total = giros.length;
@@ -1169,7 +1169,7 @@ function calendarioDeCartera() {
          sola de las dos, la agenda salía vacía en la otra. */
       const vence = g.vence || g.venc; if (!vence) return;
       salida.push({
-        c: ct.no, f: vence, m: g.monto,
+        c: ct.no, f: vence, m: Math.max(0, Math.round(((g.monto || 0) - (g.abonado || 0)) * 100) / 100),   // lo que falta, no la cuota entera
         n: nombreCliente(ct.clienteId), l: ct.lote,
         d: diaSemana(vence),
         q: i + 1, p: total
