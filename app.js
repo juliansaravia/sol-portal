@@ -1989,8 +1989,8 @@ function modalCobro(contrato,fecha){
         <input id="rcMonto" type="number" step="0.01" placeholder="cuota: ${Q(c.m)}" oninput="totalBoleta('rc');pistaCobro(${Math.round(c.m*100)/100})">
         <div class="hint" id="rcPista">Si es menor, queda como pago parcial de esta cuota.</div></div>
       <div class="field"><label>Fecha del pago</label><input id="rcFecha" type="date" value="${HOY_ISO}" max="${HOY_ISO}"></div>
-      <div class="field" id="rcAplicBox" hidden><label>Lo que sobra de la cuota</label>
-        <select id="rcAplic"><option value="cuotas">Adelanta las cuotas siguientes</option><option value="capital">Se abona a capital (recalcula las cuotas)</option></select></div>
+      <div class="field" id="rcAplicBox" hidden><label>${PROYECTO&&PROYECTO.metodo==='amortizado'?'Lo que sobra de la cuota':'Lo que sobra adelanta las cuotas siguientes'}</label>
+        <select id="rcAplic" ${PROYECTO&&PROYECTO.metodo==='amortizado'?'':'style="display:none"'}><option value="cuotas">Adelanta las cuotas siguientes</option>${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Se abona a capital (recalcula las cuotas)</option>':''}</select></div>
       <div class="field"><label>Forma de pago</label>
         <input id="rcForma" value="Transferencia bancaria" readonly style="background:var(--tint)">
         <div class="hint">Solo se reciben transferencias a la cuenta recaudadora. Decisión del dueño.</div></div>
@@ -4203,8 +4203,8 @@ function modalPago(id){
     <div class="modal-b"><div class="form-grid">
       <div class="field"><label>Cuota a la que se aplica</label><select id="p-giro" onchange="pistaAplicacion('${id}')">${opcionesCuotas(ct)}</select></div>
       <div class="field"><label>Monto de la boleta *</label><input id="p-monto" type="number" step="0.01" placeholder="${ec.prox?'cuota: '+Q(ec.prox.monto):'monto que pagó'}" oninput="totalBoleta('p');pistaAplicacion('${id}')"></div>
-      <div class="field full" id="p-aplicBox" hidden><label id="p-aplicLbl">Pagó más que la cuota · ¿qué se hace con lo que sobra?</label>
-        <select id="p-aplic"><option value="cuotas">Adelantar las cuotas siguientes</option><option value="capital">Abonarlo a capital (se recalculan las cuotas, mismo plazo)</option></select>
+      <div class="field full" id="p-aplicBox" hidden><label id="p-aplicLbl">${PROYECTO&&PROYECTO.metodo==='amortizado'?'Pagó más que la cuota · ¿qué se hace con lo que sobra?':'Pagó más que la cuota · lo que sobra adelanta las cuotas siguientes (interés simple: no se recalcula nada)'}</label>
+        <select id="p-aplic" ${PROYECTO&&PROYECTO.metodo==='amortizado'?'':'style="display:none"'}><option value="cuotas">Adelantar las cuotas siguientes</option>${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Abonarlo a capital (se recalculan las cuotas, mismo plazo)</option>':''}</select>
         <div class="hint" id="p-aplicPista"></div></div>
       <div class="field"><label>Forma de pago</label><input id="p-forma" value="Transferencia bancaria" readonly style="background:var(--tint)"></div>
       <div class="field"><label>Cuenta acreditada</label><select id="p-cta">${opcionesCuenta()}</select></div>
