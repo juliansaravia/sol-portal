@@ -790,11 +790,19 @@ const reciboDe = pagoId => (DB.recibos || []).find(r => mismoId(r.pagoId, pagoId
    referencia; las boletas iban por WhatsApp y WhatsApp las borró. Para
    un pago anterior al corte, la referencia bancaria ES el respaldo. */
 const CORTE_BOLETAS = '2026-09-01';
+/* La referencia del banco es obligatoria; la FOTO de la boleta, no (17 sept 2026: de lo
+   histórico no hay todas las boletas). Para volver a exigir la foto en contratos nuevos,
+   poné aquí la fecha desde la que aplica, p. ej. '2026-09-21'; con null queda apagado. */
+const EXIGE_FOTO_BOLETA_DESDE = null;
+const exigeFotoBoleta = ct => !!(EXIGE_FOTO_BOLETA_DESDE && ct && String(ct.fecha || '') >= EXIGE_FOTO_BOLETA_DESDE);
 function pagoRespaldado(p) {
   if (!p) return false;
   const adj = (typeof adjuntosDe === 'function' ? adjuntosDe('pago', p.id) : []).filter(a => !/^Recibo/i.test(a.descripcion || ''));
   if (adj.length) return true;
-  return !!(p.referencia && String(p.referencia).trim() && String(p.fecha || '') < CORTE_BOLETAS);
+  const conRef = !!(p.referencia && String(p.referencia).trim());
+  if (!conRef) return false;
+  const ct = (typeof getContrato === 'function') ? getContrato(p.contratoId) : null;
+  return !exigeFotoBoleta(ct) || String(p.fecha || '') < CORTE_BOLETAS;
 }
 
 /* Cantidad en letras, al estilo del recibo del CRM:

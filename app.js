@@ -1996,7 +1996,7 @@ function modalCobro(contrato,fecha){
         <div class="hint">Solo se reciben transferencias a la cuenta recaudadora. Decisión del dueño.</div></div>
       <div class="field"><label>Cuenta acreditada</label>
         <select id="rcCuenta">${opcionesCuenta()}</select></div>
-      <div class="field"><label>Foto de la boleta *</label>
+      <div class="field"><label>Foto de la boleta · opcional</label>
         <input id="rcFoto" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment"
                onchange="if(typeof leerBoletaEn==='function')leerBoletaEn(this,{ref:'rcRef',monto:'rcMonto',aviso:'rcLeido'})">
         <div class="hint" id="rcLeido">JPG, PNG o PDF · máximo 5 MB. Al elegir la foto, la referencia se lee sola.</div></div>
@@ -2023,7 +2023,7 @@ async function guardarCobro(contrato,fecha){
   if(!ref){toast('Anota el número de boleta o referencia');return;}
   const foto=(document.getElementById('rcFoto')||{}).files;
   const archivo=foto&&foto[0];
-  if(!archivo){toast('Adjuntá la foto de la boleta: sin ella no se puede confirmar el pago',6000,true);return;}
+  { const ctc=indices().contratosPorNo.get(String(contrato)); if(!archivo&&exigeFotoBoleta(ctc)){toast('Este contrato exige la foto de la boleta',6000,true);return;} }
   const r=await conBoton(async()=>{
     const reg=await marcarCobrada(contrato,fecha,{monto,
       forma:document.getElementById('rcForma').value,
@@ -2033,7 +2033,7 @@ async function guardarCobro(contrato,fecha){
     /* La boleta cuelga del pago. Si la subida falla, el pago ya quedó
        registrado y se dice: es mejor un pago sin foto que un cobro
        hecho dos veces por reintentar. */
-    if(reg.pagoId && typeof hayBase==='function' && hayBase()){
+    if(archivo && reg.pagoId && typeof hayBase==='function' && hayBase()){
       const a=await sbAdjuntar('pago', reg.pagoId, archivo, 'Boleta '+ref);
       if(!a.ok) toast('El cobro quedó registrado, pero la foto no subió: '+a.error+' · Subila desde el contrato.',9000,true);
       else (DB.adjuntos=DB.adjuntos||[]).push({id:a.dato.id,entidad:'pago',entidadId:Number(reg.pagoId),bucket:a.dato.bucket,ruta:a.dato.ruta,nombre:archivo.name,mime:archivo.type,bytes:archivo.size,descripcion:'Boleta '+ref,fecha:HOY_ISO});
@@ -2042,7 +2042,7 @@ async function guardarCobro(contrato,fecha){
     return reg;
   });
   if(!r) return;                      // el motivo ya se mostró
-  closeModal(); toast(`Cobro registrado con su boleta ✓${r.extras?' · '+r.extras+' lote(s) más con la misma boleta':''} · emitiendo el recibo…`); renderRecaudacion();
+  closeModal(); toast(`Cobro registrado ✓ · ref. ${ref}${archivo?' con su boleta':''}${r.extras?' · '+r.extras+' lote(s) más con la misma boleta':''} · emitiendo el recibo…`); renderRecaudacion();
   /* Con la boleta arriba, el recibo sale solo y se ofrece para mandarlo. */
   if(r.pagoId) emitirYCompartirRecibo(r.pagoId);
 }
@@ -3740,7 +3740,7 @@ function pintarContrato(){
       h+=`<div class="pay-item"><div class="pay-ico" style="${resp?'':'color:var(--gold)'}">${resp?'🗎':'⚠'}</div>
         <div class="pay-main"><div class="pay-title">${Q(p.monto)} · ${esc(p.forma||'')} ${p.referencia?`· ref. ${esc(p.referencia)}`:''}</div>
           <div class="pay-sub">${fmtD(p.fecha)} · ${esc(p.estado||'')}${bol.length?` · boleta subida`:(resp?' · <b>respaldado con la referencia del banco</b>':' · <b>sin respaldo</b>')}</div></div>
-        <div>${(()=>{const rc=reciboDe(p.id); return rc?`<button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">Recibo ${String(rc.numero).padStart(6,'0')}</button>`:(bol.length&&p.estado!=='rechazado'?`<button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">Emitir recibo</button>`:'');})()}
+        <div>${(()=>{const rc=reciboDe(p.id); return rc?`<button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">Recibo ${String(rc.numero).padStart(6,'0')}</button>`:((bol.length||(p.referencia&&String(p.referencia).trim()))&&p.estado!=='rechazado'?`<button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">Emitir recibo</button>`:'');})()}
           ${bol.length?`<button class="btn btn-ghost btn-sm" onclick="verAdjunto('${bol[0].id}')">Ver</button>`:''}
           ${p.estado!=='rechazado'?`<button class="btn ${bol.length?'btn-ghost':'btn-gold'} btn-sm" onclick="modalBoleta('${p.id}')">${bol.length?'Otra boleta':'Subir boleta'}</button>`:''}</div></div>`;});
   }
@@ -4253,7 +4253,7 @@ function modalPago(id){
       <div class="field"><label>Cuenta acreditada</label><select id="p-cta">${opcionesCuenta()}</select></div>
       <div class="field"><label>Fecha del pago</label><input id="p-fecha" type="date" value="${HOY_ISO}" max="${HOY_ISO}" onchange="pagoHistoricoPista()"></div>
       ${PROYECTO&&PROYECTO.moneda==='USD'?`<div class="field"><label>Moneda en que pagó</label><select id="p-moneda" onchange="pistaMonedaPago()"><option value="USD">Dólares (US$)</option><option value="GTQ">Quetzales · al ${PROYECTO.tipoCambio||7.8}</option></select><div class="hint" id="p-monedaPista">El contrato está en US$.</div></div>`:''}
-      <div class="field full"><label>Foto de la boleta <span class="ast" id="p-fotoAst">*</span></label>
+      <div class="field full"><label>Foto de la boleta <span class="ast" id="p-fotoAst" hidden>*</span><span class="hint" style="font-weight:400"> · opcional; la referencia sí es obligatoria</span></label>
         <input id="p-foto" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" capture="environment"
                onchange="if(typeof leerBoletaEn==='function')leerBoletaEn(this,{ref:'p-ref',monto:'p-monto',aviso:'p-leido'})">
         <div class="hint" id="p-leido">JPG, PNG o PDF · máximo 5 MB. Al elegir la foto, la referencia y el monto se leen solos.</div></div>
@@ -4268,7 +4268,7 @@ function modalPago(id){
    con la que el banco lo confirmó. */
 function pagoHistoricoPista(){
   const f=v('p-fecha')||HOY_ISO, hist=f<CORTE_BOLETAS;
-  const ast=document.getElementById('p-fotoAst'); if(ast) ast.hidden=hist;
+  const ast=document.getElementById('p-fotoAst'); if(ast) ast.hidden=hist||!(typeof exigeFotoBoleta==='function'&&exigeFotoBoleta(getContrato(drawerCt)));
   const l=document.getElementById('p-leido'); if(l&&hist) l.textContent='Pago histórico: si no hay boleta, basta la referencia con la que el banco lo confirmó.';
 }
 /* Cuotas pendientes de un contrato, para elegir a cuál va el pago. */
@@ -4306,7 +4306,7 @@ async function guardarPago(id){
   const fecha=v('p-fecha')||HOY_ISO; if(fecha>HOY_ISO){toast('La fecha del pago no puede ser futura',5000,true);return;}
   const historico=fecha<CORTE_BOLETAS;
   const foto=(document.getElementById('p-foto')||{}).files; const archivo=foto&&foto[0];
-  if(!archivo&&!historico){toast('Adjuntá la foto de la boleta: sin ella no se puede confirmar el pago',6000,true);return;}
+  if(!archivo&&!historico&&exigeFotoBoleta(getContrato(id))){toast('Este contrato exige la foto de la boleta',6000,true);return;}
   const p=await conBoton(async()=>{
     /* Si hay una cuota pendiente, el pago se ata a ella y queda marcada
        como cobrada (misma ruta que Recaudación). Si no —abono libre—,
@@ -4335,7 +4335,7 @@ async function guardarPago(id){
   });
   if(!p) return;
   await registrarGestion(id,'Cobranza','Cobranza Satisfactória','Boleta '+ref+' por '+Q(monto)+(p.extras?' · compartida con '+p.extras+' lote(s) más':''));
-  closeModal(); toast('Pago aplicado con su boleta ✓ · emitiendo el recibo…'); drawerTab='cuenta'; pintarContrato();
+  closeModal(); toast('Pago registrado ✓ · ref. '+ref+' · emitiendo el recibo…'); drawerTab='cuenta'; pintarContrato();
   emitirYCompartirRecibo(p.id);
 }
 function modalGestion(id){
