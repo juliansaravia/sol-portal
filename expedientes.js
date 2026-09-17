@@ -91,10 +91,15 @@ function expLista() {
       return `${c.no} ${c.lote} ${nom} ${con.tel || ''}`.toLowerCase().includes(t);
     })
     .filter(c => EXP_FILTRO === 'todos' ? true
+               : EXP_FILTRO === 'sin_firmado' ? expSinFirmado(c)
                : EXP_FILTRO === 'completos' ? expCompleto(c)
                : !expCompleto(c))
     .sort((a, b) => faltantesDe(b).length - faltantesDe(a).length || a.lote.localeCompare(b.lote));
 }
+
+/* Contratos vigentes que todavía no tienen el firmado escaneado en el
+   sistema: la lista de trabajo de quien los va subiendo (17 sept 2026). */
+const expSinFirmado = c => c.estado === 'aprobado' && typeof contratoFirmadoDe === 'function' && !contratoFirmadoDe(c);
 
 /* ---------- La pantalla ---------- */
 function renderExpedientes() {
@@ -138,7 +143,8 @@ function renderExpedientes() {
              value="${esc(EXP_BUSCA)}" oninput="EXP_BUSCA=this.value;expPintar()">
     </div></div>
     <div class="card-b" style="border-bottom:1px solid var(--line);display:flex;gap:8px">`;
-  [['incompletos', 'Con algo pendiente', inc.length],
+  [['sin_firmado', 'Falta el contrato firmado', vivos.filter(expSinFirmado).length],
+   ['incompletos', 'Con algo pendiente', inc.length],
    ['completos', 'Completos', vivos.length - inc.length],
    ['todos', 'Todos', vivos.length]].forEach(([k, txt, n]) => {
     h += `<button class="btn btn-sm ${EXP_FILTRO === k ? 'btn-primary' : 'btn-ghost'}"
@@ -187,7 +193,8 @@ function expPintar() {
           ? f.map(x => `<span class="badge" style="background:${x.grave ? '#B0562F' : '#8A7F76'}18;
               color:${x.grave ? '#B0562F' : '#8A7F76'};margin:1px">${esc(x.que)}</span>`).join(' ')
           : '<span style="color:var(--green)">completo</span>'}</td>
-      <td><button class="btn btn-ghost btn-sm" onclick="verExpediente('${ct.id}')">Abrir</button></td>
+      <td style="white-space:nowrap">${expSinFirmado(ct) && typeof puede === 'function' && puede('doc.subir') && typeof modalDocumentoTipo === 'function'
+          ? `<button class="btn btn-gold btn-sm" onclick="modalDocumentoTipo('${ct.id}','contrato')">Subir contrato firmado</button> ` : ''}<button class="btn btn-ghost btn-sm" onclick="verExpediente('${ct.id}')">Abrir</button></td>
     </tr>`;
   }).join('');
 
