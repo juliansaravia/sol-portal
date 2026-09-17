@@ -3684,10 +3684,12 @@ function pintarContrato(){
       <div><div class="f-lbl">Vendedor</div><div class="f-val">${esc(ct.vendedor)||'<span class="muted">Sin asignar</span>'}
         ${['admin','gerencia','financiero'].includes(ROLE)?`<button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="modalVendedorContrato('${ct.id}')">${ct.vendedor&&buscarPersona(ct.vendedor)?'Cambiar':'Asignar'}</button>`:''}</div></div>
       <div><div class="f-lbl">Origen</div><div class="f-val">${esc(ct.origen||'—')}</div></div>
-      <div><div class="f-lbl">Firma</div><div class="f-val">${ct.firma}</div></div>
+      <div><div class="f-lbl">Firma</div><div class="f-val">${esc(ct.firma||'—')}</div></div>
       <div><div class="f-lbl">Fuente</div><div class="f-val">${ct.fuente||'Suite'}</div></div>
       <div><div class="f-lbl">Modalidad</div><div class="f-val">${esc(etiquetaModalidad(ct))}</div></div>
     </div>
+    <div class="sect-t">Pagos del contrato</div>
+    <div style="overflow-x:auto;margin-bottom:6px">${pagosDelContratoHTML(ct,6)}</div>
     <div class="sect-t">Cliente</div><div class="fgrid">
       <div class="f-full"><div class="f-lbl">Nombre</div><div class="f-val">${esc(nombreCliente(ct.clienteId))}</div></div>
       <div><div class="f-lbl">DPI / CUI</div><div class="f-val">${esc(cli&&cli.dpi)||'—'}</div></div>
@@ -3810,6 +3812,26 @@ function pintarContrato(){
 const abonadoDeFila=f=>f.estado==='pagado'?f.cuota:Math.min(f.cuota,f.abonado||0);
 const pagadoDeFilas=filas=>r2(filas.reduce((s,f)=>s+abonadoDeFila(f),0));
 const faltaDeFila=f=>r2(Math.max(0,f.cuota-abonadoDeFila(f)));
+/* Todos los pagos de un contrato (registrados, confirmados y rechazados), del más nuevo al más viejo,
+   con su boleta, su recibo y —si ya está confirmado— a qué cuotas se aplicó. */
+function pagosDelContratoHTML(ct,max){
+  const todos=(indices().pagosPorContrato.get(String(ct.id))||[]).slice().sort((a,b)=>String(b.fecha||'').localeCompare(String(a.fecha||''))||String(b.id).localeCompare(String(a.id),undefined,{numeric:true}));
+  if(!todos.length) return `<div class="hint">Sin pagos registrados.</div>`;
+  const {filas}=filasEstadoCuenta(ct); const apl=new Map(); pagosAplicados(ct,filas).forEach(x=>apl.set(String(x.id),x));
+  const EST={confirmado:['Confirmado','b-ok'],registrado:['Por confirmar','b-pend'],rechazado:['Rechazado','b-mora']};
+  const lista=max?todos.slice(0,max):todos;
+  /* En la ficha (un cajón angosto) cada pago va como tarjeta: monto y fecha arriba, el detalle abajo. */
+  let h='';
+  lista.forEach(p=>{ const e=EST[p.estado]||[p.estado||'—','b-nod']; const a=apl.get(String(p.id)); const bol=(typeof adjuntosDe==='function'?adjuntosDe('pago',p.id):[]).filter(x=>!/^Recibo/i.test(x.descripcion||'')); const rc=(typeof reciboDe==='function')?reciboDe(p.id):null;
+    h+=`<div class="pay-item" style="align-items:flex-start"><div class="pay-main" style="min-width:0">
+        <div class="pay-title" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span>${Q(p.monto)}</span><span class="hint" style="font-weight:400">${fmtD(p.fecha)}</span><span class="badge ${e[1]}">${e[0]}</span></div>
+        <div class="pay-sub">${esc(p.forma||'—')}${p.referencia?` · ref. ${esc(p.referencia)}`:''}</div>
+        <div class="pay-sub">${a?'Se aplicó a: '+a.detalle.map(d=>`${esc(d.etq)} ${Q(d.monto)}`).join(' · '):(p.estado==='registrado'?'Se aplica a las cuotas cuando Finanzas lo confirme':(p.estado==='rechazado'?'No se aplicó':''))}</div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${bol.length?`<button class="btn btn-ghost btn-sm" onclick="verAdjunto('${bol[0].id}')">Boleta</button>`:''}${rc?`<button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">Recibo ${String(rc.numero).padStart(6,'0')}</button>`:''}</div></div>`; });
+  const conf=todos.filter(p=>p.estado==='confirmado').reduce((s,p)=>s+(+p.monto||0),0), reg=todos.filter(p=>p.estado==='registrado').reduce((s,p)=>s+(+p.monto||0),0);
+  h+=`<div class="money-row" style="margin-top:6px"><span><b>Confirmado ${Q(conf)}</b>${reg?` <span class="hint">+ ${Q(reg)} por confirmar</span>`:''}</span><span>${max&&todos.length>max?`<a href="#" onclick="drawerTab='cuenta';pintarContrato();return false;">ver los ${todos.length} pagos ›</a>`:''}</span></div>`;
+  return h;
+}
 function pagosAplicados(ct,filas){
   const pagos=(indices().pagosPorContrato.get(String(ct.id))||[]).filter(p=>p.estado==='confirmado').slice().sort((a,b)=>String(a.fecha||'').localeCompare(String(b.fecha||''))||String(a.id).localeCompare(String(b.id),undefined,{numeric:true}));
   const resto=filas.map(f=>f.condicion?0:f.cuota); const etq=i=>`${filas[i].obl==='Cuota Inicial'?'enganche':'cuota '+filas[i].n+'/'+filas[i].de}`;
@@ -3818,7 +3840,7 @@ function pagosAplicados(ct,filas){
     const m=r2(Math.min(x.queda,resto[i])); if(m>0){ x.det.push({etq:etq(i),monto:m}); resto[i]=r2(resto[i]-m); x.queda=r2(x.queda-m); } });
   out.forEach(x=>{ for(let i=0;i<filas.length&&x.queda>0.004;i++){ if(resto[i]<=0.004) continue; const m=r2(Math.min(x.queda,resto[i])); x.det.push({etq:etq(i),monto:m}); resto[i]=r2(resto[i]-m); x.queda=r2(x.queda-m); } });
   return out.map(x=>{ const rc=(typeof reciboDe==='function')?reciboDe(x.p.id):null;
-    return {fecha:x.p.fecha,monto:+x.p.monto||0,forma:x.p.forma||'',referencia:x.p.referencia||'',recibo:rc?rc.numero:null,
+    return {id:x.p.id,fecha:x.p.fecha,monto:+x.p.monto||0,forma:x.p.forma||'',referencia:x.p.referencia||'',recibo:rc?rc.numero:null,
             detalle:x.det.concat(x.queda>0.004?[{etq:'a favor del cliente',monto:x.queda}]:[])}; });
 }
 function filasEstadoCuenta(ct){
