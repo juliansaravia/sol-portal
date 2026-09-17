@@ -653,8 +653,11 @@ function estadoCuenta(ct) {
   const giros = ct.obligaciones.flatMap(o => o.giros.map(g => ({ ...g, obl: o.desc })));
   const totalGiros = giros.reduce((s, g) => s + g.monto, 0);
   const pagadas = giros.filter(g => g.estado === 'pagado').length;
-  const vencidos = giros.filter(g => g.estado === 'vencido');
-  const montoVencido = vencidos.reduce((s, g) => s + g.monto, 0);
+  /* Vencido = toda cuota cuya fecha ya pasó y no está pagada completa: también la que tiene un
+     abono parcial, por lo que le falta. Así Cobranza y la caja esperada dicen lo mismo. */
+  const _venc = g => g.vence || g.venc;
+  const vencidos = giros.filter(g => !g.condicion && (g.estado === 'vencido' || (g.estado === 'parcial' && _venc(g) && String(_venc(g)).slice(0, 10) < HOY_ISO)));
+  const montoVencido = Math.round(vencidos.reduce((s, g) => s + Math.max(0, (g.monto || 0) - (g.abonado || 0)), 0) * 100) / 100;
   const rec = recaudadoDe(ct);
   const saldo = Math.max(0, totalGiros - rec);
   const prox = giros.find(g => !g.condicion && (g.estado === 'pendiente' || g.estado === 'vencido' || g.estado === 'parcial'));
