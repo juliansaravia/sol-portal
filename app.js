@@ -3804,6 +3804,11 @@ function pintarContrato(){
 }
 /* ---------- ESTADO DE CUENTA (sin desglose capital/interés) ---------- */
 /* Filas: Monto debido (saldo antes) → Cuota → Monto final (saldo después) */
+/* Lo pagado de verdad: las cuotas completas más lo abonado a las parciales. Y lo
+   que falta de una cuota, que es lo que el cliente tiene que traer la próxima vez. */
+const abonadoDeFila=f=>f.estado==='pagado'?f.cuota:Math.min(f.cuota,f.abonado||0);
+const pagadoDeFilas=filas=>r2(filas.reduce((s,f)=>s+abonadoDeFila(f),0));
+const faltaDeFila=f=>r2(Math.max(0,f.cuota-abonadoDeFila(f)));
 function filasEstadoCuenta(ct){
   const plan=ct.plan||planFinanciamiento(ct.precio,(ct.obligaciones[0]||{}).monto||ENGANCHE_MIN,
              (ct.obligaciones[1]||{}).nGiros||60);
@@ -3823,7 +3828,7 @@ function filasEstadoCuenta(ct){
 }
 function estadoCuentaHTML(ct,ec,completo){
   const {filas,totalPlan,plan}=filasEstadoCuenta(ct);
-  const pagado=filas.filter(f=>f.estado==='pagado').reduce((s,f)=>s+f.cuota,0);
+  const pagado=pagadoDeFilas(filas);
   const pend=Math.max(0,totalPlan-pagado);
   const prox=filas.find(f=>f.estado!=='pagado'&&!f.condicion);
   const venc=filas.filter(f=>f.estado==='vencido');
@@ -3838,7 +3843,7 @@ function estadoCuentaHTML(ct,ec,completo){
         <div class="ec-mini">${pct}% pagado · ${filas.filter(f=>f.estado==='pagado').length} de ${filas.length} cuotas</div>
       </div>
       <div class="ec-hero-r">
-        ${prox?`<div class="ec-next"><span>Próxima cuota</span><b>${Q(prox.cuota)}</b><i>vence ${fmtD(prox.venc)}</i></div>`
+        ${prox?`<div class="ec-next"><span>${abonadoDeFila(prox)>0?'Falta de la próxima cuota':'Próxima cuota'}</span><b>${Q(faltaDeFila(prox))}</b><i>vence ${fmtD(prox.venc)}${abonadoDeFila(prox)>0?` · ya abonó ${Q(abonadoDeFila(prox))} de ${Q(prox.cuota)}`:''}</i></div>`
               :(ec&&ec.diferido>0?`<div class="ec-next"><span>Saldo al desmembrar</span><b>${Q(ec.diferido)}</b><i>se cobra al desmembrar · no es mora</i></div>`
               :`<div class="ec-next ok"><span>Plan</span><b>Liquidado</b><i>sin saldo</i></div>`)}
         ${venc.length?`<div class="ec-mora"><span>${venc.length} cuota(s) vencida(s)</span><b>${Q(venc.reduce((s,f)=>s+f.cuota,0))}</b>
@@ -3910,12 +3915,12 @@ function verEstadoCuenta(id){
 }
 function enviarEC(id){
   const ct=getContrato(id); const {filas,totalPlan,plan}=filasEstadoCuenta(ct);
-  const pagado=filas.filter(f=>f.estado==='pagado').reduce((s,f)=>s+f.cuota,0);
+  const pagado=pagadoDeFilas(filas);
   const prox=filas.find(f=>f.estado!=='pagado'&&!f.condicion);
   const cli=getCliente(ct.clienteId);
   const txt=`*Estado de cuenta · ${ct.no}*\n${nombreCliente(ct.clienteId)} · Lote ${ct.lote}\n\n`+
     `Total del plan: ${Q(totalPlan)}\nPagado: ${Q(pagado)}\n*Saldo: ${Q(totalPlan-pagado)}*\n`+
-    (prox?`\nPróxima cuota: ${Q(prox.cuota)}\nVence: ${fmtD(prox.venc)}\n`:'\nPlan liquidado\n')+
+    (prox?`\nPróxima cuota: ${Q(faltaDeFila(prox))}${abonadoDeFila(prox)>0?` (ya abonó ${Q(abonadoDeFila(prox))} de ${Q(prox.cuota)})`:''}\nVence: ${fmtD(prox.venc)}\n`:'\nPlan liquidado\n')+
     `\nSOL Desarrollos · La Esperanza`;
   const tel=(cli&&(cli.telefono||cli.tel)||'').replace(/\D/g,'');
   window.open(`https://wa.me/${tel}?text=${encodeURIComponent(txt)}`,'_blank');
@@ -4451,7 +4456,7 @@ function nombreEstadoCuenta(ct){ return `Estado de cuenta ${String(ct.no||'').re
 async function estadoCuentaPDF(ct){
   if(!ct) return null; const J=await cargarJsPDF(); if(!J) return null;
   const {filas,totalPlan,plan}=filasEstadoCuenta(ct); const cli=getCliente(ct.clienteId);
-  const pagado=filas.filter(f=>f.estado==='pagado').reduce((s,f)=>s+f.cuota,0);
+  const pagado=pagadoDeFilas(filas);
   const pend=Math.max(0,totalPlan-pagado), prox=filas.find(f=>f.estado!=='pagado'&&!f.condicion), venc=filas.filter(f=>f.estado==='vencido');
   const doc=new J({unit:'pt',format:'letter'}); const W=612, M=48; let y=44;
   const logo=await logoAljibe(); if(logo){ try{ doc.addImage(logo,'JPEG',M,y,54,54); }catch(e){} }
@@ -4469,7 +4474,7 @@ async function estadoCuentaPDF(ct){
   // resumen en tres cajas
   const caja=(x,t,v,rojo)=>{ doc.setDrawColor(210); doc.roundedRect(x,y,160,52,6,6); doc.setFontSize(8.5); doc.setTextColor(110); doc.setFont('helvetica','normal'); doc.text(t.toUpperCase(),x+10,y+16);
     doc.setFontSize(15); doc.setFont('helvetica','bold'); doc.setTextColor(rojo?184:46,rojo?69:107,rojo?46:79); doc.text(v,x+10,y+38); doc.setTextColor(0); };
-  caja(M,'Pagado a la fecha',Q(pagado)); caja(M+176,'Saldo pendiente',Q(pend)); caja(M+352,venc.length?`${venc.length} cuota(s) vencida(s)`:'Próxima cuota',venc.length?Q(venc.reduce((s,f)=>s+f.cuota,0)):(prox?Q(prox.cuota)+'  '+fmtD(prox.venc):'Plan liquidado'),!!venc.length);
+  caja(M,'Pagado a la fecha',Q(pagado)); caja(M+176,'Saldo pendiente',Q(pend)); caja(M+352,venc.length?`${venc.length} cuota(s) vencida(s)`:'Próxima cuota',venc.length?Q(venc.reduce((s,f)=>s+f.cuota,0)):(prox?Q(faltaDeFila(prox))+'  '+fmtD(prox.venc):'Plan liquidado'),!!venc.length);
   y+=70;
   { const mo=(typeof calcularMora==='function')?calcularMora(ct):{total:0};
     if(mo.total>0){ doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(184,69,46);
@@ -4483,14 +4488,14 @@ async function estadoCuentaPDF(ct){
   cab();
   filas.forEach((f,idx)=>{
     if(y>740){ doc.addPage(); y=44; cab(); }
-    const est={pagado:['Pagada',46,107,79],vencido:['Vencida',184,69,46],parcial:['Parcial',138,95,18]}[f.estado]||['Pendiente',110,110,110];
+    const est={pagado:['Pagada',46,107,79],vencido:['Vencida',184,69,46],parcial:['Falta '+Q(faltaDeFila(f)),138,95,18]}[f.estado]||['Pendiente',110,110,110];
     if(idx%2) { doc.setFillColor(250,251,250); doc.rect(M,y,W-2*M,16,'F'); }
     doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(0);
     doc.text(`${f.n}/${f.de}`,cols[0]+4,y+11); doc.text(String(f.obl||'').slice(0,desg?14:18),cols[1]+4,y+11); doc.text((f.condicion?'Al desmembrar':fmtD(f.venc)),cols[2]+4,y+11);
     let k=3;
     if(desg){ doc.text(f.capital!=null?Q(f.capital):'—',cols[k++]+4,y+11); doc.text(f.exonerado?'exonerado':(f.interes!=null?Q(f.interes):'—'),cols[k++]+4,y+11); }
     doc.text(Q(f.cuota),cols[k++]+4,y+11); doc.text(Q(f.final),cols[k++]+4,y+11);
-    doc.setTextColor(est[1],est[2],est[3]); doc.setFont('helvetica','bold'); doc.text(est[0],cols[k]+4,y+11); doc.setTextColor(0);
+    doc.setTextColor(est[1],est[2],est[3]); doc.setFont('helvetica','bold'); if(f.estado==='parcial') doc.setFontSize(7.5); doc.text(est[0],cols[k]+4,y+11); doc.setTextColor(0);
     y+=16;
   });
   y+=10; doc.setFontSize(8); doc.setTextColor(120); doc.setFont('helvetica','normal');
