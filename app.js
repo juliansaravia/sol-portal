@@ -2708,7 +2708,7 @@ function renderCobranza(){
   // Los que nunca han pagado: van primero, son otro problema
   if(M.nuncaPagaron.length){
     h+=`<div class="card"><div class="card-h"><h2>Ventas que nunca pagaron una cuota · ${M.nuncaPagaron.length}</h2>
-        <div class="hint">Entró el enganche y de ahí nada más</div></div>
+        <div class="hint">Sin ningún pago <b>confirmado</b>. Una boleta registrada no cuenta hasta que se confirma en Confirmación de pagos.</div></div>
       <div class="card-b" style="padding:0"><table class="data"><thead><tr>
       <th>Contrato</th><th>Lote</th><th>Cliente</th><th>Vendedor</th><th>Fecha</th>
       <th class="num">Vencido</th><th class="num">Comisión generada</th></tr></thead><tbody>`;
@@ -2718,7 +2718,8 @@ function renderCobranza(){
         <td><b>${m.no}</b></td><td>${m.lote}</td>
         <td>${ct?esc(nombreCliente(ct.clienteId)):'—'}</td>
         <td>${ct?esc(ct.vendedor):'—'}</td><td>${ct?fmtD(ct.fecha):'—'}</td>
-        <td class="num">${Q(m.saldoVenc)}</td>
+        <td class="num">${Q(m.saldoVenc)}${(()=>{ if(!ct) return ''; const pr=DB.pagos.filter(p=>mismoId(p.contratoId,ct.id)&&p.estado==='registrado'); if(!pr.length) return '';
+            return `<div class="hint" style="color:#8A5F12"><a href="#" onclick="event.stopPropagation();setView('confirmacion');return false;">${pr.length} boleta(s) por ${Q(pr.reduce((s,p)=>s+(+p.monto||0),0))} esperan confirmación ›</a></div>`; })()}</td>
         <td class="num">${ct?Q(calcularComision(ct)):'—'}</td></tr>`;});
     h+=`</tbody></table></div></div>`;
   }
