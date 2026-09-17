@@ -2147,8 +2147,8 @@ function renderEquipo(){
   const rarosT = act.filter(p=>sinComT(p).length);
   const perdida = rarosT.reduce((s,p)=>s+sinComT(p).reduce((t,c)=>t+calcularComision(c),0),0);
   const pasos=[
-    {n:sinCorreoT.length, t:'Completar correos', d:sinCorreoT.length?`Sin correo no se puede invitar: ${sinCorreoT.map(p=>esc(p.nombre)).join(', ')}`:'Todos tienen correo',
-     b:sinCorreoT.length?`<button class="btn btn-ghost btn-sm" onclick="modalPersona('${sinCorreoT[0].id}')">Editar a ${esc(sinCorreoT[0].nombre.split(' ')[0])}</button>`:''},
+    {n:sinCorreoT.length, t:'Crear accesos sin correo', d:sinCorreoT.length?`No tienen correo: se les crea usuario y contraseña temporal y se les manda por WhatsApp · ${sinCorreoT.map(p=>esc(p.nombre)).join(', ')}`:'Nadie sin correo está esperando acceso',
+     b:sinCorreoT.length?`<button class="btn btn-gold btn-sm" onclick="modalAccesosSinCorreo()">Crear ${sinCorreoT.length===1?'el acceso':'los '+sinCorreoT.length+' accesos'}</button>`:''},
     {n:invitablesT.length, t:'Invitar usuarios', d:invitablesT.length?'Reciben un correo y eligen su propia contraseña':'Todos los que tienen correo ya entran',
      b:invitablesT.length?`<button class="btn btn-gold btn-sm" onclick="invitarATodos()">Invitar a ${invitablesT.length===1?'esa persona':'las '+invitablesT.length}</button>`:''},
     {n:sinAsig.length, t:'Asignar vendedores', d:sinAsig.length?`${sinAsig.length} contrato(s) sin responsable: sin vendedor no hay comisión ni seguimiento`:'Todos los contratos tienen vendedor',
@@ -2324,6 +2324,70 @@ function usuarioSugerido(p){
   const base=(p.codigo||String(p.nombre||'').split(/\s+/).slice(0,2).join('.')).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9.]/g,'');
   return (base||'usuario')+'@'+DOMINIO_USUARIOS;
 }
+const guardarUsuarioDe=(p,u)=>guardarPersona({id:p.id,nombre:p.nombre,codigo:p.codigo,rol:p.rol,activo:true,telefono:p.tel||p.telefono||'',email:u,nota:p.nota||'',vendedorHasta:p.vendedorHasta||null,exige2fa:p.exige2fa!==false,externo:!!p.externo,organizacion:p.organizacion||null,accesoHasta:p.accesoHasta||null});
+/* Contraseña temporal que cumple la regla (12+, mayúscula, minúscula, número y
+   símbolo) y se puede dictar: sin 0/O, 1/l/I. Sale del generador del navegador. */
+function claveTemporal(){
+  const A='ABCDEFGHJKMNPQRSTUVWXYZ', a='abcdefghjkmnpqrstuvwxyz', n='23456789', al=(set,k)=>{const r=new Uint32Array(k);crypto.getRandomValues(r);return Array.from(r,x=>set[x%set.length]).join('');};
+  return al(A,1)+al(a,3)+'-'+al(n,4)+'-'+al(A,1)+al(a,3)+'!';
+}
+/* Usuario libre: si «ana.lopez@…» ya existe (o ya se propuso en la misma tanda), ana.lopez2, 3… */
+function usuarioLibre(p, tomados){
+  const sug=usuarioSugerido(p), [base,dom]=sug.split('@');
+  const usado=u=>(tomados&&tomados.has(u))||DB.equipo.some(x=>!mismoId(x.id,p.id)&&String(x.email||'').toLowerCase()===u);
+  let u=sug, i=2; while(usado(u)) u=base+(i++)+'@'+dom;
+  if(tomados) tomados.add(u); return u;
+}
+/* Accesos en tanda para quienes no tienen correo (vendedores y comisionistas,
+   17 sept 2026). Por cada persona: usuario en nuestro dominio + contraseña
+   temporal generada aquí, que sólo vive en esta ventana hasta mandarla por
+   WhatsApp. Al entrar, cada quien la cambia por la suya. */
+let __accesosTemp={};
+function modalAccesosSinCorreo(){
+  const lista=DB.equipo.filter(p=>p.activo&&!p.entra&&!p.email);
+  if(!lista.length) return toast('Nadie sin correo está esperando acceso');
+  __accesosTemp={}; const tomados=new Set();
+  openModal(`<div class="modal-h"><h3>Accesos sin correo</h3><p>${lista.length} persona(s) · usuario + contraseña temporal por WhatsApp</p></div>
+    <div class="modal-b">
+      <p class="hint" style="margin-bottom:10px">A cada quien se le crea un <b>usuario</b> (tiene forma de correo, pero no recibe mensajes) y una <b>contraseña temporal</b>. Tocá «Crear» y después «WhatsApp»: el mensaje ya lleva el enlace de la app, el usuario y la contraseña. Al entrar, la persona la cambia por una suya.</p>
+      <div style="overflow-x:auto"><table class="data"><thead><tr><th>Persona</th><th>Usuario · teléfono</th><th></th></tr></thead><tbody>
+      ${lista.map(p=>`<tr id="acc-${p.id}"><td><b>${esc(p.nombre)}</b><div class="hint">${esc(rolLabel(p.rol))}</div></td>
+        <td><input class="input" style="width:100%;min-width:170px" id="acc-u-${p.id}" value="${esc(usuarioLibre(p,tomados))}" autocomplete="off">
+          <div style="margin-top:4px">${(p.tel||p.telefono)?`<span class="hint">WhatsApp: ${esc(p.tel||p.telefono)}</span>`:`<input class="input" style="width:100%" id="acc-t-${p.id}" placeholder="Su WhatsApp (8 dígitos)" inputmode="numeric" autocomplete="off">`}</div></td>
+        <td id="acc-b-${p.id}" style="white-space:nowrap"><button class="btn btn-gold btn-sm" onclick="crearAccesoSinCorreo('${p.id}')">Crear</button></td></tr>`).join('')}
+      </tbody></table></div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="__accesosTemp={};closeModal();renderEquipo()">Cerrar</button></div>`);
+}
+async function crearAccesoSinCorreo(id){
+  const p=DB.equipo.find(x=>mismoId(x.id,id)); if(!p) return;
+  const celda=document.getElementById('acc-b-'+id), u=((document.getElementById('acc-u-'+id)||{}).value||'').trim().toLowerCase();
+  if(!/^[a-z0-9._-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(u)) return toast('El usuario tiene que tener forma de correo, por ejemplo andy@'+DOMINIO_USUARIOS,6000,true);
+  if(DB.equipo.some(x=>!mismoId(x.id,p.id)&&String(x.email||'').toLowerCase()===u)) return toast('Ese usuario ya lo tiene otra persona',5000,true);
+  const telNuevo=((document.getElementById('acc-t-'+id)||{}).value||'').replace(/\D/g,'');
+  if(telNuevo){ if(telNuevo.length<8) return toast('El teléfono lleva 8 dígitos',5000,true); p.tel=telNuevo; p.telefono=telNuevo; }
+  if(celda) celda.innerHTML='<span class="hint">Creando…</span>';
+  const falla=m=>{ if(celda) celda.innerHTML=`<button class="btn btn-gold btn-sm" onclick="crearAccesoSinCorreo('${p.id}')">Reintentar</button>`; if(m) toast(m,7000,true); };
+  try{
+    const rg=await guardarUsuarioDe(p,u); if(!rg) return falla();
+    const q=DB.equipo.find(x=>mismoId(x.id,id))||p;      // guardar puede refrescar el objeto
+    q.email=u; if(telNuevo&&!(q.tel||q.telefono)){ q.tel=telNuevo; q.telefono=telNuevo; }
+    const clave=claveTemporal();
+    const r=(typeof sbContrasena==='function'&&typeof hayBase==='function'&&hayBase())?await sbContrasena(q.id, clave):{ok:true,dato:{creada:true}};
+    if(!r||!r.ok) return falla();
+    q.entra=true; __accesosTemp[id]=clave;
+    anotar('equipo.contrasena', p.nombre+' · acceso sin correo · cuenta creada');
+    const inU=document.getElementById('acc-u-'+id); if(inU) inU.disabled=true;
+    if(celda) celda.innerHTML=`<span style="color:var(--green);font-weight:600">✓ Creado</span> `+
+      (telWhatsApp(p.tel||p.telefono)?`<button class="btn btn-primary btn-sm" onclick="whatsappAcceso('${p.id}',__accesosTemp['${p.id}'])">WhatsApp</button> `:'')+
+      `<button class="btn btn-ghost btn-sm" onclick="copiarAcceso('${p.id}')">Copiar</button>`;
+  }catch(e){ falla(String(e&&e.message||e)); }
+}
+function copiarAcceso(id){
+  const p=DB.equipo.find(x=>mismoId(x.id,id)); if(!p||!__accesosTemp[id]) return;
+  const txt=`${URL_PORTAL_DE(p)}\nUsuario: ${p.email}\nContraseña temporal: ${__accesosTemp[id]}`;
+  (navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject()).then(()=>toast('Acceso copiado'),()=>prompt('Copiá el acceso:',txt));
+}
 function modalContrasena(id){
   const p=DB.equipo.find(x=>mismoId(x.id,id)); if(!p) return;
   const sinCorreo=!p.email;
@@ -2341,7 +2405,8 @@ function modalContrasena(id){
         <div class="field"><label>Contraseña nueva</label><input id="pw-1" type="password" autocomplete="new-password"></div>
         <div class="field"><label>Repetila</label><input id="pw-2" type="password" autocomplete="new-password"></div>
       </div>
-      <label class="hint" style="display:block;margin-top:6px"><input type="checkbox" onchange="['pw-1','pw-2'].forEach(i=>document.getElementById(i).type=this.checked?'text':'password')"> Mostrar</label>
+      <label class="hint" style="display:block;margin-top:6px"><input type="checkbox" id="pw-ver" onchange="['pw-1','pw-2'].forEach(i=>document.getElementById(i).type=this.checked?'text':'password')"> Mostrar
+        · <a href="#" onclick="const c=claveTemporal();['pw-1','pw-2'].forEach(i=>{const e=document.getElementById(i);e.value=c;e.type='text';});document.getElementById('pw-ver').checked=true;return false;">Generar una</a></label>
     </div>
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="asignarContrasena('${p.id}')">Asignar contraseña</button></div>`);
@@ -2354,7 +2419,7 @@ async function asignarContrasena(id){
     const u=v('pw-usuario').trim().toLowerCase();
     if(!/^[a-z0-9._-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(u)) return toast('El usuario tiene que tener forma de correo, por ejemplo andy@'+DOMINIO_USUARIOS,6000,true);
     if(DB.equipo.some(x=>!mismoId(x.id,p.id)&&String(x.email||'').toLowerCase()===u)) return toast('Ese usuario ya lo tiene otra persona',5000,true);
-    const rg=await conBoton(()=>guardarPersona({id:p.id,nombre:p.nombre,codigo:p.codigo,rol:p.rol,activo:true,telefono:p.tel||p.telefono||'',email:u,nota:p.nota||'',vendedorHasta:p.vendedorHasta||null,exige2fa:p.exige2fa!==false,externo:!!p.externo,organizacion:p.organizacion||null,accesoHasta:p.accesoHasta||null}));
+    const rg=await conBoton(()=>guardarUsuarioDe(p,u));
     if(!rg) return; p.email=u;
   }
   const vf=validarContrasenaFuerte(a,[p.email,p.nombre]);
