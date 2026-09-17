@@ -3809,6 +3809,17 @@ function pintarContrato(){
 const abonadoDeFila=f=>f.estado==='pagado'?f.cuota:Math.min(f.cuota,f.abonado||0);
 const pagadoDeFilas=filas=>r2(filas.reduce((s,f)=>s+abonadoDeFila(f),0));
 const faltaDeFila=f=>r2(Math.max(0,f.cuota-abonadoDeFila(f)));
+function pagosAplicados(ct,filas){
+  const pagos=(indices().pagosPorContrato.get(String(ct.id))||[]).filter(p=>p.estado==='confirmado').slice().sort((a,b)=>String(a.fecha||'').localeCompare(String(b.fecha||''))||String(a.id).localeCompare(String(b.id),undefined,{numeric:true}));
+  const resto=filas.map(f=>f.condicion?0:f.cuota); const etq=i=>`${filas[i].obl==='Cuota Inicial'?'enganche':'cuota '+filas[i].n+'/'+filas[i].de}`;
+  const out=pagos.map(p=>({p,queda:+p.monto||0,det:[]}));
+  out.forEach(x=>{ const i=filas.findIndex(f=>f.id!=null&&x.p.giroId!=null&&String(f.id)===String(x.p.giroId)); if(i<0) return;
+    const m=r2(Math.min(x.queda,resto[i])); if(m>0){ x.det.push({etq:etq(i),monto:m}); resto[i]=r2(resto[i]-m); x.queda=r2(x.queda-m); } });
+  out.forEach(x=>{ for(let i=0;i<filas.length&&x.queda>0.004;i++){ if(resto[i]<=0.004) continue; const m=r2(Math.min(x.queda,resto[i])); x.det.push({etq:etq(i),monto:m}); resto[i]=r2(resto[i]-m); x.queda=r2(x.queda-m); } });
+  return out.map(x=>{ const rc=(typeof reciboDe==='function')?reciboDe(x.p.id):null;
+    return {fecha:x.p.fecha,monto:+x.p.monto||0,forma:x.p.forma||'',referencia:x.p.referencia||'',recibo:rc?rc.numero:null,
+            detalle:x.det.concat(x.queda>0.004?[{etq:'a favor del cliente',monto:x.queda}]:[])}; });
+}
 function filasEstadoCuenta(ct){
   const plan=ct.plan||planFinanciamiento(ct.precio,(ct.obligaciones[0]||{}).monto||ENGANCHE_MIN,
              (ct.obligaciones[1]||{}).nGiros||60);
@@ -3819,7 +3830,7 @@ function filasEstadoCuenta(ct){
   ct.obligaciones.forEach(o=>{
     o.giros.forEach(g=>{
       const antes=restante; restante=r2(restante-g.monto);
-      filas.push({obl:o.desc,n:g.n,de:o.nGiros||(o.giros||[]).length,venc:g.venc||g.vence||null,cuota:g.monto,
+      filas.push({id:g.id!=null?g.id:null,obl:o.desc,n:g.n,de:o.nGiros||(o.giros||[]).length,venc:g.venc||g.vence||null,cuota:g.monto,
                   capital:g.capital!=null?g.capital:null, interes:g.interes!=null?g.interes:null, exonerado:!!g.exonerado, abonado:g.abonado||0,
                   debido:antes,final:Math.max(0,restante),estado:g.estado,condicion:g.condicion||null});
     });
@@ -3886,6 +3897,10 @@ function estadoCuentaHTML(ct,ec,completo){
     h+=`<tr><td colspan="3"><b>Totales del plan</b></td><td class="num"><b>${Q(tc)}</b></td><td class="num"><b>${Q(ti)}</b></td><td class="num"><b>${Q(totalPlan)}</b></td><td class="num"><b>${Q(pagado)}</b></td><td></td>${conMora?`<td class="num"><b style="color:var(--mora)">${Q(mora.total)}</b></td>`:''}<td></td></tr>`; }
   if(conMora) h+=`<div class="hint" style="margin:6px 0 0">Mora: ${(mora.tasa*100).toFixed(1).replace(/\.0$/,'')}% mensual sobre lo vencido, proporcional a los días de atraso${mora.gracia?`, después de ${mora.gracia} días de gracia`:''}. Se calcula al día; no se suma al saldo hasta que Finanzas la cobre.</div>`;
   h+=`</tbody></table>`;
+  { const PA=pagosAplicados(ct,filas);
+    if(PA.length){ h+=`<div class="sect-t" style="margin-top:14px">Pagos recibidos · ${PA.length}</div><table class="ec-tbl"><thead><tr><th>Fecha</th><th class="num">Monto</th><th>Forma · referencia</th><th>Recibo</th><th>Se aplicó a</th></tr></thead><tbody>`+
+      PA.map(x=>`<tr><td>${fmtD(x.fecha)}</td><td class="num"><b>${Q(x.monto)}</b></td><td>${esc(x.forma||'—')}${x.referencia?' · '+esc(x.referencia):''}</td><td>${x.recibo?esc(String(x.recibo)):'—'}</td><td>${x.detalle.map(d=>`${esc(d.etq)} ${Q(d.monto)}`).join(' · ')||'—'}</td></tr>`).join('')+
+      `<tr><td><b>Total</b></td><td class="num"><b>${Q(PA.reduce((s,x)=>s+x.monto,0))}</b></td><td colspan="3"></td></tr></tbody></table>`; } }
   if(!completo&&muestra.length<filas.length)
     h+=`<div class="hint" style="text-align:center">Mostrando ${muestra.length} de ${filas.length} cuotas · <a href="#" onclick="verEstadoCuenta('${ct.id}');return false;">ver el plan completo</a></div>`;
   h+=`</div>`;
@@ -4493,8 +4508,8 @@ async function estadoCuentaPDF(ct){
   // tabla de cuotas: columnas medidas al ancho de la página, números a la derecha
   const desg=filas.some(f=>f.capital!=null);
   const COLS=desg
-    ? [['Cuota',40,'l'],['Obligación',70,'l'],['Vence',70,'l'],['Capital',66,'r'],['Interés',58,'r'],['Cuota',66,'r'],['Saldo después',74,'r'],['Estado',72,'l']]
-    : [['Cuota',48,'l'],['Obligación',120,'l'],['Vence',90,'l'],['Cuota',86,'r'],['Saldo después',96,'r'],['Estado',76,'l']];
+    ? [['Cuota',32,'l'],['Obligación',64,'l'],['Vence',60,'l'],['Capital',58,'r'],['Interés',50,'r'],['Cuota',58,'r'],['Pagado',58,'r'],['Saldo después',66,'r'],['Estado',70,'l']]
+    : [['Cuota',44,'l'],['Obligación',104,'l'],['Vence',80,'l'],['Cuota',76,'r'],['Pagado',76,'r'],['Saldo después',66,'r'],['Estado',70,'l']];
   const xs=[]; { let x=M; COLS.forEach(c=>{ xs.push(x); x+=c[1]; }); }
   const celda=(i,txt,yy,tam,negrita)=>{ const [ ,w,al]=COLS[i]; doc.setFont('helvetica',negrita?'bold':'normal');
     if(al==='r') cabe(txt,xs[i]+w-6,yy,w-10,tam,{align:'right'}); else cabe(txt,xs[i]+6,yy,w-10,tam); };
@@ -4509,7 +4524,7 @@ async function estadoCuentaPDF(ct){
     doc.setTextColor(0); let k=0;
     celda(k++,`${f.n}/${f.de}`,y+11.5,9); celda(k++,String(f.obl||''),y+11.5,9); celda(k++,(f.condicion?'Al desmembrar':fmtD(f.venc)),y+11.5,9);
     if(desg){ celda(k++,f.capital!=null?Q(f.capital):'—',y+11.5,9); celda(k++,f.exonerado?'exonerado':(f.interes!=null?Q(f.interes):'—'),y+11.5,9); }
-    celda(k++,Q(f.cuota),y+11.5,9); celda(k++,Q(f.final),y+11.5,9);
+    celda(k++,Q(f.cuota),y+11.5,9); celda(k++,abonadoDeFila(f)>0?Q(abonadoDeFila(f)):'—',y+11.5,9); celda(k++,Q(f.final),y+11.5,9);
     doc.setTextColor(est[1],est[2],est[3]); celda(k,est[0],y+11.5,8.6,true); doc.setTextColor(0);
     y+=ALTO;
   });
@@ -4517,7 +4532,21 @@ async function estadoCuentaPDF(ct){
   doc.setDrawColor(190); doc.setLineWidth(0.8); doc.line(M,y,W-2*M+M,y); y+=1;
   { let k=0; doc.setTextColor(0); celda(k++,'',y+12,9); celda(k++,'Totales',y+12,9,true); k++;
     if(desg){ celda(k++,Q(filas.reduce((s,f)=>s+(f.capital||0),0)),y+12,9,true); celda(k++,Q(filas.reduce((s,f)=>s+(f.exonerado?0:(f.interes||0)),0)),y+12,9,true); }
-    celda(k++,Q(totalPlan),y+12,9,true); y+=ALTO; }
+    celda(k++,Q(totalPlan),y+12,9,true); celda(k++,Q(pagado),y+12,9,true); y+=ALTO; }
+  /* Pagos recibidos: cada pago confirmado y a qué cuotas se aplicó */
+  { const PA=pagosAplicados(ct,filas);
+    if(PA.length){
+      if(y>660){ doc.addPage(); y=48; }
+      y+=14; doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(0); doc.text('Pagos recibidos',M,y); y+=8;
+      const PC=[['Fecha',70,'l'],['Monto',76,'r'],['Forma · referencia',150,'l'],['Recibo',52,'l'],['Se aplicó a',168,'l']]; const px=[]; { let x=M; PC.forEach(c=>{ px.push(x); x+=c[1]; }); }
+      const pcel=(i,txt,yy,tam,neg)=>{ const [,w,al]=PC[i]; doc.setFont('helvetica',neg?'bold':'normal'); if(al==='r') cabe(txt,px[i]+w-6,yy,w-10,tam,{align:'right'}); else cabe(txt,px[i]+6,yy,w-10,tam); };
+      doc.setFillColor(238,242,240); doc.rect(M,y,W-2*M,19,'F'); doc.setTextColor(80); PC.forEach((c,i)=>pcel(i,c[0],y+12.5,8.3,true)); doc.setTextColor(0); y+=19;
+      PA.forEach((x,idx)=>{ if(y>730){ doc.addPage(); y=48; }
+        if(idx%2){ doc.setFillColor(249,250,249); doc.rect(M,y,W-2*M,ALTO,'F'); }
+        pcel(0,fmtD(x.fecha),y+11.5,9); pcel(1,Q(x.monto),y+11.5,9,true); pcel(2,`${x.forma||'—'}${x.referencia?' · '+x.referencia:''}`,y+11.5,9); pcel(3,x.recibo?String(x.recibo):'—',y+11.5,9);
+        pcel(4,x.detalle.map(d=>`${d.etq} ${Q(d.monto)}`).join(' · ')||'—',y+11.5,8.6); y+=ALTO; });
+      doc.setDrawColor(190); doc.setLineWidth(0.8); doc.line(M,y,W-M,y); y+=1; pcel(0,'Total',y+12,9,true); pcel(1,Q(PA.reduce((s,x)=>s+x.monto,0)),y+12,9,true); y+=ALTO;
+    } }
   y+=10; doc.setFontSize(8); doc.setTextColor(120); doc.setFont('helvetica','normal');
   doc.text('Los pagos registrados y pendientes de confirmación no aparecen como pagados hasta que Finanzas los confirme. Generado por Suite Sol Inmobiliaria.',M,Math.min(y+8,752),{maxWidth:W-2*M});
   { const n=doc.getNumberOfPages(); for(let i=1;i<=n;i++){ doc.setPage(i); doc.setFontSize(8); doc.setTextColor(140); doc.text(`${ct.no||''} · página ${i} de ${n}`,W-M,778,{align:'right'}); } doc.setTextColor(0); }
