@@ -82,7 +82,7 @@ async function cargarDesdeSupabase() {
     const [lotes, contratos, clientes, pagos, equipo, documentos, comisiones, adjuntos, recibos, liquidaciones, requeridos, proyectos, personaProyectos] = await Promise.all([
       todas('v_inventario', 'proyecto_id,proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado,centro_x,centro_y,poligono'),
       conRespaldo('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,origen,banco,boleta,lote_id,cliente_id,persona_id',
-                  'expediente_de,modalidad'),
+                  'expediente_de,modalidad,crm_no_contactar,crm_no_contactar_motivo'),
       todas('cliente', 'id,nombre,dpi,nit,telefono,email,direccion,ocupacion'),
       todas('pago', 'id,contrato_id,giro_id,monto,fecha_pago,forma_pago,referencia,estado'),
       /* `auth_uid` viene para saber quién ya puede entrar. No se guarda
@@ -248,6 +248,8 @@ async function cargarDesdeSupabase() {
         expedienteDe: c.expediente_de || null,
         // 'contado_diferido' = pagó al contado el 50%, el resto al desmembrar (40)
         modalidad: c.modalidad || null,
+        /* 69 · NUO (Wabi) no le escribe a este contrato: lo lleva Cobranza */
+        nuoNoContacta: !!c.crm_no_contactar, nuoMotivo: c.crm_no_contactar_motivo || '',
         banco: c.banco || '',
         boleta: c.boleta || '',
         obligaciones: []

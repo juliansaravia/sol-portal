@@ -2547,6 +2547,28 @@ async function cambiarLoteContrato(id){
    El contrato no se borra: queda marcado, el lote vuelve a inventario, lo
    cobrado se anota como arras y las cuotas pendientes dejan de perseguirse.
    La regla de comisión en dos tramos vive en desistimiento.js. */
+/* «NUO no contacta»: los contratos con mora vieja (más de 2 meses al activar
+   el flujo) los lleva Cobranza en persona; Wabi no les manda nada. La marca
+   se pone y se quita aquí. */
+function modalNoContactar(id){
+  const ct=getContrato(id); if(!ct)return;
+  const on=!!ct.nuoNoContacta;
+  openModal(`<div class="modal-h"><h3>${on?'Devolver a NUO':'Que NUO no contacte'}</h3><p>${esc(ct.no)} · Lote ${esc(ct.lote)} · ${esc(nombreCliente(ct.clienteId))}</p></div>
+    <div class="modal-b">${on
+      ?`<p>Hoy NUO (Wabi) <b>no le escribe</b> a este cliente${ct.nuoMotivo?': <i>'+esc(ct.nuoMotivo)+'</i>':''}.</p><p>Si lo devolvés, vuelve a recibir los recordatorios de pago y los avisos de mora automáticos por WhatsApp.</p>`
+      :`<p>NUO (Wabi) deja de mandarle recordatorios y avisos de mora por WhatsApp. El cliente sí puede seguir mandando sus boletas y recibe su recibo al confirmarse el pago.</p>
+        <label class="lbl">Motivo</label><input id="nc-motivo" class="inp" placeholder="Ej.: arreglo de pago con gerencia, caso legal, mora histórica…" autocomplete="off">`}</div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarNoContactar('${ct.id}',${on?'false':'true'})">${on?'Devolver a NUO':'Marcar'}</button></div>`);
+}
+async function guardarNoContactar(id,valor){
+  const motivo=valor?((document.getElementById('nc-motivo')||{}).value||'').trim():'';
+  if(valor&&!motivo){ toast('Escribí el motivo'); return; }
+  try{ if(typeof sbNoContactar==='function'&&window.SB) await sbNoContactar(id,valor,motivo); else { const ct=getContrato(id); ct.nuoNoContacta=valor; ct.nuoMotivo=motivo; } }
+  catch(e){ return; }
+  closeModal(); toast(valor?'NUO ya no contacta a este cliente':'El contrato volvió a NUO');
+  if(typeof pintarContrato==='function') pintarContrato(); if(vista==='cobranza') renderCobranza();
+}
 function modalDesistir(id){
   const ct=getContrato(id); if(!ct) return;
   const sim=(typeof simularDesistimiento==='function')?simularDesistimiento(ct):{avisos:[]};
@@ -2729,7 +2751,7 @@ function renderCobranza(){
 /* La cartera, priorizada: lo más vencido arriba, con días de atraso,
    último contacto, responsable y qué sigue. Manus: «no obligar a
    revisar listados largos sin priorización». */
-const FILTROS_COB={todos:'Todos',mora:'En mora',aldia:'Al día',nunca:'Nunca pagaron'};
+const FILTROS_COB={todos:'Todos',mora:'En mora',aldia:'Al día',nunca:'Nunca pagaron',nuo:'NUO no contacta'};
 let cobBusca='', cobFiltro='mora', cobOrden={k:'vencido',asc:false};
 function cobOrdenar(k){ cobOrden = cobOrden.k===k ? {k,asc:!cobOrden.asc} : {k,asc:k==='cliente'}; renderCobranza(); }
 function diasAtraso(ec){
@@ -2745,7 +2767,7 @@ function cartaCartera(){
   let filas=DB.contratos.filter(c=>c.estado==='aprobado').map(c=>{
     const ec=estadoCuenta(c), g=gestionesDe(c.id)[0];
     return {c,ec,cli:nombreCliente(c.clienteId),dias:diasAtraso(ec),ult:g?`${fmtD(g.fecha)} · ${g.tipo||''}`:'',ultF:g?g.fecha:''};
-  }).filter(x=>F==='todos'||(F==='mora'&&x.ec.enMora)||(F==='aldia'&&!x.ec.enMora)||(F==='nunca'&&nunca.has(x.c.no)))
+  }).filter(x=>F==='todos'||(F==='mora'&&x.ec.enMora)||(F==='aldia'&&!x.ec.enMora)||(F==='nunca'&&nunca.has(x.c.no))||(F==='nuo'&&x.c.nuoNoContacta))
     .filter(x=>!q||`${x.c.no} ${x.c.lote} ${x.cli} ${x.c.vendedor}`.toLowerCase().includes(q));
   const val={contrato:x=>x.c.no,cliente:x=>x.cli,vencido:x=>x.ec.montoVencido||0,mora:x=>(typeof calcularMora==='function'?calcularMora(x.c).total:0),dias:x=>x.dias,cuotas:x=>x.ec.vencidas||0,ult:x=>x.ultF,saldo:x=>x.ec.saldo}[cobOrden.k]||(x=>x.ec.montoVencido||0);
   filas.sort((a,b)=>{const A=val(a),B=val(b);const r=typeof A==='number'?A-B:String(A).localeCompare(String(B));return cobOrden.asc?r:-r;});
@@ -2761,7 +2783,7 @@ function cartaCartera(){
   if(!filas.length) h+=`<tr><td colspan="11"><div class="empty">${q?'Nada coincide con la búsqueda.':'Nada en este filtro.'}</div></td></tr>`;
   filas.forEach(({c,ec,cli,dias,ult})=>{
     const accion = ec.enMora ? (dias>60?'Escalar':'Gestionar') : (ec.prox?'Recordar':'—');
-    h+=`<tr class="click" onclick="abrirContrato('${c.id}','cuenta')"><td><b>${c.no}</b></td>
+    h+=`<tr class="click" onclick="abrirContrato('${c.id}','cuenta')"><td><b>${c.no}</b>${c.nuoNoContacta?` <span title="NUO no contacta${c.nuoMotivo?': '+esc(c.nuoMotivo):''}">🔕</span>`:''}</td>
       <td>${esc(cli)}</td><td>${esc(c.lote)}</td>
       <td class="num">${ec.montoVencido?`<span style="color:var(--mora);font-weight:600">${Qk(ec.montoVencido)}</span>`:'—'}${(()=>{const n=DB.pagos.filter(p=>mismoId(p.contratoId,c.id)&&p.estado==='registrado').length; return n?`<div class="hint" title="Hay boleta registrada que Finanzas aún no confirma: hasta entonces la cuota sigue vencida">${n} boleta(s) por confirmar</div>`:'';})()}</td>
       <td class="num">${(()=>{const m=(typeof calcularMora==='function')?calcularMora(c).total:0; return m>0?`<span style="color:var(--mora)">${Qk(m)}</span>`:'—';})()}</td>
@@ -3665,7 +3687,9 @@ function pintarContrato(){
   if(ct.estado==='aprobado')
     h+=`<div class="btn-row drawer-acciones" style="margin:0 0 14px">${['vendedor','practicante','consulta'].includes(ROLE)?'':`<button class="btn btn-primary btn-sm" onclick="modalPago('${ct.id}')">＋ Aplicar pago</button>`}
       <button class="btn btn-ghost btn-sm" onclick="modalGestion('${ct.id}')">＋ Registrar gestión</button>
-      ${['admin','gerencia','financiero'].includes(ROLE)?`<button class="btn btn-ghost btn-sm" style="margin-left:auto;color:#B0562F" onclick="modalDesistir('${ct.id}')">Desistió de la compra</button>`:''}</div>`;
+      ${['admin','gerencia','financiero','cobranza'].includes(ROLE)?`<button class="btn btn-ghost btn-sm" onclick="modalNoContactar('${ct.id}')" title="Si está marcado, Wabi (NUO) no le manda recordatorios ni avisos de mora a este cliente">${ct.nuoNoContacta?'🔕 NUO no contacta':'NUO sí contacta'}</button>`:''}
+      ${['admin','gerencia','financiero'].includes(ROLE)?`<button class="btn btn-ghost btn-sm" style="margin-left:auto;color:#B0562F" onclick="modalDesistir('${ct.id}')">Desistió de la compra</button>`:''}</div>
+      ${ct.nuoNoContacta?`<div class="hint" style="margin:-6px 0 14px;color:#8A5F12">🔕 NUO no le escribe a este cliente${ct.nuoMotivo?': '+esc(ct.nuoMotivo):''}. La gestión la lleva Cobranza.</div>`:''}`;
   if(ct.estado==='desistido'){
     const d=ct.desistimiento||{};
     h+=`<div class="aviso-err" style="margin:0 0 14px"><b>El cliente desistió de la compra</b>${d.fecha?' el '+fmtD(d.fecha):''}${d.motivo?' · '+esc(d.motivo):''}${d.nota?'<br>'+esc(d.nota):''}<br>El lote volvió al inventario; lo pagado queda anotado y no se persigue lo pendiente.
