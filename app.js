@@ -4464,42 +4464,63 @@ async function estadoCuentaPDF(ct){
   doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(90);
   doc.text(`ALJIBE, S.A. · La Esperanza · al ${fmtD(HOY_ISO)}`,W-M,y+34,{align:'right'}); doc.setTextColor(0);
   y+=74;
-  const fila2=(a,b,c,d)=>{ doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.text(a,M,y); doc.setFont('helvetica','bold'); doc.text(String(b),M+110,y);
-    if(c){ doc.setFont('helvetica','normal'); doc.text(c,W/2+10,y); doc.setFont('helvetica','bold'); doc.text(String(d),W/2+120,y); } y+=16; };
+  /* Texto que se achica hasta caber en su espacio: nada se sale de su caja ni pisa al vecino. */
+  const cabe=(txt,x,yy,max,tam,opt)=>{ let t=tam; doc.setFontSize(t); while(t>6.5&&doc.getTextWidth(String(txt))>max){ t-=0.5; doc.setFontSize(t); } doc.text(String(txt),x,yy,opt||{}); };
+  const colA=M, colAv=M+96, colB=W/2+14, colBv=W/2+110;
+  const fila2=(a,b,c,d)=>{ doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(95); doc.text(a,colA,y);
+    doc.setTextColor(0); doc.setFont('helvetica','bold'); cabe(b,colAv,y,colB-colAv-14,10);
+    if(c){ doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(95); doc.text(c,colB,y); doc.setTextColor(0); doc.setFont('helvetica','bold'); cabe(d,colBv,y,W-M-colBv,10); } y+=17; };
   fila2('Cliente',cli?cli.nombre:nombreCliente(ct.clienteId),'Contrato',ct.no||'');
   fila2('Lote',`${ct.lote||''}${ct.fase?' · '+ct.fase:''}`,'Fecha de venta',fmtD(ct.fecha));
   fila2('Precio de venta',Q(ct.precio),'Enganche',Q(plan.enganche));
   fila2('Plazo',`${plan.plazo} meses`,'Cuota mensual',Q(plan.cuota));
-  y+=6; doc.setDrawColor(200); doc.line(M,y,W-M,y); y+=18;
-  // resumen en tres cajas
-  const caja=(x,t,v,rojo)=>{ doc.setDrawColor(210); doc.roundedRect(x,y,160,52,6,6); doc.setFontSize(8.5); doc.setTextColor(110); doc.setFont('helvetica','normal'); doc.text(t.toUpperCase(),x+10,y+16);
-    doc.setFontSize(15); doc.setFont('helvetica','bold'); doc.setTextColor(rojo?184:46,rojo?69:107,rojo?46:79); doc.text(v,x+10,y+38); doc.setTextColor(0); };
-  caja(M,'Pagado a la fecha',Q(pagado)); caja(M+176,'Saldo pendiente',Q(pend)); caja(M+352,venc.length?`${venc.length} cuota(s) vencida(s)`:'Próxima cuota',venc.length?Q(venc.reduce((s,f)=>s+f.cuota,0)):(prox?Q(faltaDeFila(prox))+'  '+fmtD(prox.venc):'Plan liquidado'),!!venc.length);
-  y+=70;
+  y+=4; doc.setDrawColor(215); doc.setLineWidth(0.6); doc.line(M,y,W-M,y); y+=16;
+  // resumen en tres cajas del mismo ancho: etiqueta, valor que se ajusta y una línea de detalle
+  const GAP=12, CW=(W-2*M-2*GAP)/3, CH=60;
+  const caja=(i,t,v,sub,rojo)=>{ const x=M+i*(CW+GAP); doc.setDrawColor(205); doc.setLineWidth(0.8); doc.roundedRect(x,y,CW,CH,6,6);
+    doc.setFontSize(7.8); doc.setTextColor(115); doc.setFont('helvetica','normal'); doc.text(t.toUpperCase(),x+12,y+16);
+    doc.setFont('helvetica','bold'); doc.setTextColor(rojo?184:46,rojo?69:107,rojo?46:79); cabe(v,x+12,y+37,CW-24,16);
+    if(sub){ doc.setFont('helvetica','normal'); doc.setTextColor(115); cabe(sub,x+12,y+51,CW-24,8); } doc.setTextColor(0); };
+  const porPagar=filas.filter(f=>f.estado!=='pagado').length, pctPag=totalPlan?Math.round(pagado/totalPlan*100):0;
+  caja(0,'Pagado a la fecha',Q(pagado),`${pctPag}% del plan`);
+  caja(1,'Saldo pendiente',Q(pend),porPagar?`${porPagar} cuota(s) por pagar`:'plan liquidado');
+  if(venc.length) caja(2,`${venc.length} cuota(s) vencida(s)`,Q(venc.reduce((s,f)=>s+faltaDeFila(f),0)),prox?`la más antigua venció el ${fmtD(venc[0].venc)}`:'',true);
+  else caja(2,prox&&abonadoDeFila(prox)>0?'Falta de la próxima cuota':'Próxima cuota',prox?Q(faltaDeFila(prox)):'Plan liquidado',prox?`vence ${fmtD(prox.venc)}${abonadoDeFila(prox)>0?' · ya abonó '+Q(abonadoDeFila(prox)):''}`:'sin saldo');
+  y+=CH+16;
   { const mo=(typeof calcularMora==='function')?calcularMora(ct):{total:0};
-    if(mo.total>0){ doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(184,69,46);
-      doc.text(`Mora acumulada al ${fmtD(HOY_ISO)}: ${Q(mo.total)} (${(mo.tasa*100).toFixed(1).replace(/\.0$/,'')}% mensual sobre lo vencido) · Total a pagar hoy: ${Q(venc.reduce((s,f)=>s+f.cuota,0)+mo.total)}`,M,y); doc.setTextColor(0); y+=18; } }
-  // tabla de cuotas
+    if(mo.total>0){ doc.setFont('helvetica','bold'); doc.setTextColor(184,69,46);
+      cabe(`Mora acumulada al ${fmtD(HOY_ISO)}: ${Q(mo.total)} (${(mo.tasa*100).toFixed(1).replace(/\.0$/,'')}% mensual sobre lo vencido) · Total a pagar hoy: ${Q(venc.reduce((s,f)=>s+faltaDeFila(f),0)+mo.total)}`,M,y,W-2*M,9.5); doc.setTextColor(0); y+=16; } }
+  // tabla de cuotas: columnas medidas al ancho de la página, números a la derecha
   const desg=filas.some(f=>f.capital!=null);
-  const cols=desg?[M,M+40,M+112,M+176,M+240,M+304,M+372,M+444,W-M]:[M,M+52,M+150,M+240,M+330,M+420,W-M];
-  const th=desg?['Cuota','Obligación','Vence','Capital','Interés','Cuota','Saldo después','Estado']:['Cuota','Obligación','Vence','Cuota','Saldo después','Estado'];
-  const cab=()=>{ doc.setFillColor(244,246,245); doc.rect(M,y,W-2*M,18,'F'); doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(90);
-    th.forEach((t,i)=>doc.text(t,cols[i]+4,y+12,{align:i>=3&&i<=4?'left':'left'})); doc.setTextColor(0); y+=18; };
+  const COLS=desg
+    ? [['Cuota',40,'l'],['Obligación',70,'l'],['Vence',70,'l'],['Capital',66,'r'],['Interés',58,'r'],['Cuota',66,'r'],['Saldo después',74,'r'],['Estado',72,'l']]
+    : [['Cuota',48,'l'],['Obligación',120,'l'],['Vence',90,'l'],['Cuota',86,'r'],['Saldo después',96,'r'],['Estado',76,'l']];
+  const xs=[]; { let x=M; COLS.forEach(c=>{ xs.push(x); x+=c[1]; }); }
+  const celda=(i,txt,yy,tam,negrita)=>{ const [ ,w,al]=COLS[i]; doc.setFont('helvetica',negrita?'bold':'normal');
+    if(al==='r') cabe(txt,xs[i]+w-6,yy,w-10,tam,{align:'right'}); else cabe(txt,xs[i]+6,yy,w-10,tam); };
+  const ALTO=17;
+  const cab=()=>{ doc.setFillColor(238,242,240); doc.rect(M,y,W-2*M,19,'F'); doc.setTextColor(80);
+    COLS.forEach((c,i)=>celda(i,c[0],y+12.5,8.3,true)); doc.setTextColor(0); y+=19; };
   cab();
   filas.forEach((f,idx)=>{
-    if(y>740){ doc.addPage(); y=44; cab(); }
+    if(y>730){ doc.addPage(); y=48; cab(); }
     const est={pagado:['Pagada',46,107,79],vencido:['Vencida',184,69,46],parcial:['Falta '+Q(faltaDeFila(f)),138,95,18]}[f.estado]||['Pendiente',110,110,110];
-    if(idx%2) { doc.setFillColor(250,251,250); doc.rect(M,y,W-2*M,16,'F'); }
-    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(0);
-    doc.text(`${f.n}/${f.de}`,cols[0]+4,y+11); doc.text(String(f.obl||'').slice(0,desg?14:18),cols[1]+4,y+11); doc.text((f.condicion?'Al desmembrar':fmtD(f.venc)),cols[2]+4,y+11);
-    let k=3;
-    if(desg){ doc.text(f.capital!=null?Q(f.capital):'—',cols[k++]+4,y+11); doc.text(f.exonerado?'exonerado':(f.interes!=null?Q(f.interes):'—'),cols[k++]+4,y+11); }
-    doc.text(Q(f.cuota),cols[k++]+4,y+11); doc.text(Q(f.final),cols[k++]+4,y+11);
-    doc.setTextColor(est[1],est[2],est[3]); doc.setFont('helvetica','bold'); if(f.estado==='parcial') doc.setFontSize(7.5); doc.text(est[0],cols[k]+4,y+11); doc.setTextColor(0);
-    y+=16;
+    if(idx%2){ doc.setFillColor(249,250,249); doc.rect(M,y,W-2*M,ALTO,'F'); }
+    doc.setTextColor(0); let k=0;
+    celda(k++,`${f.n}/${f.de}`,y+11.5,9); celda(k++,String(f.obl||''),y+11.5,9); celda(k++,(f.condicion?'Al desmembrar':fmtD(f.venc)),y+11.5,9);
+    if(desg){ celda(k++,f.capital!=null?Q(f.capital):'—',y+11.5,9); celda(k++,f.exonerado?'exonerado':(f.interes!=null?Q(f.interes):'—'),y+11.5,9); }
+    celda(k++,Q(f.cuota),y+11.5,9); celda(k++,Q(f.final),y+11.5,9);
+    doc.setTextColor(est[1],est[2],est[3]); celda(k,est[0],y+11.5,8.6,true); doc.setTextColor(0);
+    y+=ALTO;
   });
+  /* Totales del plan */
+  doc.setDrawColor(190); doc.setLineWidth(0.8); doc.line(M,y,W-2*M+M,y); y+=1;
+  { let k=0; doc.setTextColor(0); celda(k++,'',y+12,9); celda(k++,'Totales',y+12,9,true); k++;
+    if(desg){ celda(k++,Q(filas.reduce((s,f)=>s+(f.capital||0),0)),y+12,9,true); celda(k++,Q(filas.reduce((s,f)=>s+(f.exonerado?0:(f.interes||0)),0)),y+12,9,true); }
+    celda(k++,Q(totalPlan),y+12,9,true); y+=ALTO; }
   y+=10; doc.setFontSize(8); doc.setTextColor(120); doc.setFont('helvetica','normal');
-  doc.text('Los pagos registrados y pendientes de confirmación no aparecen como pagados hasta que finanzas los confirme. Generado por Suite Sol Inmobiliaria.',M,Math.min(y+8,760),{maxWidth:W-2*M});
+  doc.text('Los pagos registrados y pendientes de confirmación no aparecen como pagados hasta que Finanzas los confirme. Generado por Suite Sol Inmobiliaria.',M,Math.min(y+8,752),{maxWidth:W-2*M});
+  { const n=doc.getNumberOfPages(); for(let i=1;i<=n;i++){ doc.setPage(i); doc.setFontSize(8); doc.setTextColor(140); doc.text(`${ct.no||''} · página ${i} de ${n}`,W-M,778,{align:'right'}); } doc.setTextColor(0); }
   return doc.output('blob');
 }
 async function descargarEstadoCuentaPDF(id){
