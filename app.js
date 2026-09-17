@@ -1062,7 +1062,7 @@ function dibujarMapaImagen(pl){
   const r=Math.max(10,Math.round(pl.w/90));
   DB.lotes.filter(l=>l.cx!=null&&l.cy!=null).forEach(l=>{
     const m=ESTADO_MAP[l.estado]||ESTADO_MAP.disponible;
-    const g=document.createElementNS(NS,'g'); g.setAttribute('class','lotm'); g.dataset.id=l.codigo; g.style.cursor='pointer';
+    const g=document.createElementNS(NS,'g'); g.setAttribute('class','lotm'); g.dataset.id=claveDe(l); g.style.cursor='pointer';
     const c=document.createElementNS(NS,'circle'); c.setAttribute('cx',l.cx); c.setAttribute('cy',l.cy); c.setAttribute('r',r); c.setAttribute('fill',m.fill); c.setAttribute('fill-opacity',0.9); c.setAttribute('stroke','#fff'); c.setAttribute('stroke-width',Math.max(1,r/6));
     const t=document.createElementNS(NS,'text'); t.setAttribute('x',l.cx); t.setAttribute('y',l.cy+r*0.36); t.setAttribute('text-anchor','middle'); t.setAttribute('font-size',r*0.95); t.setAttribute('font-weight','700'); t.setAttribute('fill','#fff'); t.setAttribute('font-family','Helvetica,Arial,sans-serif'); t.textContent=String(l.codigo).replace(/^[A-Z]+-0?/,'');
     g.appendChild(c); g.appendChild(t);
@@ -1112,7 +1112,7 @@ function dibujarMapa(){
     const redondo=r.tagName==='circle';
     r.setAttribute('fill',m.fill); r.setAttribute('fill-opacity',redondo?0.85:0.55);
     r.setAttribute('stroke',redondo?'#fff':m.stroke); r.setAttribute('stroke-width',redondo?1.2:0.6);
-    r.setAttribute('class','lotm'); r.dataset.id=l.codigo;
+    r.setAttribute('class','lotm'); r.dataset.id=claveDe(l);
     /* Número del lote como texto vectorial: nítido a cualquier zoom (se muestra al acercar). */
     if(l.poly&&l.poly.length>2){ const t=document.createElementNS(NS,'text'); t.setAttribute('x',l.x); t.setAttribute('y',l.y); t.setAttribute('class','lot-lbl'); t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','middle');
       const w=Math.max(...l.poly.map(p=>p[0]))-Math.min(...l.poly.map(p=>p[0])); t.setAttribute('font-size',Math.max(9,Math.min(16,w*0.22))); t.textContent=l.codigo; t.style.pointerEvents='none'; svg.appendChild(t); }
@@ -5098,9 +5098,9 @@ function buscarGlobal(t){
   const cls=DB.clientes.filter(c=>`${c.nombre} ${c.apellido} ${c.dpi}`.toLowerCase().includes(t)).slice(0,5);
   let h='';
   if(lotes.length)h+=`<div class="sr-sec">Lotes</div>`+lotes.map(l=>
-    `<div class="sr-item" onclick="cerrarBusqueda();abrirLote('${l.codigo}')"><b>${l.codigo}</b> · ${l.area} m² · ${ESTADO_MAP[l.estado].label}</div>`).join('');
+    `<div class="sr-item" onclick="cerrarBusqueda();abrirLote('${esc(claveDe(l))}')"><b>${esc(l.codigo)}</b> · ${/AGR/i.test(l.fase||'')?'Agrícola':esc(l.fase||'Residencial')} · ${l.area} m² · ${(ESTADO_MAP[l.estado]||ESTADO_MAP.disponible).label}</div>`).join('');
   if(cts.length)h+=`<div class="sr-sec">Contratos</div>`+cts.map(c=>
-    `<div class="sr-item" onclick="cerrarBusqueda();abrirContrato('${c.id}')"><b>${c.no}</b> · ${esc(nombreCliente(c.clienteId))}</div>`).join('');
+    `<div class="sr-item" onclick="cerrarBusqueda();abrirContrato('${c.id}')"><b>${c.no}</b> · ${esc(nombreCliente(c.clienteId))} · lote ${esc(c.lote||'')}${/AGR/i.test(c.fase||'')||/^AGR/i.test(c.no)?' (agrícola)':''}</div>`).join('');
   if(cls.length)h+=`<div class="sr-sec">Clientes</div>`+cls.map(c=>
     `<div class="sr-item" onclick="cerrarBusqueda();abrirCliente('${c.id}')"><b>${esc(c.nombre)} ${esc(c.apellido)}</b>${c.dpi?' · '+esc(c.dpi):''}</div>`).join('');
   box.innerHTML=h||`<div class="sr-item muted">Sin resultados</div>`;

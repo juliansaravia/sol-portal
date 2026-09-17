@@ -732,9 +732,13 @@ function getLote(x) {
   const porClave = indices().lotesPorClave.get(v);
   if (porClave && porClave.clave === v) return porClave;
 
-  const porCodigo = DB.lotes.filter(l => l.codigo === v);
+  let porCodigo = DB.lotes.filter(l => l.codigo === v);
   if (porCodigo.length === 1) return porCodigo[0];
   if (porCodigo.length > 1) {
+    /* El mismo código vive en el residencial y en los agrolotes (J-06…): manda
+       el plano que se está viendo; si no se sabe, el residencial. */
+    const quiereAgro = (typeof mapaRLE !== 'undefined' && mapaRLE === 'agro');
+    porCodigo = porCodigo.slice().sort((a, b) => (/AGR/i.test(a.fase || '') === quiereAgro ? 0 : 1) - (/AGR/i.test(b.fase || '') === quiereAgro ? 0 : 1));
     /* Ambiguo. Se devuelve uno para no romper la pantalla, pero queda
        dicho: quien llamó tenía que haber pasado la clave. */
     console.warn(`[lote] «${v}» existe en ${porCodigo.length} fases `
