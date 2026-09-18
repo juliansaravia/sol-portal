@@ -186,7 +186,7 @@ function repBoletas() {
 
 /** 2c · El resumen de lo anterior: una fila por cliente y lote. */
 function repBoletasResumen() {
-  const f = [['Cliente','Lote','Fase','Contrato','Boletas','Confirmado','Por confirmar','Primer pago','Último pago','Saldo pendiente','Cuotas vencidas']];
+  const f = [['Cliente','Lote','Fase','Contrato','Boletas','Confirmado','Por confirmar','Primer pago','Último pago','Saldo pendiente','Cuotas vencidas','Referencias de las boletas']];
   const filas = [];
   DB.contratos.filter(c => c.estado !== 'anulado').forEach(c => {
     const pagos = (indices().pagosPorContrato.get(String(c.id)) || []).filter(p => p.estado !== 'rechazado' && p.fecha >= REP.desde && p.fecha <= REP.hasta);
@@ -197,7 +197,8 @@ function repBoletasResumen() {
     const l = (typeof getLote === 'function' ? getLote(c.lote) : null) || {};
     filas.push([c.clienteId ? nombreCliente(c.clienteId) : '—', c.lote || '—', l.fase || '', c.no || '—', pagos.length,
                 _repNum(conf.reduce((s, p) => s + (+p.monto || 0), 0)), _repNum(reg.reduce((s, p) => s + (+p.monto || 0), 0)),
-                fechas[0] || '', fechas[fechas.length - 1] || '', _repNum(ec.saldo || 0), ec.vencidas || 0]);
+                fechas[0] || '', fechas[fechas.length - 1] || '', _repNum(ec.saldo || 0), ec.vencidas || 0,
+                pagos.slice().sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || ''))).map(p => (p.referencia || 's/ref') + ' (' + _repNum(p.monto) + ')').join(' · ')]);
   });
   filas.sort((a, b) => String(a[0]).localeCompare(String(b[0]), 'es') || String(a[1]).localeCompare(String(b[1]), 'es', { numeric: true }));
   return f.concat(filas);
@@ -437,11 +438,11 @@ const REPORTES = [
   { id:'cobros',       nombre:'Cobros del período',
     que:'Cada pago con su fecha, referencia y estado.',
     para:'Contra esto se cuadra el banco.', fn: repCobros },
-  { id:'boletas',      nombre:'Boletas por cliente y lote',
-    que:'Cada boleta aplicada en el período elegido: cliente, lote, fecha, monto, No. de referencia, recibo, a qué cuota se aplicó y si tiene la foto.',
+  { id:'boletas',      nombre:'Pagos uno por uno, con No. de referencia',
+    que:'UNA FILA POR PAGO, ordenado por cliente y lote: fecha, monto, No. de referencia de la boleta, recibo, a qué cuota se aplicó y si tiene la foto.',
     para:'Para revisar el historial de pagos de un cliente o de un lote, o filtrarlo en Excel.', fn: repBoletas },
-  { id:'boletas-resumen', nombre:'Pagos por cliente y lote (resumen)',
-    que:'Una fila por cliente y lote con lo pagado en el período: cuántas boletas, confirmado, por confirmar, primer y último pago, saldo.',
+  { id:'boletas-resumen', nombre:'Resumen de pagos por cliente y lote',
+    que:'UNA FILA POR CLIENTE Y LOTE: cuántas boletas, confirmado, por confirmar, primer y último pago, saldo, y al final las referencias de sus boletas.',
     para:'Para ver de un vistazo quién ha pagado cuánto.', fn: repBoletasResumen },
   { id:'antiguedad',   nombre:'Antigüedad de saldos',
     que:'El saldo vencido repartido en tramos de 30, 60, 90 y 180 días.',
