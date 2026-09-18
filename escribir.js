@@ -414,6 +414,12 @@ async function sbConfirmarPago(pago_id, ok = true) {
   });
 }
 
+/** Revisión de enganches (76): los pagos confirmados se aplican en orden, el enganche primero. */
+async function sbReaplicarEnganche(contrato_id) {
+  return escribir('reaplicar los pagos', async () =>
+    oExplota(await SB.rpc('reaplicar_enganche_primero', { p_contrato_id: Number(contrato_id) })));
+}
+
 /** Finanzas elimina un pago (74): deja de contar, su recibo queda anulado y el
  *  aviso a NUO se cancela si no había salido. La fila se conserva con el motivo. */
 async function sbEliminarPago(pago_id, motivo) {

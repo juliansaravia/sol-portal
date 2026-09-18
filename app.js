@@ -711,6 +711,9 @@ function asuntos(){
   const sinPlan=(DB.meta&&DB.meta.carteraLista)?DB.contratos.filter(c=>c.estado==='aprobado'&&!(c.obligaciones||[]).some(o=>(o.giros||[]).length)):[];
   if(sinPlan.length) A.push({sev:'alta',n:sinPlan.length,t:sinPlan.length===1?'contrato sin plan de pagos':'contratos sin plan de pagos',
     d:'Aparecen como «Liquidado» sin serlo: '+sinPlan.slice(0,10).map(c=>esc(c.no)+' ('+esc(c.lote)+')').join(', ')+(sinPlan.length>10?' y '+(sinPlan.length-10)+' más':'')+'. Avisá a administración.',ir:()=>abrirContrato(sinPlan[0].id,'cuenta')});
+  { const eg=(typeof revisionEnganches==='function')?revisionEnganches():[]; const accionables=eg.filter(x=>x.caso!=='por_confirmar');
+    if(accionables.length) A.push({sev:'alta',n:accionables.length,t:accionables.length===1?'enganche sin aplicar':'enganches sin aplicar',
+      d:Object.entries(accionables.reduce((m,x)=>(m[x.caso]=(m[x.caso]||0)+1,m),{})).map(([k,n])=>n+' · '+CASOS_ENGANCHE[k].t.toLowerCase()).join(' · '),ir:()=>irA('cobranza',{f:'mora'})}); }
   if(porConf) A.push({sev:'media',n:porConf,t:'pagos por confirmar',d:'Esperan al financiero para aplicarse a la cartera',ir:()=>setView('confirmacion')});
   if(pend) A.push({sev:'media',n:pend,t:'solicitudes por aprobar',d:'El comité decide y se genera el plan de giros',ir:()=>setView('aprobacion')});
   if(sinVend) A.push({sev:'media',n:sinVend,t:'contratos sin vendedor',d:'Sin responsable no hay comisión ni seguimiento',ir:()=>irA('contratos',{f:'sin_vendedor'})});
@@ -2799,6 +2802,7 @@ function renderCobranza(){
     ${disc.length?` · <a href="#" onclick="verCuadreMora();return false;"><b>${disc.length} contrato(s) no cuadran</b></a>`:''}</div>`;
 
   h+=seccionDiferidos(activos);
+  h+=cartaEnganches();
   // Los que nunca han pagado: van primero, son otro problema
   if(M.nuncaPagaron.length){
     h+=`<div class="card"><div class="card-h"><h2>Ventas que nunca pagaron una cuota · ${M.nuncaPagaron.length}</h2>
@@ -5212,6 +5216,107 @@ function docCaras(){
   if(esBol){ const m=document.getElementById('d-monto'); const ct=window.__docContrato&&getContrato(window.__docContrato);
     if(m&&!m.value&&ct){ const pl=planFinanciamiento(ct.precio, ct.enganche!=null?ct.enganche:ENGANCHE_MIN, ct.plazo||60, ct.tasa); if(pl.enganche>0) m.value=pl.enganche; } }
 }
+/* ============================================================ REVISIÓN DE ENGANCHES
+   18 sept 2026 · Julián: «revisá todos los estados de cuenta con enganches y
+   aplicalos». El enganche de un contrato aprobado puede no verse aplicado por
+   cinco razones distintas, y cada una se arregla distinto. Esto recorre TODOS
+   los contratos aprobados y dice en cuál caso está cada uno:
+
+     boleta_sin_pago  la boleta está en el expediente, pero nunca se registró como pago
+     por_confirmar    el pago está registrado; falta que Finanzas lo confirme
+     aplicado_otra    hay pagos confirmados, pero se ataron a otra cuota y el enganche quedó pendiente
+     sin_nada         ni boleta ni pago: hay que conseguir la boleta
+     eng0_boleta      el contrato dice enganche Q0, pero hay una boleta de enganche subida
+     sin_plan         no tiene plan de pagos
+
+   No aplica nada por su cuenta: un pago lleva monto, fecha y referencia de una
+   boleta real, y eso lo confirma una persona. Lo que hace es dejar cada caso a
+   un clic, con la boleta ya leída cuando está subida. */
+const CASOS_ENGANCHE = {
+  boleta_sin_pago: { t: 'Boleta subida, sin pago registrado', d: 'La foto del enganche está en el expediente. Falta convertirla en pago: se abre con el monto y la referencia ya leídos de la boleta.', sev: 1 },
+  aplicado_otra:   { t: 'Pagó, pero se aplicó a otra cuota', d: 'El contrato tiene pagos confirmados que se ataron a una cuota del saldo; el enganche quedó pendiente. Se reaplican en orden: primero el enganche.', sev: 2 },
+  por_confirmar:   { t: 'Pago registrado, falta confirmarlo', d: 'Ya está subido. Se aplica al enganche en cuanto Finanzas lo confirme contra el banco.', sev: 3 },
+  eng0_boleta:     { t: 'El contrato dice enganche Q0, pero hay boleta de enganche', d: 'O el enganche está mal cargado (se corrige en Ficha → Enganche → Editar) o la boleta es de la primera cuota.', sev: 4 },
+  sin_nada:        { t: 'Sin boleta ni pago', d: 'No hay respaldo del enganche en el sistema. Hay que conseguir la boleta y registrarla.', sev: 5 },
+  sin_plan:        { t: 'Sin plan de pagos', d: 'El contrato no tiene cuotas. Avisá a administración.', sev: 6 }
+};
+function revisionEnganches() {
+  if (!(DB.meta && DB.meta.carteraLista !== false)) return [];
+  const tol = 5, out = [];
+  DB.contratos.filter(c => c.estado === 'aprobado').forEach(ct => {
+    const ini = (ct.obligaciones || []).find(o => o.tipo === 'inicial' || /inicial/i.test(o.desc || ''));
+    const g = ini && (ini.giros || [])[0];
+    const pagos = (indices().pagosPorContrato.get(String(ct.id)) || []).filter(p => p.estado !== 'rechazado');
+    const conf = pagos.filter(p => p.estado === 'confirmado').reduce((s, p) => s + (+p.monto || 0), 0);
+    const reg  = pagos.filter(p => p.estado === 'registrado').reduce((s, p) => s + (+p.monto || 0), 0);
+    const boleta = documentosDe(ct.id).find(d => d.tipo === 'boleta_enganche' && d.bucket && d.ruta) || null;
+    const eng = +ct.enganche || (g ? +g.monto || 0 : 0);      // sin el dato del contrato, manda la Cuota Inicial del plan
+    let caso = null, falta = 0;
+    if (eng <= 0) { if (boleta && !pagos.length) caso = 'eng0_boleta'; }
+    else if (!g) caso = (ct.obligaciones || []).length ? null : 'sin_plan';
+    else {
+      falta = Math.round(((g.monto || 0) - (g.abonado || 0)) * 100) / 100;
+      if (falta <= tol || g.estado === 'pagado') return;
+      caso = reg > 0 ? 'por_confirmar' : conf > 0 ? 'aplicado_otra' : boleta ? 'boleta_sin_pago' : 'sin_nada';
+    }
+    if (!caso) return;
+    out.push({ ct, caso, enganche: eng, abonado: g ? (g.abonado || 0) : 0, falta, conf, reg, boleta });
+  });
+  return out.sort((a, b) => CASOS_ENGANCHE[a.caso].sev - CASOS_ENGANCHE[b.caso].sev || String(a.ct.lote).localeCompare(String(b.ct.lote), 'es', { numeric: true }));
+}
+const PUEDE_REAPLICAR = () => ['admin', 'financiero'].includes(ROLE);
+function cartaEnganches() {
+  const L = revisionEnganches(); if (!L.length) return '';
+  const grupos = {}; L.forEach(x => (grupos[x.caso] = grupos[x.caso] || []).push(x));
+  let h = `<div class="card" style="border-left:3px solid var(--gold)"><div class="card-h" style="flex-wrap:wrap;gap:8px"><h2>Enganches sin aplicar · ${L.length}</h2>
+      <span class="hint">Revisión de todos los contratos aprobados: por qué su enganche no figura pagado y cómo se arregla. Al resolverse, el contrato sale de esta lista.</span></div>`;
+  Object.keys(grupos).sort((a, b) => CASOS_ENGANCHE[a].sev - CASOS_ENGANCHE[b].sev).forEach(k => {
+    const G = grupos[k], C = CASOS_ENGANCHE[k];
+    h += `<div class="card-b" style="border-top:1px solid var(--line);padding-bottom:4px"><b>${esc(C.t)} · ${G.length}</b><div class="hint" style="margin-top:2px">${esc(C.d)}</div></div>
+      <div class="card-b" style="padding:0;overflow-x:auto"><table class="data"><thead><tr><th>Contrato</th><th>Lote</th><th>Cliente</th><th class="num">Enganche</th><th class="num">Falta</th><th class="num">Pagos en el contrato</th><th></th></tr></thead><tbody>`;
+    G.forEach(x => {
+      const id = x.ct.id;
+      const accion = k === 'boleta_sin_pago' ? (typeof PUEDE_PAGO_DESDE_BOLETA === 'function' && PUEDE_PAGO_DESDE_BOLETA() ? `<button class="btn btn-gold btn-sm" onclick="event.stopPropagation();modalPagoDesdeBoleta('${x.boleta.id}')">Registrar como pago</button>` : `<span class="hint">lo registra Finanzas</span>`)
+        : k === 'aplicado_otra' ? (PUEDE_REAPLICAR() ? `<button class="btn btn-gold btn-sm" onclick="event.stopPropagation();reaplicarEnganche('${id}')">Aplicar primero al enganche</button>` : `<span class="hint">lo reaplica Finanzas</span>`)
+        : k === 'por_confirmar' ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();setView('confirmacion')">Ir a confirmarlo</button>`
+        : k === 'eng0_boleta' ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();abrirContrato('${id}','docs')">Ver la boleta</button>`
+        : `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();abrirContrato('${id}','cuenta')">Abrir</button>`;
+      h += `<tr class="click" onclick="abrirContrato('${id}','cuenta')"><td><b>${esc(x.ct.no)}</b></td><td>${esc(x.ct.lote)}</td><td>${esc(nombreCliente(x.ct.clienteId))}</td>
+        <td class="num">${Q(x.enganche)}</td><td class="num">${x.falta ? `<span style="color:var(--mora);font-weight:600">${Q(x.falta)}</span>` : '—'}</td>
+        <td class="num">${x.conf ? Q(x.conf) + ' conf.' : ''}${x.conf && x.reg ? ' · ' : ''}${x.reg ? Q(x.reg) + ' por conf.' : ''}${!x.conf && !x.reg ? '—' : ''}</td>
+        <td style="white-space:nowrap;text-align:right">${accion}</td></tr>`;
+    });
+    h += `</tbody></table></div>`;
+  });
+  return h + `</div>`;
+}
+async function reaplicarEnganche(id) {
+  const ct = getContrato(id); if (!ct) return;
+  if (!confirm(`${ct.no} · lote ${ct.lote}\n\nLos pagos confirmados de este contrato se van a aplicar en orden: primero el enganche y lo que sobre a las cuotas. No se crea ni se borra ningún pago, y el total pagado no cambia.\n\n¿Reaplicar?`)) return;
+  if (!(typeof hayBase === 'function' && hayBase() && typeof sbReaplicarEnganche === 'function')) return toast('Sólo con la base conectada', 5000, true);
+  const r = await sbReaplicarEnganche(id); if (!r || !r.ok) return;
+  const d = r.dato || {};
+  if (typeof cargarCartera === 'function') { try { await cargarCartera(); } catch (e) {} }
+  if (typeof reindexar === 'function') reindexar();
+  anotar('pago.reaplicar', ct.no + ' · enganche primero · ' + (d.pagos_soltados || 0) + ' pago(s)');
+  toast(d.ok === false ? 'Ese contrato no tiene enganche que aplicar' : `Enganche: ${Q(d.abonado_despues || 0)} de ${Q(d.enganche || 0)} aplicado`, 6000);
+  if (vista === 'cobranza') renderCobranza(); if (drawerCt) pintarContrato(); if (typeof pintarBadgeAsuntos === 'function') pintarBadgeAsuntos();
+}
+/* La boleta ya subida se lee sola (mismo lector que al subir una foto): monto y referencia. */
+async function leerBoletaDelExpediente(docId) {
+  const d = (DB.documentos || []).find(x => mismoId(x.id, docId)); const aviso = document.getElementById('pb-leido');
+  if (!d || typeof leerBoletaEn !== 'function' || typeof sbVerDocumento !== 'function' || !(typeof hayBase === 'function' && hayBase())) return;
+  try {
+    if (aviso) aviso.textContent = 'Abriendo la boleta para leerla…';
+    const r = await sbVerDocumento(d.bucket, d.ruta); if (!r.ok) { if (aviso) aviso.textContent = ''; return; }
+    const resp = await fetch(r.dato); if (!resp.ok) throw new Error('no se pudo descargar');
+    const blob = await resp.blob();
+    const archivo = new File([blob], d.nombre || 'boleta', { type: blob.type || d.mime || 'image/jpeg' });
+    if (!document.getElementById('pb-ref')) return;                       // cerraron la ventana mientras bajaba
+    await leerBoletaEn({ files: [archivo] }, { ref: 'pb-ref', monto: 'pb-monto', aviso: 'pb-leido' });
+  } catch (e) { if (aviso) { aviso.textContent = 'No se pudo leer la boleta sola: copiá el monto y la referencia de la foto.'; aviso.style.color = '#B8452E'; } }
+}
+
 /* La boleta del enganche que está en el expediente pero nunca se volvió pago
    (se subió sin monto o en la carga por carpetas): el contrato sale en «Nunca
    pagaron» con la foto subida. Esto la convierte en pago desde el documento,
@@ -5235,9 +5340,10 @@ function modalPagoDesdeBoleta(docId){
         <div class="field"><label>Monto</label><input id="pb-monto" type="number" step="0.01" min="0" value="${sugerido?sugerido.toFixed(2):''}"></div>
         <div class="field"><label>Fecha del depósito</label><input id="pb-fecha" type="date" value="${esc(String(ct.fecha&&ct.fecha<=HOY_ISO?ct.fecha:HOY_ISO).slice(0,10))}" max="${HOY_ISO}"><div class="hint">Sale la fecha del contrato: corregila con la de la boleta.</div></div>
         <div class="field f-full"><label>No. de referencia / boleta *</label><input id="pb-ref" autocomplete="off" placeholder="El número que trae la boleta"></div>
-      </div></div>
+      </div><div id="pb-leido" class="hint" style="margin-top:8px"></div></div>
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarPagoDesdeBoleta('${d.id}')">Registrar pago</button></div>`);
+  leerBoletaDelExpediente(d.id);
 }
 async function guardarPagoDesdeBoleta(docId){
   const d=(DB.documentos||[]).find(x=>mismoId(x.id,docId)); if(!d) return;

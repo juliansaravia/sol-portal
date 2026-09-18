@@ -204,6 +204,17 @@ function repBoletasResumen() {
   return f.concat(filas);
 }
 
+/** 2d · Revisión de enganches: cada contrato aprobado cuyo enganche no figura pagado, y por qué. */
+function repEnganches() {
+  const f = [['Caso','Contrato','Lote','Cliente','Vendedor','Fecha del contrato','Enganche','Aplicado al enganche','Falta','Pagos confirmados','Pagos por confirmar','Boleta del enganche subida','Qué hacer']];
+  (typeof revisionEnganches === 'function' ? revisionEnganches() : []).forEach(x => {
+    const C = CASOS_ENGANCHE[x.caso];
+    f.push([C.t, x.ct.no, x.ct.lote, nombreCliente(x.ct.clienteId), x.ct.vendedor || '', x.ct.fecha || '', _repNum(x.enganche), _repNum(x.abonado), _repNum(x.falta),
+            _repNum(x.conf), _repNum(x.reg), x.boleta ? 'sí' : 'no', C.d]);
+  });
+  return f;
+}
+
 /** 3 · Antigüedad de saldos. El reporte de cartera de toda la vida. */
 function repAntiguedad() {
   const tramos = [[1,30],[31,60],[61,90],[91,180],[181,9999]];
@@ -466,6 +477,9 @@ const REPORTES = [
   { id:'boletas-resumen', nombre:'Resumen de pagos por cliente y lote',
     que:'UNA FILA POR CLIENTE Y LOTE: cuántas boletas, confirmado, por confirmar, primer y último pago, saldo, y al final las referencias de sus boletas.',
     para:'Para ver de un vistazo quién ha pagado cuánto.', fn: repBoletasResumen },
+  { id:'enganches',    nombre:'Revisión de enganches',
+    que:'Cada contrato aprobado cuyo enganche no figura pagado, con su caso: boleta subida sin pago, pago por confirmar, pago aplicado a otra cuota, sin respaldo.',
+    para:'La lista de trabajo para dejar todos los enganches aplicados. No depende del período.', fn: repEnganches },
   { id:'antiguedad',   nombre:'Antigüedad de saldos',
     que:'El saldo vencido repartido en tramos de 30, 60, 90 y 180 días.',
     para:'Para provisionar y para decidir a quién se escala.', fn: repAntiguedad },
