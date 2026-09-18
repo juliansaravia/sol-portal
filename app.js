@@ -2027,6 +2027,7 @@ async function guardarCobro(contrato,fecha){
   const aplicacion=(document.getElementById('rcAplicBox')&&!document.getElementById('rcAplicBox').hidden&&v('rcAplic')==='capital')?'capital':'cuotas';
   const ref=document.getElementById('rcRef').value.trim();
   if(!ref){toast('Anota el número de boleta o referencia');return;}
+  { const ctr=indices().contratosPorNo.get(String(contrato)); if(ctr&&!seguirPeseARepetido(ctr.id,ref)) return; }
   const foto=(document.getElementById('rcFoto')||{}).files;
   const archivo=foto&&foto[0];
   { const ctc=indices().contratosPorNo.get(String(contrato)); if(!archivo&&exigeFotoBoleta(ctc)){toast('Este contrato exige la foto de la boleta',6000,true);return;} }
@@ -3830,9 +3831,19 @@ function pintarContrato(){
        respaldo; acá se ve cuál falta y se sube desde la misma fila. */
     const pagos=(indices().pagosPorContrato.get(String(ct.id))||[]).slice().sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
     const sinBol=pagos.filter(p=>p.estado!=='rechazado'&&!pagoRespaldado(p));
-    h+=`<div class="sect-t" style="margin-top:16px">Pagos y boletas · ${pagos.length}${sinBol.length?` <span class="nav-badge">${sinBol.length} sin respaldo</span>`:''}</div>`;
+    h+=`<div class="sect-t" style="margin-top:16px">Pagos y boletas · ${pagos.filter(p=>p.estado!=='rechazado').length}${sinBol.length?` <span class="nav-badge">${sinBol.length} sin respaldo</span>`:''}</div>`;
     if(!pagos.length) h+=`<div class="hint">Sin pagos registrados.</div>`;
-    pagos.forEach(p=>{ const bol=adjuntosDe('pago',p.id).filter(a=>!/^Recibo/i.test(a.descripcion||'')); const resp=pagoRespaldado(p);
+    /* Los rechazados (boleta repetida, depósito que no entró) no cuentan en el saldo:
+       van al final, apagados, y su recibo figura como anulado. */
+    const rech=pagos.filter(p=>p.estado==='rechazado');
+    pagos.filter(p=>p.estado!=='rechazado').concat(rech).forEach((p,i,arr)=>{ const bol=adjuntosDe('pago',p.id).filter(a=>!/^Recibo/i.test(a.descripcion||'')); const resp=pagoRespaldado(p);
+      if(p.estado==='rechazado'){ const rc=reciboDe(p.id);
+        if(rech[0]===p) h+=`<div class="hint" style="margin:12px 0 4px"><b>Rechazados · ${rech.length}</b> · no cuentan en el saldo ni en el estado de cuenta</div>`;
+        h+=`<div class="pay-item" style="opacity:.55"><div class="pay-ico">✕</div>
+          <div class="pay-main"><div class="pay-title" style="text-decoration:line-through">${Q(p.monto)} · ${esc(p.forma||'')} ${p.referencia?`· ref. ${esc(p.referencia)}`:''}</div>
+            <div class="pay-sub">${fmtD(p.fecha)} · rechazado${rc?` · recibo ${String(rc.numero).padStart(6,'0')} <b>anulado</b>`:''}</div></div>
+          <div>${bol.length?`<button class="btn btn-ghost btn-sm" onclick="verAdjunto('${bol[0].id}')">Ver</button>`:''}</div></div>`;
+        return; }
       h+=`<div class="pay-item"><div class="pay-ico" style="${resp?'':'color:var(--gold)'}">${resp?'🗎':'⚠'}</div>
         <div class="pay-main"><div class="pay-title">${Q(p.monto)} · ${esc(p.forma||'')} ${p.referencia?`· ref. ${esc(p.referencia)}`:''}</div>
           <div class="pay-sub">${fmtD(p.fecha)} · ${esc(p.estado||'')}${bol.length?` · boleta subida`:(resp?' · <b>respaldado con la referencia del banco</b>':' · <b>sin respaldo</b>')}</div></div>
@@ -4396,6 +4407,18 @@ function pistaMonedaPago(){
   const e=document.getElementById('p-monedaPista'); if(!e) return; const tc=PROYECTO.tipoCambio||7.8; const m=+v('p-monto')||0;
   e.textContent = v('p-moneda')==='GTQ' ? `Q ${m.toLocaleString('es-GT',{minimumFractionDigits:2})} ÷ ${tc} = USD ${(m/tc).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2})} al contrato` : 'El contrato está en US$.';
 }
+/* La misma boleta registrada dos veces (18 sept 2026): antes de guardar se busca
+   en el contrato otro pago vivo con la misma referencia. La misma referencia en
+   OTRO contrato es legítima (una boleta que pagó varios lotes); en el mismo, casi
+   siempre es un duplicado. Se avisa y se deja seguir sólo con un sí explícito. */
+function pagoRepetido(ctId, ref){
+  const r=String(ref||'').trim().toLowerCase().replace(/^0+/,''); if(!r) return null;
+  return (DB.pagos||[]).find(p=>mismoId(p.contratoId,ctId)&&p.estado!=='rechazado'&&String(p.referencia||'').trim().toLowerCase().replace(/^0+/,'')===r)||null;
+}
+function seguirPeseARepetido(ctId, ref){
+  const d=pagoRepetido(ctId,ref); if(!d) return true;
+  return confirm(`OJO: este contrato YA tiene un pago con la referencia ${d.referencia}:\n\n   ${Q(d.monto)} · ${fmtD(d.fecha)} · ${d.estado==='confirmado'?'confirmado':'por confirmar'}\n\nSi es la misma boleta, NO la registres otra vez (tocá Cancelar).\nSólo seguí si de verdad son dos pagos distintos con el mismo número.`);
+}
 async function guardarPago(id){
   let monto=+v('p-monto'); if(!monto||monto<=0){toast('Ingresa un monto válido');return;}
   /* Proyecto en US$ y el cliente pagó en quetzales: se convierte al tipo de
@@ -4404,6 +4427,7 @@ async function guardarPago(id){
   const tc=(PROYECTO&&PROYECTO.moneda==='USD'&&monedaPago==='GTQ')?(PROYECTO.tipoCambio||7.8):1;
   const montoOriginal=monto; if(tc!==1) monto=Math.round(monto/tc*100)/100;
   const ref=v('p-ref').trim(); if(!ref){toast('Anotá el número de boleta o referencia',5000,true);return;}
+  if(!seguirPeseARepetido(id,ref)) return;
   const fecha=v('p-fecha')||HOY_ISO; if(fecha>HOY_ISO){toast('La fecha del pago no puede ser futura',5000,true);return;}
   const historico=fecha<CORTE_BOLETAS;
   const foto=(document.getElementById('p-foto')||{}).files; const archivo=foto&&foto[0];
