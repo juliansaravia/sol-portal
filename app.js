@@ -707,6 +707,10 @@ function asuntos(){
   const A=[];
   if(M.enMora) A.push({sev:'alta',n:M.enMora,t:M.enMora===1?'contrato en mora':'contratos en mora',d:`${Qk(M.saldoVencido)} vencidos · requieren gestión`,ir:()=>irA('cobranza',{f:'mora'})});
   if(M.nuncaPagaron.length) A.push({sev:'alta',n:M.nuncaPagaron.length,t:M.nuncaPagaron.length===1?'venta que nunca pagó una cuota':'ventas que nunca pagaron una cuota',d:'Entró el enganche y nada más',ir:()=>irA('cobranza',{f:'nunca'})});
+  /* Un contrato aprobado sin una sola cuota se lee «Liquidado»: es un plan que no se generó. */
+  const sinPlan=(DB.meta&&DB.meta.carteraLista)?DB.contratos.filter(c=>c.estado==='aprobado'&&!(c.obligaciones||[]).some(o=>(o.giros||[]).length)):[];
+  if(sinPlan.length) A.push({sev:'alta',n:sinPlan.length,t:sinPlan.length===1?'contrato sin plan de pagos':'contratos sin plan de pagos',
+    d:'Aparecen como «Liquidado» sin serlo: '+sinPlan.slice(0,10).map(c=>esc(c.no)+' ('+esc(c.lote)+')').join(', ')+(sinPlan.length>10?' y '+(sinPlan.length-10)+' más':'')+'. Avisá a administración.',ir:()=>abrirContrato(sinPlan[0].id,'cuenta')});
   if(porConf) A.push({sev:'media',n:porConf,t:'pagos por confirmar',d:'Esperan al financiero para aplicarse a la cartera',ir:()=>setView('confirmacion')});
   if(pend) A.push({sev:'media',n:pend,t:'solicitudes por aprobar',d:'El comité decide y se genera el plan de giros',ir:()=>setView('aprobacion')});
   if(sinVend) A.push({sev:'media',n:sinVend,t:'contratos sin vendedor',d:'Sin responsable no hay comisión ni seguimiento',ir:()=>irA('contratos',{f:'sin_vendedor'})});

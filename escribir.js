@@ -239,8 +239,15 @@ async function sbCrearContrato({ lote, cliente_id, persona_id, enganche, plazo, 
       fuente: historico ? 'Carga masiva' : 'Suite'
     }).select('id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado').single());
 
-    // El plan de pago lo arma la base, no el navegador.
-    oExplota(await SB.rpc('generar_giros', { p_contrato_id: fila.id }));
+    /* El plan de pago lo arma la base, no el navegador. Desde la 73 lo genera
+       un disparador al insertar; crear_plan_inicial() sólo lo crea si falta
+       (no pisa nada) y corre para quien puede crear contratos. Antes se
+       llamaba generar_giros(), que a Finanzas y a los vendedores les rebotaba
+       por permisos y dejaba el contrato guardado SIN cuotas (SD-171…192). */
+    let plan = await SB.rpc('crear_plan_inicial', { p_contrato_id: fila.id });
+    if (plan.error && /PGRST202|crear_plan_inicial/.test(String(plan.error.code || '') + ' ' + String(plan.error.message || '')))
+      plan = await SB.rpc('generar_giros', { p_contrato_id: fila.id });     // la 73 aún no se corrió
+    oExplota(plan);
 
     // El lote queda reservado hasta que el comité apruebe.
     oExplota(await SB.from('lote').update({ estado: 'reservado' }).eq('id', lote.id).select('id'));
