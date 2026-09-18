@@ -702,7 +702,8 @@ function asuntos(){
   const sinAcceso=DB.equipo.filter(p=>p.activo&&p.entra===false).length;
   const sinAlta=DB.lotes.filter(l=>l.estado===LOTE_ALTA_PENDIENTE).length;
   /* Cada lote se mide contra su propio plano: los agrolotes contra el agrícola. */
-  const sinUbic=DB.lotes.filter(l=>esAgro(l)?!(window.LOT_SHAPE_AGRO||{})[l.codigo]:(l.x==null&&!(typeof LOT_SHAPE!=='undefined'&&LOT_SHAPE[l.codigo]))).length;
+  const sinUbicL=DB.lotes.filter(l=>esAgro(l)?!(window.LOT_SHAPE_AGRO||{})[l.codigo]:(l.x==null&&!(typeof LOT_SHAPE!=='undefined'&&LOT_SHAPE[l.codigo])));
+  const sinUbic=sinUbicL.length;
   const A=[];
   if(M.enMora) A.push({sev:'alta',n:M.enMora,t:M.enMora===1?'contrato en mora':'contratos en mora',d:`${Qk(M.saldoVencido)} vencidos · requieren gestión`,ir:()=>irA('cobranza',{f:'mora'})});
   if(M.nuncaPagaron.length) A.push({sev:'alta',n:M.nuncaPagaron.length,t:M.nuncaPagaron.length===1?'venta que nunca pagó una cuota':'ventas que nunca pagaron una cuota',d:'Entró el enganche y nada más',ir:()=>irA('cobranza',{f:'nunca'})});
@@ -716,7 +717,8 @@ function asuntos(){
   if(sinFirmado) A.push({sev:'media',n:sinFirmado,t:sinFirmado===1?'contrato sin el firmado en el sistema':'contratos sin el firmado en el sistema',d:'El contrato existe en papel; falta subir el escaneado',ir:()=>irA('contratos',{f:'sin_firmado'})});
   if(sinAcceso) A.push({sev:'baja',n:sinAcceso,t:'usuarios sin acceso',d:'Pendientes de invitación o de correo',ir:()=>setView('equipo')});
   if(sinAlta) A.push({sev:'baja',n:sinAlta,t:'lotes del plano sin dar de alta',d:'Están dibujados pero no en el inventario',ir:()=>setView('inventario')});
-  if(sinUbic) A.push({sev:'baja',n:sinUbic,t:'lotes sin ubicación en el plano',d:'Existen en inventario, no en el dibujo',ir:()=>setView('inventario')});
+  if(sinUbic) A.push({sev:'baja',n:sinUbic,t:sinUbic===1?'lote sin ubicación en el plano':'lotes sin ubicación en el plano',
+    d:'Existen en inventario, no en el dibujo: '+sinUbicL.slice(0,12).map(l=>esc(l.codigo)+(l.fase?' ('+esc(String(l.fase).toLowerCase())+')':'')).join(', ')+(sinUbic>12?' y '+(sinUbic-12)+' más':'')+'. Se ubican con «Ubicar lotes» en Inventario.',ir:()=>setView('inventario')});
   const orden={alta:0,media:1,baja:2};
   return A.filter(a=>ROLES[ROLE]&&true).sort((a,b)=>orden[a.sev]-orden[b.sev]||b.n-a.n);
 }
