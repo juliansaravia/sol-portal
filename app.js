@@ -3841,7 +3841,7 @@ function pintarContrato(){
         if(rech[0]===p) h+=`<div class="hint" style="margin:12px 0 4px"><b>Rechazados · ${rech.length}</b> · no cuentan en el saldo ni en el estado de cuenta</div>`;
         h+=`<div class="pay-item" style="opacity:.55"><div class="pay-ico">✕</div>
           <div class="pay-main"><div class="pay-title" style="text-decoration:line-through">${Q(p.monto)} · ${esc(p.forma||'')} ${p.referencia?`· ref. ${esc(p.referencia)}`:''}</div>
-            <div class="pay-sub">${fmtD(p.fecha)} · rechazado${rc?` · recibo ${String(rc.numero).padStart(6,'0')} <b>anulado</b>`:''}</div></div>
+            <div class="pay-sub">${fmtD(p.fecha)} · ${p.eliminado?'eliminado'+(p.eliminadoMotivo?': '+esc(p.eliminadoMotivo):''):'rechazado'}${rc?` · recibo ${String(rc.numero).padStart(6,'0')} <b>anulado</b>`:''}</div></div>
           <div>${bol.length?`<button class="btn btn-ghost btn-sm" onclick="verAdjunto('${bol[0].id}')">Ver</button>`:''}</div></div>`;
         return; }
       h+=`<div class="pay-item"><div class="pay-ico" style="${resp?'':'color:var(--gold)'}">${resp?'🗎':'⚠'}</div>
@@ -3849,7 +3849,8 @@ function pintarContrato(){
           <div class="pay-sub">${fmtD(p.fecha)} · ${esc(p.estado||'')}${bol.length?` · boleta subida`:(resp?' · <b>respaldado con la referencia del banco</b>':' · <b>sin respaldo</b>')}</div></div>
         <div>${(()=>{const rc=reciboDe(p.id); return rc?`<button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">Recibo ${String(rc.numero).padStart(6,'0')}</button>`:((bol.length||(p.referencia&&String(p.referencia).trim()))&&p.estado!=='rechazado'?`<button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">Emitir recibo</button>`:'');})()}
           ${bol.length?`<button class="btn btn-ghost btn-sm" onclick="verAdjunto('${bol[0].id}')">Ver</button>`:''}
-          ${p.estado!=='rechazado'?`<button class="btn ${bol.length?'btn-ghost':'btn-gold'} btn-sm" onclick="modalBoleta('${p.id}')">${bol.length?'Otra boleta':'Subir boleta'}</button>`:''}</div></div>`;});
+          ${p.estado!=='rechazado'?`<button class="btn ${bol.length?'btn-ghost':'btn-gold'} btn-sm" onclick="modalBoleta('${p.id}')">${bol.length?'Otra boleta':'Subir boleta'}</button>`:''}
+          ${p.estado!=='rechazado'&&PUEDE_ELIMINAR_PAGO()?`<button class="btn btn-ghost btn-sm" style="color:#B0562F" onclick="modalEliminarPago('${p.id}')">Eliminar</button>`:''}</div></div>`;});
   }
 
   if(drawerTab==='gestiones'){
@@ -4412,6 +4413,34 @@ function pistaMonedaPago(){
    en el contrato otro pago vivo con la misma referencia. La misma referencia en
    OTRO contrato es legítima (una boleta que pagó varios lotes); en el mismo, casi
    siempre es un duplicado. Se avisa y se deja seguir sólo con un sí explícito. */
+/* Eliminar un pago (74): administración y Finanzas. No se borra la fila: el pago
+   deja de contar, su recibo se anula y queda quién lo eliminó y por qué. */
+const PUEDE_ELIMINAR_PAGO=()=>['admin','financiero'].includes(ROLE);
+function modalEliminarPago(pagoId){
+  const p=(DB.pagos||[]).find(x=>mismoId(x.id,pagoId)); if(!p) return;
+  const ct=getContrato(p.contratoId)||{}; const rc=(typeof reciboDe==='function')?reciboDe(p.id):null;
+  openModal(`<div class="modal-h"><h3>Eliminar este pago</h3><p>${esc(ct.no||'')} · Lote ${esc(ct.lote||'')} · ${esc(nombreCliente(ct.clienteId)||'')}</p></div>
+    <div class="modal-b">
+      <p><b>${Q(p.monto)}</b> · ${fmtD(p.fecha)} · ${esc(p.forma||'')}${p.referencia?' · ref. '+esc(p.referencia):''} · <b>${p.estado==='confirmado'?'confirmado':'por confirmar'}</b></p>
+      <p class="hint" style="margin:8px 0">El pago deja de contar en el saldo y en el estado de cuenta${p.estado==='confirmado'?', y las cuotas que cubría vuelven a quedar pendientes':''}.${rc?` El recibo ${String(rc.numero).padStart(6,'0')} queda <b>anulado</b>.`:''} Si NUO todavía no le había avisado al cliente, el aviso se cancela. Queda registrado quién lo eliminó y por qué; no se puede deshacer (si fue un error, se vuelve a registrar el pago).</p>
+      <div class="field"><label>Motivo *</label><input id="ep-motivo" autocomplete="off" placeholder="Ej.: boleta registrada dos veces · pago en el contrato equivocado · monto mal digitado"></div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" style="background:#B0562F;border-color:#B0562F" onclick="guardarEliminarPago('${p.id}')">Eliminar pago</button></div>`);
+}
+async function guardarEliminarPago(pagoId){
+  const motivo=v('ep-motivo').trim(); if(motivo.length<5) return toast('Escribí el motivo',5000,true);
+  const p=(DB.pagos||[]).find(x=>mismoId(x.id,pagoId)); if(!p) return;
+  let dato={};
+  if(typeof hayBase==='function'&&hayBase()&&typeof sbEliminarPago==='function'){
+    const r=await conBoton(()=>sbEliminarPago(pagoId,motivo)); if(!r||!r.ok) return; dato=r.dato||{};
+    if(typeof cargarCartera==='function'){ try{ await cargarCartera(); }catch(e){} }     // las cuotas que cubría vuelven a quedar pendientes
+  } else { p.estado='rechazado'; p.eliminado=true; p.eliminadoMotivo=motivo; if(typeof saveDB==='function') saveDB(); }
+  if(typeof reindexar==='function') reindexar();
+  anotar('pago.eliminar', (getContrato(p.contratoId)||{}).no+' · '+Q(p.monto)+' · '+motivo);
+  closeModal(); if(drawerCt) pintarContrato(); if(typeof pintarBadgeAsuntos==='function') pintarBadgeAsuntos();
+  toast('Pago eliminado'+(dato.nuo_ya_aviso_al_cliente?' · OJO: NUO ya le había confirmado este pago al cliente, avisale':'')+(dato.partida_por_reversar?' · tiene partida contable: que contabilidad la reverse':''), dato.nuo_ya_aviso_al_cliente||dato.partida_por_reversar?10000:4000);
+}
 function pagoRepetido(ctId, ref){
   const r=String(ref||'').trim().toLowerCase().replace(/^0+/,''); if(!r) return null;
   return (DB.pagos||[]).find(p=>mismoId(p.contratoId,ctId)&&p.estado!=='rechazado'&&String(p.referencia||'').trim().toLowerCase().replace(/^0+/,'')===r)||null;

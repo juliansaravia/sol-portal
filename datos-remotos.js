@@ -84,7 +84,8 @@ async function cargarDesdeSupabase() {
       conRespaldo('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,origen,banco,boleta,lote_id,cliente_id,persona_id',
                   'expediente_de,modalidad,crm_no_contactar,crm_no_contactar_motivo'),
       todas('cliente', 'id,nombre,dpi,nit,telefono,email,direccion,ocupacion'),
-      todas('pago', 'id,contrato_id,giro_id,monto,fecha_pago,forma_pago,referencia,estado'),
+      /* `eliminado` llega con 74_eliminar_pago.sql; si no se ha corrido, se pide lo de siempre. */
+      conRespaldo('pago', 'id,contrato_id,giro_id,monto,fecha_pago,forma_pago,referencia,estado', 'eliminado,eliminado_motivo'),
       /* `auth_uid` viene para saber quién ya puede entrar. No se guarda
          el identificador, solo si lo tiene: la pantalla no necesita más
          y el uid de nadie tiene por qué andar dando vueltas. */
@@ -259,7 +260,8 @@ async function cargarDesdeSupabase() {
     DB.pagos = pagos.map(p => ({
       id: p.id, contratoId: p.contrato_id, monto: _num(p.monto),
       fecha: _fecha(p.fecha_pago), forma: p.forma_pago, giroId: p.giro_id || null,
-      referencia: p.referencia, estado: p.estado
+      referencia: p.referencia, estado: p.estado,
+      eliminado: !!p.eliminado, eliminadoMotivo: p.eliminado_motivo || ''
     }));
 
     const porContrato = new Map(DB.contratos.map(c => [c.id, c]));

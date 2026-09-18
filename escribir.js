@@ -414,6 +414,17 @@ async function sbConfirmarPago(pago_id, ok = true) {
   });
 }
 
+/** Finanzas elimina un pago (74): deja de contar, su recibo queda anulado y el
+ *  aviso a NUO se cancela si no había salido. La fila se conserva con el motivo. */
+async function sbEliminarPago(pago_id, motivo) {
+  return escribir('eliminar el pago', async () => {
+    const r = oExplota(await SB.rpc('eliminar_pago', { p_pago_id: Number(pago_id), p_motivo: motivo }));
+    const p = DB.pagos.find(x => mismoId(x.id, pago_id));
+    if (p) { p.estado = 'rechazado'; p.eliminado = true; p.eliminadoMotivo = motivo; }
+    return r;
+  });
+}
+
 async function sbBorrarPago(pago_id) {
   return escribir('deshacer el pago', async () => {
     // Solo se borra lo que todavía nadie confirmó.
