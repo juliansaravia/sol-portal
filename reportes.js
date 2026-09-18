@@ -51,17 +51,74 @@ function _celda(v) {
    ámbito global, y dos `const` con el mismo nombre tumban la carga entera. */
 const _repNum = n => (Math.round((Number(n) || 0) * 100) / 100).toFixed(2).replace('.', ',');
 
+/* ── Excel de verdad (.xlsx), sin librerías (18 sept 2026) ──
+   El CSV con «;» y coma decimal sólo abre bien en un Excel configurado en
+   español. En uno en inglés (separador «,») el encabezado cae en una sola celda
+   y cada monto se parte en dos columnas. Un .xlsx no depende de la región: los
+   montos van como números y los textos (referencias, DPI, recibos con ceros a
+   la izquierda) como texto. Un .xlsx es un ZIP de XML; se arma aquí mismo, sin
+   compresión (método «store»), que Excel, Numbers y Google Sheets abren igual. */
+const _CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; } return t; })();
+function _crc32(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = _CRC_T[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function _zipStore(archivos) {
+  const enc = new TextEncoder(), partes = [], central = []; let pos = 0;
+  const u16 = n => [n & 255, (n >>> 8) & 255], u32 = n => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
+  archivos.forEach(a => {
+    const nombre = enc.encode(a.nombre), datos = enc.encode(a.texto), crc = _crc32(datos);
+    const cab = new Uint8Array([0x50, 0x4B, 0x03, 0x04, ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(datos.length), ...u32(datos.length), ...u16(nombre.length), ...u16(0)]);
+    partes.push(cab, nombre, datos);
+    central.push({ nombre, crc, n: datos.length, pos });
+    pos += cab.length + nombre.length + datos.length;
+  });
+  let tamCentral = 0; const ini = pos;
+  central.forEach(c => {
+    const h = new Uint8Array([0x50, 0x4B, 0x01, 0x02, ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(c.crc), ...u32(c.n), ...u32(c.n), ...u16(c.nombre.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(c.pos)]);
+    partes.push(h, c.nombre); tamCentral += h.length + c.nombre.length;
+  });
+  partes.push(new Uint8Array([0x50, 0x4B, 0x05, 0x06, ...u16(0), ...u16(0), ...u16(central.length), ...u16(central.length), ...u32(tamCentral), ...u32(ini), ...u16(0)]));
+  return new Blob(partes, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+/* Texto seguro para XML: escapa & < > " y quita los caracteres de control que XML no admite. */
+const _xml = s => Array.from(String(s)).filter(ch => { const k = ch.charCodeAt(0); return k >= 32 || k === 9 || k === 10 || k === 13; }).join('')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+function _colXlsx(i) { let s = ''; i++; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = (i - m - 1) / 26; } return s; }
+/** Filas (arreglo de arreglos) → Blob .xlsx. La primera fila es el encabezado. */
+function _xlsxDeFilas(filas, hoja) {
+  const anchos = [];
+  const celdas = filas.map((f, r) => '<row r="' + (r + 1) + '">' + f.map((v, c) => {
+    const ref = _colXlsx(c) + (r + 1); const txt = (v === null || v === undefined) ? '' : v;
+    anchos[c] = Math.min(60, Math.max(anchos[c] || 8, String(txt).length + 2));
+    /* Número: un number de JS, o el texto que produce _repNum («1234,56»). Todo lo demás es texto. */
+    if (r > 0 && typeof txt === 'number' && isFinite(txt)) return `<c r="${ref}" s="${Number.isInteger(txt) ? 0 : 2}"><v>${txt}</v></c>`;
+    if (r > 0 && typeof txt === 'string' && /^-?\d+,\d{2}$/.test(txt)) return `<c r="${ref}" s="2"><v>${txt.replace(',', '.')}</v></c>`;
+    if (txt === '') return '';
+    return `<c r="${ref}" t="inlineStr"${r === 0 ? ' s="1"' : ''}><is><t xml:space="preserve">${_xml(_repTxt(txt))}</t></is></c>`;
+  }).join('') + '</row>').join('');
+  const cols = '<cols>' + Array.from(anchos, (a, i) => `<col min="${i + 1}" max="${i + 1}" width="${a || 10}" customWidth="1"/>`).join('') + '</cols>';
+  const ultima = _colXlsx(Math.max(0, (filas[0] || []).length - 1)) + filas.length;
+  const X = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  const nombreHoja = _xml(String(hoja || 'Reporte').replace(/[\\/?*:\[\]]/g, ' ').slice(0, 31));
+  return _zipStore([
+    { nombre: '[Content_Types].xml', texto: X + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>' },
+    { nombre: '_rels/.rels', texto: X + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+    { nombre: 'xl/workbook.xml', texto: X + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="' + nombreHoja + '" sheetId="1" r:id="rId1"/></sheets></workbook>' },
+    { nombre: 'xl/_rels/workbook.xml.rels', texto: X + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+    { nombre: 'xl/styles.xml', texto: X + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>' },
+    { nombre: 'xl/worksheets/sheet1.xml', texto: X + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' + cols + '<sheetData>' + celdas + '</sheetData><autoFilter ref="A1:' + ultima + '"/></worksheet>' }
+  ]);
+}
+
+/* Conserva el nombre por quien ya la llama; lo que baja ahora es un .xlsx. */
 function descargarCSV(nombre, filas) {
   if (!filas || filas.length < 2) { toast('No hay nada que descargar en ese período'); return; }
-  const cuerpo = filas.map(f => f.map(_celda).join(';')).join('\r\n');
-  const blob = new Blob(['﻿' + cuerpo], { type: 'text/csv;charset=utf-8;' });
+  const blob = _xlsxDeFilas(filas, nombre);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${nombre}_${REP.desde}_a_${REP.hasta}.csv`;
+  a.download = `${nombre}_${REP.desde}_a_${REP.hasta}.xlsx`;
   document.body.appendChild(a); a.click();
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 400);
-  toast(`${filas.length - 1} fila(s) descargadas`);
+  toast(`${filas.length - 1} fila(s) descargadas · Excel`);
 }
 
 /* ------------------------------------------------------------
@@ -98,8 +155,8 @@ function repCobros() {
   return f;
 }
 
-/** 2b · TODAS las boletas aplicadas, por cliente y por lote (18 sept 2026).
- *  No mira el período: es el historial completo de cada cliente. Una fila por
+/** 2b · Las boletas aplicadas, por cliente y por lote (18 sept 2026), del período
+ *  elegido arriba (Desde/Hasta; «Todo el historial» lo abre completo). Una fila por
  *  boleta, ordenadas por cliente → lote → fecha, con a qué cuota se aplicó, su
  *  recibo y si tiene la foto. Los pagos eliminados o rechazados no salen. */
 function repBoletas() {
@@ -107,7 +164,7 @@ function repBoletas() {
               'Recibo No.','Recibo en PDF','Estado','Se aplicó a','Foto de la boleta']];
   const filas = [];
   DB.contratos.forEach(c => {
-    const pagos = (indices().pagosPorContrato.get(String(c.id)) || []).filter(p => p.estado !== 'rechazado');
+    const pagos = (indices().pagosPorContrato.get(String(c.id)) || []).filter(p => p.estado !== 'rechazado' && p.fecha >= REP.desde && p.fecha <= REP.hasta);
     if (!pagos.length) return;
     const apl = new Map();
     try { pagosAplicados(c, filasEstadoCuenta(c).filas).forEach(x => apl.set(String(x.id), x.detalle.map(d => d.etq + ' ' + _repNum(d.monto)).join(' + '))); } catch (e) {}
@@ -132,7 +189,8 @@ function repBoletasResumen() {
   const f = [['Cliente','Lote','Fase','Contrato','Boletas','Confirmado','Por confirmar','Primer pago','Último pago','Saldo pendiente','Cuotas vencidas']];
   const filas = [];
   DB.contratos.filter(c => c.estado !== 'anulado').forEach(c => {
-    const pagos = (indices().pagosPorContrato.get(String(c.id)) || []).filter(p => p.estado !== 'rechazado');
+    const pagos = (indices().pagosPorContrato.get(String(c.id)) || []).filter(p => p.estado !== 'rechazado' && p.fecha >= REP.desde && p.fecha <= REP.hasta);
+    if (!pagos.length) return;
     const conf = pagos.filter(p => p.estado === 'confirmado'), reg = pagos.filter(p => p.estado === 'registrado');
     const fechas = pagos.map(p => p.fecha).filter(Boolean).sort();
     const ec = (typeof estadoCuenta === 'function') ? estadoCuenta(c) : {};
@@ -380,10 +438,10 @@ const REPORTES = [
     que:'Cada pago con su fecha, referencia y estado.',
     para:'Contra esto se cuadra el banco.', fn: repCobros },
   { id:'boletas',      nombre:'Boletas por cliente y lote',
-    que:'TODAS las boletas aplicadas (no sólo las del período): cliente, lote, fecha, monto, referencia, recibo y a qué cuota se aplicó.',
+    que:'Cada boleta aplicada en el período elegido: cliente, lote, fecha, monto, No. de referencia, recibo, a qué cuota se aplicó y si tiene la foto.',
     para:'Para revisar el historial de pagos de un cliente o de un lote, o filtrarlo en Excel.', fn: repBoletas },
   { id:'boletas-resumen', nombre:'Pagos por cliente y lote (resumen)',
-    que:'Una fila por cliente y lote: cuántas boletas, cuánto confirmado, cuánto por confirmar, primer y último pago, saldo.',
+    que:'Una fila por cliente y lote con lo pagado en el período: cuántas boletas, confirmado, por confirmar, primer y último pago, saldo.',
     para:'Para ver de un vistazo quién ha pagado cuánto.', fn: repBoletasResumen },
   { id:'antiguedad',   nombre:'Antigüedad de saldos',
     que:'El saldo vencido repartido en tramos de 30, 60, 90 y 180 días.',

@@ -3346,6 +3346,7 @@ function renderReporteria(){
         <button class="chip" onclick="repRango(1)">Mes anterior</button>
         <button class="chip" onclick="repRango(90)">Últimos 90 días</button>
         <button class="chip" onclick="repRango(9)">Este año</button>
+        <button class="chip" onclick="repRango('todo')">Todo el historial</button>
         <span class="hint" style="margin-left:auto">Período ${fmtD(n.desde)} – ${fmtD(n.hasta)} · datos al ${fmtD(HOY_ISO)}</span></div>
       <div class="field" style="margin:0"><label>Desde</label>
         <input type="date" id="rep-desde" value="${n.desde}" onchange="REP.desde=this.value;renderReporteria()"></div>
@@ -3397,7 +3398,7 @@ function renderReporteria(){
   }
   /* Y abajo lo que de verdad se lleva uno al cierre. */
   h += `<div class="card"><div class="card-h"><h2>Descargar para el cierre</h2>
-      <span class="hint">CSV listo para Excel · del ${fmtD(n.desde)} al ${fmtD(n.hasta)}</span></div>
+      <span class="hint">Excel (.xlsx) · del ${fmtD(n.desde)} al ${fmtD(n.hasta)}</span></div>
     <div class="card-b" style="padding:0"><table class="data"><tbody>`;
   REPORTES.forEach(r=>{
     h += `<tr>
@@ -3461,7 +3462,10 @@ function renderReporteria(){
 /* Atajos de período. 9 es el año corriente. */
 function repRango(k){
   const hoy = HOY_ISO, a = hoy.slice(0,4), m = +hoy.slice(5,7);
-  if(k===9){ REP.desde = a+'-01-01'; REP.hasta = hoy; }
+  if(k==='todo'){ /* desde el primer pago o contrato que exista */
+    const fs=(DB.pagos||[]).map(p=>p.fecha).concat((DB.contratos||[]).map(c=>c.fecha)).filter(Boolean).sort();
+    REP.desde = (fs[0]||'2020-01-01').slice(0,10); REP.hasta = hoy; }
+  else if(k===9){ REP.desde = a+'-01-01'; REP.hasta = hoy; }
   else if(k===90){ const d=new Date(hoy+'T00:00:00'); d.setDate(d.getDate()-90); REP.desde=d.toISOString().slice(0,10); REP.hasta=hoy; }
   else {
     const mm = m - k;
