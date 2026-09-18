@@ -4356,7 +4356,8 @@ function modalPago(id){
   const ct=getContrato(id), ec=estadoCuenta(ct);
   openModal(`<div class="modal-h"><h3>Registrar pago</h3><p>${ct.no} · ${esc(nombreCliente(ct.clienteId))}</p></div>
     <div class="modal-b"><div class="form-grid">
-      <div class="field"><label>Cuota a la que se aplica</label><select id="p-giro" onchange="pistaAplicacion('${id}')">${opcionesCuotas(ct)}</select></div>
+      <div class="field"><label>Cuota a la que se aplica</label><select id="p-giro" onchange="pistaAplicacion('${id}')">${opcionesCuotas(ct)}</select>
+        ${!(+ct.enganche>0)?`<div class="hint" style="color:#8A5F12;margin-top:4px">Este contrato está cargado con <b>enganche Q0</b>, por eso no aparece el enganche en la lista. Si sí lo pagó, corregí primero el monto en <a href="#" onclick="closeModal();modalEnganche('${id}');return false;"><b>Ficha → Enganche → Editar</b></a>: el plan se rehace con su Cuota Inicial y el pago se aplica ahí.</div>`:''}</div>
       <div class="field"><label>Monto de la boleta *</label><input id="p-monto" type="number" step="0.01" placeholder="${ec.prox?'cuota: '+Q(ec.prox.monto):'monto que pagó'}" oninput="totalBoleta('p');pistaAplicacion('${id}')"></div>
       <div class="field full" id="p-aplicBox" hidden><label id="p-aplicLbl">${PROYECTO&&PROYECTO.metodo==='amortizado'?'Pagó más que la cuota · ¿qué se hace con lo que sobra?':'Pagó más que la cuota · lo que sobra adelanta las cuotas siguientes (interés simple: no se recalcula nada)'}</label>
         <select id="p-aplic" ${PROYECTO&&PROYECTO.metodo==='amortizado'?'':'style="display:none"'}><option value="cuotas">Adelantar las cuotas siguientes</option>${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Abonarlo a capital (se recalculan las cuotas, mismo plazo)</option>':''}</select>
