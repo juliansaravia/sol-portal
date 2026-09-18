@@ -2811,7 +2811,8 @@ function renderCobranza(){
         <td><b>${m.no}</b></td><td>${m.lote}</td>
         <td>${ct?esc(nombreCliente(ct.clienteId)):'—'}</td>
         <td>${ct?esc(ct.vendedor):'—'}</td><td>${ct?fmtD(ct.fecha):'—'}</td>
-        <td class="num">${Q(m.saldoVenc)}${(()=>{ if(!ct) return ''; const pr=DB.pagos.filter(p=>mismoId(p.contratoId,ct.id)&&p.estado==='registrado'); if(!pr.length) return '';
+        <td class="num">${Q(m.saldoVenc)}${(()=>{ if(!ct) return ''; const pr=DB.pagos.filter(p=>mismoId(p.contratoId,ct.id)&&p.estado==='registrado');
+            if(!pr.length){ const b=boletaSinPago(ct); return b?`<div class="hint" style="color:#8A5F12"><a href="#" onclick="event.stopPropagation();${PUEDE_PAGO_DESDE_BOLETA()?`modalPagoDesdeBoleta('${b.id}')`:`abrirContrato('${ct.id}','docs')`};return false;">La boleta del enganche está subida, pero no registrada como pago ›</a></div>`:''; }
             return `<div class="hint" style="color:#8A5F12"><a href="#" onclick="event.stopPropagation();setView('confirmacion');return false;">${pr.length} boleta(s) por ${Q(pr.reduce((s,p)=>s+(+p.monto||0),0))} esperan confirmación ›</a></div>`; })()}</td>
         <td class="num">${ct?Q(calcularComision(ct)):'—'}</td></tr>`;});
     h+=`</tbody></table></div></div>`;
@@ -3901,7 +3902,7 @@ function pintarContrato(){
       <div class="pay-main"><div class="pay-title">${esc(d.nombre)}</div>
       <div class="pay-sub">${!mismoId(d.contratoId,ct.id)&&ppal?`<b>${esc(ppal.no)}</b> · `:''}${esc(d.tipo)}${cara} · ${fmtD(d.fecha)}${peso}${
         hayArchivo?'':' · <b>anotado, sin archivo</b>'}</div></div>
-      ${hayArchivo?`<button class="btn btn-ghost btn-sm" onclick="verDocumento('${d.id}')">Ver</button>`:''}</div>`;});
+      ${hayArchivo&&d.tipo==='boleta_enganche'&&mismoId(d.contratoId,ct.id)&&PUEDE_PAGO_DESDE_BOLETA()&&boletaSinPago(ct)&&mismoId(boletaSinPago(ct).id,d.id)?`<button class="btn btn-gold btn-sm" onclick="modalPagoDesdeBoleta('${d.id}')" title="La boleta está subida pero no hay ningún pago en el contrato">Registrar como pago</button> `:''}${hayArchivo?`<button class="btn btn-ghost btn-sm" onclick="verDocumento('${d.id}')">Ver</button>`:''}</div>`;});
   }
   h+=`</div>`; openDrawer(h);
 }
@@ -5145,6 +5146,56 @@ function docCaras(){
   ['d-engBox','d-refBox','d-engNota'].forEach(k=>{ const e=document.getElementById(k); if(e) e.hidden=!esBol; });
   if(esBol){ const m=document.getElementById('d-monto'); const ct=window.__docContrato&&getContrato(window.__docContrato);
     if(m&&!m.value&&ct){ const pl=planFinanciamiento(ct.precio, ct.enganche!=null?ct.enganche:ENGANCHE_MIN, ct.plazo||60, ct.tasa); if(pl.enganche>0) m.value=pl.enganche; } }
+}
+/* La boleta del enganche que está en el expediente pero nunca se volvió pago
+   (se subió sin monto o en la carga por carpetas): el contrato sale en «Nunca
+   pagaron» con la foto subida. Esto la convierte en pago desde el documento,
+   con enganche_desde_documento() (42): queda «registrado» con la misma boleta
+   colgada, y Finanzas lo confirma. Sólo si el contrato no tiene ningún pago. */
+const PUEDE_PAGO_DESDE_BOLETA=()=>['admin','gerencia','financiero','cobranza','confirmacion'].includes(ROLE);
+function boletaSinPago(ct){
+  if(!ct||ct.estado!=='aprobado') return null;
+  if((DB.pagos||[]).some(p=>mismoId(p.contratoId,ct.id)&&p.estado!=='rechazado')) return null;
+  return documentosDe(ct.id).find(d=>d.tipo==='boleta_enganche'&&d.bucket&&d.ruta)||null;
+}
+function modalPagoDesdeBoleta(docId){
+  const d=(DB.documentos||[]).find(x=>mismoId(x.id,docId)); if(!d) return toast('No se encontró la boleta');
+  const ct=getContrato(d.contratoId); if(!ct) return;
+  const {filas}=filasEstadoCuenta(ct); const prox=filas.find(f=>f.estado!=='pagado'&&!f.condicion);
+  const sugerido=prox?faltaDeFila(prox):(ct.enganche||0);
+  openModal(`<div class="modal-h"><h3>Registrar esta boleta como pago</h3><p>${esc(ct.no)} · Lote ${esc(ct.lote)} · ${esc(nombreCliente(ct.clienteId))}</p></div>
+    <div class="modal-b">
+      <p class="hint" style="margin-bottom:10px">La foto ya está en el expediente (<a href="#" onclick="verDocumento('${d.id}');return false;">verla</a>). Copiá de la boleta el monto, la fecha del depósito y el número de referencia. El pago queda <b>por confirmar</b> con esta misma boleta${prox?` y se aplica a <b>${esc(prox.obl)} ${prox.n} de ${prox.de}</b>`:''}.</p>
+      <div class="form-grid">
+        <div class="field"><label>Monto</label><input id="pb-monto" type="number" step="0.01" min="0" value="${sugerido?sugerido.toFixed(2):''}"></div>
+        <div class="field"><label>Fecha del depósito</label><input id="pb-fecha" type="date" value="${esc(String(ct.fecha&&ct.fecha<=HOY_ISO?ct.fecha:HOY_ISO).slice(0,10))}" max="${HOY_ISO}"><div class="hint">Sale la fecha del contrato: corregila con la de la boleta.</div></div>
+        <div class="field f-full"><label>No. de referencia / boleta *</label><input id="pb-ref" autocomplete="off" placeholder="El número que trae la boleta"></div>
+      </div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarPagoDesdeBoleta('${d.id}')">Registrar pago</button></div>`);
+}
+async function guardarPagoDesdeBoleta(docId){
+  const d=(DB.documentos||[]).find(x=>mismoId(x.id,docId)); if(!d) return;
+  const ct=getContrato(d.contratoId); if(!ct) return;
+  const monto=+v('pb-monto')||0, ref=v('pb-ref').trim(), fecha=v('pb-fecha')||HOY_ISO;
+  if(monto<=0) return toast('Poné el monto de la boleta',5000,true);
+  if(!ref) return toast('El número de referencia es obligatorio',5000,true);
+  if(fecha>HOY_ISO) return toast('La fecha del depósito no puede ser futura',5000,true);
+  if(!(typeof hayBase==='function'&&hayBase()&&typeof sbEngancheDesdeDocumento==='function')){
+    (DB.pagos=DB.pagos||[]).push({id:uid(),contratoId:ct.id,monto,fecha,forma:'Transferencia bancaria',referencia:ref,estado:'registrado',cuota:1});
+    if(typeof saveDB==='function') saveDB(); if(typeof reindexar==='function') reindexar(); closeModal(); refrescarCajonDocs(); return toast('Pago registrado ✓ · falta confirmarlo');
+  }
+  const e=await conBoton(()=>sbEngancheDesdeDocumento(d.id, monto, ref, fecha));
+  if(!e||!e.ok) return;
+  const r=e.dato||{};
+  if(r.ok===false){ closeModal(); return toast('Ese contrato ya tiene un pago registrado: revisalo en Confirmación de pagos',7000,true); }
+  (DB.pagos=DB.pagos||[]).push({ id:r.pago_id, contratoId:Number(ct.id), monto, fecha, forma:'Transferencia bancaria', referencia:ref, estado:'registrado', cuota:r.cuota||1 });
+  (DB.adjuntos=DB.adjuntos||[]).push({ id:r.adjunto_id, entidad:'pago', entidadId:r.pago_id, bucket:d.bucket, ruta:d.ruta, nombre:d.nombre, mime:d.mime, bytes:d.bytes, descripcion:'Boleta '+ref+' · enganche (expediente)', fecha:HOY_ISO });
+  (DB.recibos=DB.recibos||[]).push({ id:r.recibo_id, numero:r.recibo_numero, pagoId:r.pago_id, contratoId:Number(ct.id), monto, fecha:HOY_ISO, adjuntoId:null });
+  if(typeof reindexar==='function') reindexar();
+  anotar('pago.boleta', ct.no+' · desde la boleta del expediente · '+Q(monto));
+  closeModal(); refrescarCajonDocs(); if(typeof pintarBadgeAsuntos==='function') pintarBadgeAsuntos(); if(vista==='cobranza') renderCobranza();
+  toast('Pago de '+Q(monto)+' registrado ✓ · falta que Finanzas lo confirme', 6000);
 }
 async function guardarDoc(id){
   const codigo=v('d-tipo');
