@@ -853,7 +853,10 @@ function datosRecibo(pagoId) {
 const adjuntosDe = (entidad, id) => (DB.adjuntos || []).filter(a => a.entidad === entidad && mismoId(a.entidadId, id));
 /* ¿El contrato firmado está en el sistema? Una fila de documento sin
    archivo no cuenta: el papel tiene que estar subido. */
-const contratoFirmadoDe = ct => documentosDe(ct.id).find(d => d.tipo === 'contrato' && d.bucket && d.ruta) || null;
+/* Lotes comprados juntos: el contrato firmado vive en el expediente principal y
+   respalda a los vinculados; también cuenta (18 sept 2026). Antes sólo se miraba
+   el propio y el vinculado salía en «Sin contrato firmado» con todo subido. */
+const contratoFirmadoDe = ct => (typeof documentosExpediente === 'function' ? documentosExpediente(ct) : documentosDe(ct.id)).find(d => d.tipo === 'contrato' && d.bucket && d.ruta) || null;
 
 /* ---------- Qué papeles se le piden a cada contrato (4 sept 2026) ----------
    · DPI del pariente: sólo a las ventas del portal desde el 16 de

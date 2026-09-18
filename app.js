@@ -3886,7 +3886,12 @@ function pintarContrato(){
     if(falta.length)
       h+=`<div class="aviso-err" style="margin:10px 0">Falta respaldo: ${falta.map(f=>esc(f.que)).join(' · ')}</div>`;
 
-    const ds=documentosDe(ct.id);
+    /* Los papeles propios y, si el lote se compró junto con otro, los del
+       expediente principal: son los que la lista de arriba da por «subido». */
+    const ppal=(typeof principalDe==='function')?principalDe(ct):ct;
+    const ds=(typeof documentosExpediente==='function'?documentosExpediente(ct):documentosDe(ct.id));
+    if(ppal&&!mismoId(ppal.id,ct.id))
+      h+=`<div class="hint" style="margin:8px 0">Este lote comparte expediente con <a href="#" onclick="abrirContrato('${ppal.id}','docs');return false;"><b>${esc(ppal.no)}</b> (lote ${esc(ppal.lote)})</a>: los papeles marcados «${esc(ppal.no)}» están subidos allá y respaldan a los dos.</div>`;
     if(!ds.length)h+=`<div class="empty">Expediente vacío</div>`;
     ds.forEach(d=>{
       const hayArchivo=!!(d.bucket&&d.ruta);
@@ -3894,7 +3899,7 @@ function pintarContrato(){
       const cara=d.cara?` · ${esc(d.cara)}`:'';
       h+=`<div class="pay-item"><div class="pay-ico">${hayArchivo?'🗎':'⚠'}</div>
       <div class="pay-main"><div class="pay-title">${esc(d.nombre)}</div>
-      <div class="pay-sub">${esc(d.tipo)}${cara} · ${fmtD(d.fecha)}${peso}${
+      <div class="pay-sub">${!mismoId(d.contratoId,ct.id)&&ppal?`<b>${esc(ppal.no)}</b> · `:''}${esc(d.tipo)}${cara} · ${fmtD(d.fecha)}${peso}${
         hayArchivo?'':' · <b>anotado, sin archivo</b>'}</div></div>
       ${hayArchivo?`<button class="btn btn-ghost btn-sm" onclick="verDocumento('${d.id}')">Ver</button>`:''}</div>`;});
   }
