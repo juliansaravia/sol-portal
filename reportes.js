@@ -308,71 +308,93 @@ const MODELO = {
   enMora: 7, montoMora: 87995.80
 };
 
-/** Lo mismo, calculado sobre lo que hay en la base ahora. */
+/** El cuadre contra el modelo financiero (rehecho el 18 sept 2026).
+ *
+ *  El modelo es una foto al 31 de julio; el sistema sigue vivo. Comparar la foto
+ *  contra «hoy» marcaba «Revisar» cada venta nueva. Ahora cada indicador trae:
+ *    · modelo      lo que dice el Excel a su fecha de corte
+ *    · alCorte     lo que dice el sistema A ESA MISMA FECHA (contratos firmados
+ *                  hasta el corte, lotes que ya existían) → contra esto se cuadra
+ *    · mov         qué se movió desde el corte (ventas nuevas, bajas, lotes nuevos)
+ *    · sistema     cómo está hoy, con el inventario total
+ *  «Cuadra» compara modelo contra alCorte. Lo de hoy nunca se marca como error. */
 function cuadreConModelo() {
-  const activos = DB.contratos.filter(c => c.estado === 'aprobado');
-  const cuentas = activos.map(c => estadoCuenta(c));
-  const enMora = cuentas.filter(e => e.enMora);
+  const corte = MODELO.corte;
+  const f10 = c => String(c.fecha || '').slice(0, 10);
+  const vivos   = DB.contratos.filter(c => c.estado === 'aprobado');
+  const alCorte = vivos.filter(c => !c.fecha || f10(c) <= corte);
+  const nuevos  = vivos.filter(c => c.fecha && f10(c) > corte);
+  /* Ventas que el modelo contaba y ya no están vivas (anuladas o desistieron). */
+  const bajas   = DB.contratos.filter(c => (c.estado === 'anulado' || c.estado === 'desistido') && c.fecha && f10(c) <= corte);
+  const ecDe = new Map(vivos.map(c => [c.id, estadoCuenta(c)]));
+  const eng = c => ((c.plan || {}).enganche || c.enganche || 0);
+  const suma = (L, fn) => L.reduce((s, c) => s + (fn(c) || 0), 0);
+  const giros = L => suma(L, c => (ecDe.get(c.id) || {}).totalGiros);
+  const enMora = vivos.filter(c => (ecDe.get(c.id) || {}).enMora);
 
-  const sis = {
-    lotes: DB.lotes.length,
-    vendidos: DB.lotes.filter(l => l.estado === 'vendido').length,
-    disponibles: DB.lotes.filter(l => l.estado === 'disponible').length,
-    contratos: activos.length,
-    ventas: activos.reduce((s, c) => s + (c.precio || 0), 0),
-    enganches: activos.reduce((s, c) => s + ((c.plan || {}).enganche || c.enganche || 0), 0),
-    /* El modelo llama «financiado» al capital financiado más sus
-       intereses, y el capital financiado es la venta MENOS el enganche.
-       Acá se sumaban todos los giros —enganche incluido—, así que la
-       fila salía Q2,020,197.54 arriba: exactamente los enganches. Era
-       una diferencia de definición marcada como descuadre.
+  /* Inventario: los lotes creados después del corte (L-08, L-09, los que se agreguen). */
+  const lotesNuevos = DB.lotes.filter(l => l.creado && l.creado > corte);
+  const vendidosHoy = DB.lotes.filter(l => l.estado === 'vendido').length;
+  const dispHoy     = DB.lotes.filter(l => l.estado === 'disponible').length;
+  const lotesCorte  = DB.lotes.length - lotesNuevos.length;
+  const vendCorte   = vendidosHoy - nuevos.length + bajas.length;
+  const dispCorte   = dispHoy + nuevos.length - bajas.length - lotesNuevos.filter(l => l.estado === 'disponible').length;
 
-       Restado el enganche quedan Q13,305,165.56 contra los
-       Q13,305,165.62 del modelo: seis centavos de redondeo repartidos
-       entre 148 contratos. */
-    carteraTotal: cuentas.reduce((s, e) => s + e.totalGiros, 0),
-    financiado: cuentas.reduce((s, e) => s + e.totalGiros, 0)
-                - activos.reduce((s, c) => s + ((c.plan || {}).enganche || c.enganche || 0), 0),
-    recaudado: cuentas.reduce((s, e) => s + e.recaudado, 0),
-    saldo: cuentas.reduce((s, e) => s + e.saldo, 0),
-    enMora: enMora.length,
-    montoMora: enMora.reduce((s, e) => s + e.montoVencido, 0)
-  };
+  const pagosConf = (DB.pagos || []).filter(p => p.estado === 'confirmado');
+  const idsVivos = new Set(vivos.map(c => String(c.id)));
+  const recCorte = pagosConf.filter(p => idsVivos.has(String(p.contratoId)) && String(p.fecha || '').slice(0, 10) <= corte).reduce((s, p) => s + (+p.monto || 0), 0);
+  const recHoy   = suma(vivos, c => (ecDe.get(c.id) || {}).recaudado);
 
-  const linea = (que, m, s, nota) => ({
-    que, modelo: m, sistema: s, dif: (s || 0) - (m || 0),
-    cuadra: Math.abs((s || 0) - (m || 0)) < 1, nota
+  const lista = (L, fn) => L.slice(0, 8).map(fn).join(', ') + (L.length > 8 ? ' y ' + (L.length - 8) + ' más' : '');
+  const movVentas = (nuevos.length ? '+' + nuevos.length + ' venta(s) nueva(s)' : '') + (nuevos.length && bajas.length ? ' · ' : '') + (bajas.length ? '−' + bajas.length + ' baja(s)' : '');
+  const linea = (que, m, c, hoy, mov, nota, comparable) => ({
+    que, modelo: m, alCorte: c, sistema: hoy, mov: mov || '', dif: (c || 0) - (m || 0),
+    cuadra: comparable === false ? false : Math.abs((c || 0) - (m || 0)) < 1, nota, comparable: comparable !== false
   });
 
+  /* El inventario total de hoy, por fase: lo que pidió ver Julián en el cuadre. */
+  const porFase = new Map();
+  DB.lotes.forEach(l => { const k = l.fase || 'Sin fase'; const o = porFase.get(k) || { fase: k, total: 0, vendidos: 0, disponibles: 0, otros: 0 };
+    o.total++; if (l.estado === 'vendido') o.vendidos++; else if (l.estado === 'disponible') o.disponibles++; else o.otros++; porFase.set(k, o); });
+
   return {
-    corte: MODELO.corte,
+    corte,
+    nuevos: nuevos.map(c => ({ no: c.no, lote: c.lote, fecha: c.fecha, precio: c.precio || 0 })),
+    bajas: bajas.map(c => ({ no: c.no, lote: c.lote, estado: c.estado })),
+    lotesNuevos: lotesNuevos.map(l => ({ codigo: l.codigo, fase: l.fase })),
+    inventario: Array.from(porFase.values()).sort((a, b) => String(a.fase).localeCompare(String(b.fase), 'es', { numeric: true })),
     filas: [
-      linea('Lotes en total',        MODELO.lotes,       sis.lotes),
-      linea('Lotes vendidos',        MODELO.vendidos,    sis.vendidos),
-      linea('Lotes disponibles',     MODELO.disponibles, sis.disponibles),
-      linea('Contratos',             MODELO.contratos,   sis.contratos),
-      linea('Ventas contratadas',    MODELO.ventas,      sis.ventas),
-      linea('Enganches contratados', MODELO.enganches,   sis.enganches),
-      linea('Total financiado',      MODELO.financiado,  sis.financiado,
-            'Capital financiado más intereses, sin el enganche — como lo define el modelo.'),
-      linea('Cartera total',         MODELO.financiado + MODELO.enganches, sis.carteraTotal,
-            'Lo mismo con el enganche incluido: todo lo que el cliente va a pagar. '
-          + 'Es la cifra que muestra el tablero.'),
-      linea('Recaudado',             MODELO.cuotasCobradas, sis.recaudado,
-            'El modelo cuenta solo las cuotas. El sistema cuenta todo el dinero que entró, '
-          + 'enganches incluidos. La diferencia son los enganches ya cobrados — no es un descuadre.'),
-      linea('Contratos en mora',     MODELO.enMora,      sis.enMora,
-            'El modelo mira al 31 de julio; el sistema, a hoy. Es normal que difieran.')
+      linea('Lotes en total', MODELO.lotes, lotesCorte, DB.lotes.length,
+            lotesNuevos.length ? '+' + lotesNuevos.length + ' lote(s) agregados: ' + lista(lotesNuevos, l => l.codigo) : ''),
+      linea('Lotes vendidos', MODELO.vendidos, vendCorte, vendidosHoy, movVentas),
+      linea('Lotes disponibles', MODELO.disponibles, dispCorte, dispHoy,
+            (nuevos.length ? '−' + nuevos.length + ' vendidos' : '') + (bajas.length ? ' · +' + bajas.length + ' liberados' : '') + (lotesNuevos.length ? ' · +' + lotesNuevos.length + ' agregados' : '')),
+      linea('Contratos', MODELO.contratos, alCorte.length + bajas.length, vivos.length,
+            (nuevos.length ? 'nuevos: ' + lista(nuevos, c => c.no) : '') + (bajas.length ? (nuevos.length ? ' · ' : '') + 'bajas: ' + lista(bajas, c => c.no) : '')),
+      linea('Ventas contratadas', MODELO.ventas, suma(alCorte, c => c.precio) + suma(bajas, c => c.precio), suma(vivos, c => c.precio), movVentas),
+      linea('Enganches contratados', MODELO.enganches, suma(alCorte, eng) + suma(bajas, eng), suma(vivos, eng), movVentas),
+      linea('Total financiado', MODELO.financiado, giros(alCorte) - suma(alCorte, eng), giros(vivos) - suma(vivos, eng), movVentas,
+            'Capital financiado más intereses, sin el enganche — como lo define el modelo. Las bajas no entran (su plan ya no existe).'),
+      linea('Cartera total', MODELO.financiado + MODELO.enganches, giros(alCorte), giros(vivos), movVentas,
+            'Lo mismo con el enganche incluido: todo lo que el cliente va a pagar. Es la cifra que muestra el tablero.'),
+      linea('Recaudado', MODELO.cuotasCobradas, recCorte, recHoy, '',
+            'El modelo cuenta solo las cuotas. El sistema cuenta todo el dinero que entró, enganches incluidos. '
+          + 'La diferencia son los enganches ya cobrados — no es un descuadre.', false),
+      linea('Contratos en mora', MODELO.enMora, null, enMora.length, '',
+            'El modelo mira al ' + corte.split('-').reverse().join('/') + '; la mora del sistema sólo se conoce a hoy. Es normal que difieran.', false)
     ]
   };
 }
 
-/** 7 · El cuadre, en CSV, para pegarlo al lado del modelo. */
+/** 7 · El cuadre, para pegarlo al lado del modelo. */
 function repCuadre() {
   const c = cuadreConModelo();
-  const f = [['Indicador','Modelo (' + c.corte + ')','Sistema (hoy)','Diferencia','¿Cuadra?','Nota']];
-  c.filas.forEach(x => f.push([x.que, _repNum(x.modelo), _repNum(x.sistema),
-                               _repNum(x.dif), x.cuadra ? 'sí' : 'no', x.nota || '']));
+  const f = [['Indicador', 'Modelo (' + c.corte + ')', 'Sistema al ' + c.corte, 'Diferencia al corte', '¿Cuadra?', 'Movimiento desde el corte', 'Sistema hoy', 'Nota']];
+  c.filas.forEach(x => f.push([x.que, _repNum(x.modelo), x.alCorte == null ? '' : _repNum(x.alCorte), x.alCorte == null ? '' : _repNum(x.dif),
+                               !x.comparable ? 'explicado' : (x.cuadra ? 'sí' : 'no'), x.mov || '', _repNum(x.sistema), x.nota || '']));
+  f.push([]); f.push(['Inventario total hoy, por fase', 'Lotes', 'Vendidos', 'Disponibles', 'Otros (reservado, etc.)']);
+  c.inventario.forEach(i => f.push([i.fase, i.total, i.vendidos, i.disponibles, i.otros]));
+  f.push(['TOTAL', c.inventario.reduce((s, i) => s + i.total, 0), c.inventario.reduce((s, i) => s + i.vendidos, 0), c.inventario.reduce((s, i) => s + i.disponibles, 0), c.inventario.reduce((s, i) => s + i.otros, 0)]);
   return f;
 }
 

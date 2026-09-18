@@ -137,6 +137,14 @@ async function cargarDesdeSupabase() {
       // Contorno guardado con «Ubicar lotes» (63): manda sobre el del archivo del plano.
       polyDB: Array.isArray(l.poligono) && l.poligono.length > 2 ? l.poligono : null
     }));
+    /* Cuándo se creó cada lote: el cuadre con el modelo separa los que ya existían
+       a su fecha de corte de los agregados después. Si no se puede leer, el cuadre
+       sigue sin ese dato. */
+    try {
+      const creados = new Map((await todas('lote', 'id,created_at')).map(x => [String(x.id), _fecha(x.created_at)]));
+      DB.lotes.forEach(l => { l.creado = creados.get(String(l.id)) || null; });
+    } catch (e) { console.warn('[datos] lote.created_at no disponible:', e && e.message); }
+
 
     /* La posición en el plano vive en assets/lotes-geo.js (438 lotes,
        códigos únicos, manzanas A–W). Sólo initDB() —la demostración— la

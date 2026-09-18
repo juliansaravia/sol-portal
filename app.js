@@ -3423,29 +3423,36 @@ function renderReporteria(){
   const cu = cuadreConModelo();
   const malas = cu.filas.filter(x=>!x.cuadra && !x.nota).length;
   h+=`<div class="card"><div class="card-h"><h2>Cuadre con el modelo financiero</h2>
-      <span class="hint">${esc(MODELO.archivo)} · al ${fmtD(cu.corte)}</span></div>
-    <div class="card-b" style="padding:0"><table class="data"><thead><tr>
-      <th>Indicador</th><th class="num">Modelo</th><th class="num">Sistema</th>
-      <th class="num">Diferencia</th><th></th></tr></thead><tbody>`;
+      <span class="hint">${esc(MODELO.archivo)} · corte al ${fmtD(cu.corte)} · el sistema se compara a esa misma fecha y, aparte, cómo está hoy</span></div>
+    <div class="card-b" style="padding:0;overflow-x:auto"><table class="data"><thead><tr>
+      <th>Indicador</th><th class="num">Modelo</th><th class="num">Sistema al ${fmtD(cu.corte)}</th>
+      <th class="num">Diferencia</th><th></th><th>Desde el corte</th><th class="num">Sistema hoy</th></tr></thead><tbody>`;
   cu.filas.forEach(x=>{
     const esDinero = x.modelo > 1000;
-    const fmt = v => esDinero ? Qk(v) : String(v);
+    const fmt = v => v==null ? '—' : (esDinero ? Qk(v) : String(Math.round(v)));
     h+=`<tr>
       <td><b>${esc(x.que)}</b>${x.nota?`<div class="ec-obl">${esc(x.nota)}</div>`:''}</td>
       <td class="num">${fmt(x.modelo)}</td>
-      <td class="num">${fmt(x.sistema)}</td>
-      <td class="num" style="${x.cuadra?'':'color:#B0562F;font-weight:600'}">${x.dif?fmt(x.dif):'—'}</td>
+      <td class="num">${fmt(x.alCorte)}</td>
+      <td class="num" style="${x.cuadra||!x.comparable?'':'color:#B0562F;font-weight:600'}">${x.alCorte!=null&&Math.abs(x.dif)>=1?fmt(x.dif):'—'}</td>
       <td style="width:90px">${x.cuadra
         ? '<span class="badge b-ok">Cuadra</span>'
         : (x.nota ? '<span class="badge b-apar">Explicado</span>'
-                  : '<span class="badge b-mora">Revisar</span>')}</td></tr>`;
+                  : '<span class="badge b-mora">Revisar</span>')}</td>
+      <td style="font-size:12px;color:var(--muted);max-width:260px">${esc(x.mov||'—')}</td>
+      <td class="num"><b>${fmt(x.sistema)}</b></td></tr>`;
   });
   h+=`</tbody></table></div>
     <div class="card-b"><div class="hint">
       ${malas===0
-        ? 'Todo lo que se compara directo cuadra, y lo que difiere tiene su explicación escrita.'
-        : `<b style="color:#B0562F">${malas} indicador(es) no cuadran y no hay explicación.</b> Eso hay que resolverlo antes de cerrar.`}
-      El régimen de ISR del modelo es <b>${esc(MODELO.regimenISR)}</b>.</div></div></div>`;
+        ? 'Al corte del modelo todo cuadra, y lo que difiere tiene su explicación escrita. La última columna es el sistema hoy, con todo lo vendido y agregado después.'
+        : `<b style="color:#B0562F">${malas} indicador(es) no cuadran a la fecha del modelo y no hay explicación.</b> Eso hay que resolverlo antes de cerrar (lo vendido o agregado después del corte ya está separado en «Desde el corte»).`}
+      El régimen de ISR del modelo es <b>${esc(MODELO.regimenISR)}</b>.</div></div>
+    <div class="card-h" style="border-top:1px solid var(--line)"><h2 style="font-size:14px">Inventario total hoy · ${DB.lotes.length} lotes</h2></div>
+    <div class="card-b" style="padding:0"><table class="data"><thead><tr><th>Fase</th><th class="num">Lotes</th><th class="num">Vendidos</th><th class="num">Disponibles</th><th class="num">Otros</th></tr></thead><tbody>
+      ${cu.inventario.map(i=>`<tr><td>${esc(i.fase)}</td><td class="num">${i.total}</td><td class="num">${i.vendidos}</td><td class="num">${i.disponibles}</td><td class="num">${i.otros||'—'}</td></tr>`).join('')}
+      <tr style="font-weight:700"><td>Total</td><td class="num">${cu.inventario.reduce((s,i)=>s+i.total,0)}</td><td class="num">${cu.inventario.reduce((s,i)=>s+i.vendidos,0)}</td><td class="num">${cu.inventario.reduce((s,i)=>s+i.disponibles,0)}</td><td class="num">${cu.inventario.reduce((s,i)=>s+i.otros,0)||'—'}</td></tr>
+    </tbody></table></div></div>`;
 
   /* Lo de siempre, que sirve para mirar de un vistazo. */
   const mz={}; DB.lotes.forEach(l=>{mz[l.manzana]=mz[l.manzana]||{t:0,v:0};mz[l.manzana].t++;if(l.estado==='vendido')mz[l.manzana].v++;});
