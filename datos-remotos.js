@@ -456,6 +456,8 @@ async function conRespaldo(tabla, base, nuevas) {
   return await todas(tabla, base);
 }
 
+/* Con qué columna se ordena cada tabla al paginar (todas tienen `id`, menos las vistas). */
+const ORDEN_DE_TABLA = { v_inventario: 'lote_id' };
 async function todas(tabla, columnas, tam = 1000) {
   /* La primera página viene con el total (count: 'exact'), así que en
      un solo viaje sabemos cuántas páginas faltan y las pedimos TODAS
@@ -472,15 +474,23 @@ async function todas(tabla, columnas, tam = 1000) {
   if (count == null || count <= tam) return data;
   if (count > 100000) throw new Error(`${tabla}: demasiadas filas (${count})`);
 
+  /* Más de una página: TODAS se piden con el mismo orden (18 sept 2026). Sin
+     `order`, Postgres no garantiza que dos consultas recorran la tabla igual,
+     y entre una página y otra se podían repetir filas y perderse otras: un
+     contrato quedaba sin sus cuotas y salía «Liquidado». La primera página
+     (sin orden) se descarta y se vuelve a pedir ordenada. */
+  const clave = ORDEN_DE_TABLA[tabla] || 'id';
+  const pagina = desde => SB.from(tabla).select(columnas).order(clave, { ascending: true }).range(desde, desde + tam - 1);
   const pendientes = [];
-  for (let desde = tam; desde < count; desde += tam)
-    pendientes.push(SB.from(tabla).select(columnas).range(desde, desde + tam - 1));
-
+  for (let desde = 0; desde < count; desde += tam) pendientes.push(pagina(desde));
+  const todo = [];
   for (const r of await Promise.all(pendientes)) {
     if (r.error) throw new Error(`${tabla}: ${r.error.message}`);
-    data.push(...r.data);
+    todo.push(...r.data);
   }
-  return data;
+  /* Por si una fila entró o salió entre páginas: sin repetidos. */
+  const vistos = new Set();
+  return todo.filter(f => { const k = f[clave]; if (k == null) return true; if (vistos.has(k)) return false; vistos.add(k); return true; });
 }
 
 window.cargarDesdeSupabase = cargarDesdeSupabase;
