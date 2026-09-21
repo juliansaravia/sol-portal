@@ -2003,7 +2003,7 @@ function modalCobro(contrato,fecha){
         <div class="hint" id="rcPista">Si es menor, queda como pago parcial de esta cuota.</div></div>
       <div class="field"><label>Fecha del pago</label><input id="rcFecha" type="date" value="${HOY_ISO}" max="${HOY_ISO}"></div>
       <div class="field" id="rcAplicBox" hidden><label>${PROYECTO&&PROYECTO.metodo==='amortizado'?'Lo que sobra de la cuota':'Lo que sobra adelanta las cuotas siguientes'}</label>
-        <select id="rcAplic"><option value="cuotas">Adelanta las cuotas que siguen</option>${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Se abona a capital (recalcula las cuotas)</option>':'<option value="rebajar">Baja el monto de las cuotas que faltan (mismo plazo)</option>'}</select></div>
+        <select id="rcAplic"><option value="cuotas">Adelanta las cuotas que siguen</option>${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Se abona a capital (recalcula las cuotas)</option>':'<option value="rebajar">Abono a plan · baja el monto de las cuotas que faltan</option>'+(['admin','gerencia','financiero'].includes(ROLE)?'<option value="capital">Aporte a capital · bajan capital E interés (la empresa cobra menos intereses)</option>':'')}</select></div>
       <div class="field"><label>Forma de pago</label>
         <input id="rcForma" value="Transferencia bancaria" readonly style="background:var(--tint)">
         <div class="hint">Solo se reciben transferencias a la cuenta recaudadora. Decisión del dueño.</div></div>
@@ -3876,7 +3876,8 @@ function pintarContrato(){
           ${bol.length?`<button class="btn btn-ghost btn-sm" onclick="verAdjunto('${bol[0].id}')">Ver</button>`:''}
           ${p.estado!=='rechazado'?`<button class="btn ${bol.length?'btn-ghost':'btn-gold'} btn-sm" onclick="modalBoleta('${p.id}')">${bol.length?'Otra boleta':'Subir boleta'}</button>`:''}
           ${puedeBajarCuotasCon(ct,p)?`<button class="btn btn-ghost btn-sm" onclick="pagoABajarCuotas('${p.id}')" title="Este pago fue mayor que la cuota: lo que sobró adelantó cuotas. Con esto, en vez de adelantar, baja el monto de las cuotas que faltan.">Usar para bajar cuotas</button>`:''}
-          ${p.esAbono?`<span class="badge b-ok" title="Lo que sobró de este pago se repartió entre las cuotas que faltaban">abono a plan</span>`:''}
+          ${p.esAbono?`<span class="badge b-ok" title="Lo que sobró de este pago se repartió entre las cuotas que faltaban">${p.aplicacion==='capital'?'aporte a capital':'abono a plan'}</span>`:''}
+          ${p.esAbono&&p.aplicacion==='rebajar'&&['admin','gerencia','financiero'].includes(ROLE)&&!(PROYECTO&&PROYECTO.metodo==='amortizado')?`<button class="btn btn-ghost btn-sm" onclick="abonoACapital('${p.id}')" title="Hoy es abono a plan: bajó las cuotas sin tocar intereses. Como aporte a capital también baja el interés de cada cuota.">Pasar a aporte a capital</button>`:''}
           ${p.estado!=='rechazado'&&PUEDE_ELIMINAR_PAGO()?`<button class="btn btn-ghost btn-sm" style="color:#B0562F" onclick="modalEliminarPago('${p.id}')">Eliminar</button>`:''}</div></div>`;});
   }
 
@@ -4465,7 +4466,7 @@ function modalPago(id){
         ${!(+ct.enganche>0)?`<div class="hint" style="color:#8A5F12;margin-top:4px">Este contrato está cargado con <b>enganche Q0</b>, por eso no aparece el enganche en la lista. Si sí lo pagó, corregí primero el monto en <a href="#" onclick="closeModal();modalEnganche('${id}');return false;"><b>Ficha → Enganche → Editar</b></a>: el plan se rehace con su Cuota Inicial y el pago se aplica ahí.</div>`:''}</div>
       <div class="field"><label>Monto de la boleta *</label><input id="p-monto" type="number" step="0.01" placeholder="${ec.prox?'cuota: '+Q(ec.prox.monto):'monto que pagó'}" oninput="totalBoleta('p');pistaAplicacion('${id}')"></div>
       <div class="field full" id="p-aplicBox" hidden><label id="p-aplicLbl">${PROYECTO&&PROYECTO.metodo==='amortizado'?'Pagó más que la cuota · ¿qué se hace con lo que sobra?':'Pagó más que la cuota · abono a plan'}</label>
-        <select id="p-aplic" onchange="pistaAplicacion('${id}')"><option value="cuotas">Adelantar las cuotas que siguen</option>${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Abonarlo a capital (se recalculan las cuotas, mismo plazo)</option>':'<option value="rebajar">Bajar el monto de las cuotas que faltan (mismo plazo)</option>'}</select>
+        <select id="p-aplic" onchange="pistaAplicacion('${id}')"><option value="cuotas">Adelantar las cuotas que siguen</option>${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Abonarlo a capital (se recalculan las cuotas, mismo plazo)</option>':'<option value="rebajar">Abono a plan · bajar el monto de las cuotas que faltan</option>'+(['admin','gerencia','financiero'].includes(ROLE)?'<option value="capital">Aporte a capital · bajan capital E interés de las cuotas (la empresa cobra menos intereses)</option>':'')}</select>
         <div class="hint" id="p-aplicPista"></div></div>
       <div class="field"><label>Forma de pago</label><input id="p-forma" value="Transferencia bancaria" readonly style="background:var(--tint)"></div>
       <div class="field"><label>Cuenta acreditada</label><select id="p-cta">${opcionesCuenta()}</select></div>
@@ -4511,8 +4512,14 @@ function textoAbonoExtra(id, giroId, monto, pendCuota){
     const falta=Math.max(0,(f.cuota||0)-(f.abonado||0)); if(falta<=0.004) continue;
     if(queda>=falta-0.004){ completas++; queda=Math.round((queda-falta)*100)/100; } else { parcialA={f,abono:queda}; queda=0; } }
   const amort=PROYECTO&&PROYECTO.metodo==='amortizado';
-  return `Paga ${Q(pendCuota)} de esta cuota y <b>${Q(extra)} de ${amort?'abono extra':'abono a plan'}</b>, que ${amort?'se aplica como elijas abajo':'<b>se rebaja de lo que debe</b>'}: debía ${Q(debia)} → <b>le quedan ${Q(Math.max(0,debia-monto))}</b>.`+
-    (amort?'':(v('p-aplic')==='rebajar'?(()=>{ const pend=filas.filter((f,i)=>i>(i0<0?-1:i0)&&!f.condicion&&f.estado!=='pagado'&&!(f.abonado>0)); if(!pend.length) return ' No quedan cuotas sin abono que bajar: se adelantan las que siguen.';
+  const esCap=!amort&&v('p-aplic')==='capital';
+  const sinAbono=filas.filter((f,i)=>i>(i0<0?-1:i0)&&!f.condicion&&f.estado!=='pagado'&&!(f.abonado>0)).length;
+  const ahorro=esCap?Math.round(extra*(+(ct.tasa!=null?ct.tasa:0.015))*100)/100*sinAbono:0;
+  return `Paga ${Q(pendCuota)} de esta cuota y <b>${Q(extra)} de ${amort?'abono extra':(esCap?'aporte a capital':'abono a plan')}</b>, que ${amort?'se aplica como elijas abajo':'<b>se rebaja de lo que debe</b>'}: debía ${Q(debia)} → <b>le quedan ${Q(Math.max(0,debia-monto-ahorro))}</b>${esCap?' (ya descontados los intereses que deja de pagar)':''}.`+
+    (amort?'':(v('p-aplic')==='capital'?(()=>{ const pend=filas.filter((f,i)=>i>(i0<0?-1:i0)&&!f.condicion&&f.estado!=='pagado'&&!(f.abonado>0)); if(!pend.length) return ' No quedan cuotas sin abono que bajar.';
+        const tasa=+(ct.tasa!=null?ct.tasa:0.015), bajaCap=Math.floor(extra/pend.length*100)/100, bajaInt=Math.round(extra*tasa*100)/100;
+        return ` <b>Aporte a capital:</b> las ${pend.length} cuotas que faltan bajan de ${Q(pend[0].cuota)} a <b>${Q(Math.max(0,pend[0].cuota-bajaCap-bajaInt))}</b> (−${Q(bajaCap)} de capital y −${Q(bajaInt)} de interés cada una). <span style="color:#8A5F12">La empresa deja de cobrar ${Q(bajaInt*pend.length)} de intereses en lo que resta del plazo.</span>`; })()
+      :v('p-aplic')==='rebajar'?(()=>{ const pend=filas.filter((f,i)=>i>(i0<0?-1:i0)&&!f.condicion&&f.estado!=='pagado'&&!(f.abonado>0)); if(!pend.length) return ' No quedan cuotas sin abono que bajar: se adelantan las que siguen.';
         const baja=Math.floor(extra/pend.length*100)/100; return ` Las <b>${pend.length} cuotas que faltan bajan de ${Q(pend[0].cuota)} a ${Q(Math.max(0,pend[0].cuota-baja))}</b> (−${Q(baja)} cada una), con las mismas fechas. `; })()+'<span style="opacity:.8">Los intereses pactados no cambian: sólo se reparte el abono entre las cuotas.</span>':'')||` Con ese abono ${completas?`quedan pagadas ${completas} cuota(s) más`:''}${completas&&parcialA?' y ':''}${parcialA?`se abonan ${Q(parcialA.abono)} a la cuota ${parcialA.f.n} de ${parcialA.f.de} (${fmtD(parcialA.f.venc)})`:''}${!completas&&!parcialA?'queda a favor del cliente':''}. <span style="opacity:.8">El contrato fija ${'los pagos'} mensuales como abonos al precio total: el abono a plan los adelanta; no cambia el monto de las cuotas ni lo pactado.</span>`);
 }
 function pistaAplicacion(id){
@@ -4541,6 +4548,19 @@ function puedeBajarCuotasCon(ct,p){
   const cuota=(planDelContratoSeguro(ct)||{}).cuota||0; return cuota>0 && (+p.monto||0) > cuota*1.02;
 }
 function planDelContratoSeguro(ct){ try{ return (typeof planDelContrato==='function')?planDelContrato(ct):(ct.plan||null); }catch(e){ return ct.plan||null; } }
+async function abonoACapital(pagoId){
+  const p=(DB.pagos||[]).find(x=>mismoId(x.id,pagoId)); if(!p) return; const ct=getContrato(p.contratoId)||{};
+  if(!confirm(`${ct.no||''} · pago de ${Q(p.monto)} del ${fmtD(p.fecha)}\n\nHoy su excedente es un ABONO A PLAN: bajó las cuotas sin tocar los intereses.\n\nComo APORTE A CAPITAL, además baja el interés de cada cuota que falta (el capital aportado deja de generar interés). El cliente paga menos en total y la empresa cobra menos intereses.\n\nEs una concesión comercial y no tiene vuelta atrás automática. ¿Pasarlo a aporte a capital?`)) return;
+  if(!(typeof hayBase==='function'&&hayBase()&&typeof sbAbonoPlanACapital==='function')) return toast('Sólo con la base conectada',5000,true);
+  const r=await sbAbonoPlanACapital(pagoId); if(!r||!r.ok) return; const d=r.dato||{};
+  if(d.ok===false) return toast('No quedan cuotas sin abono a las que bajarles el interés',6000,true);
+  p.aplicacion='capital';
+  if(typeof cargarCartera==='function'){ try{ await cargarCartera(); }catch(e){} }
+  if(typeof reindexar==='function') reindexar();
+  anotar('pago.aporte_capital', (ct.no||'')+' · aporte '+Q(d.aporte||0)+' · cuota '+Q(d.cuota_antes||0)+' → '+Q(d.cuota_despues||0)+' · intereses que no se cobran '+Q(d.interes_que_se_deja_de_cobrar||0));
+  if(drawerCt) pintarContrato();
+  toast(`Aporte a capital de ${Q(d.aporte||0)}: las ${d.cuotas||''} cuotas bajan de ${Q(d.cuota_antes||0)} a ${Q(d.cuota_despues||0)} · se dejan de cobrar ${Q(d.interes_que_se_deja_de_cobrar||0)} de intereses`, 11000);
+}
 async function pagoABajarCuotas(pagoId){
   const p=(DB.pagos||[]).find(x=>mismoId(x.id,pagoId)); if(!p) return; const ct=getContrato(p.contratoId)||{};
   if(!confirm(`${ct.no||''} · pago de ${Q(p.monto)} del ${fmtD(p.fecha)}\n\nLo que ese pago tuvo DE MÁS sobre su cuota deja de adelantar cuotas y se reparte entre las cuotas que faltan, que BAJAN de monto. Mismo plazo, mismas fechas, mismos intereses; el cliente sigue debiendo lo mismo en total.\n\nNo cambia el pago ni su recibo. Para deshacerlo después habría que rehacer el plan.\n\n¿Bajar las cuotas con este pago?`)) return;

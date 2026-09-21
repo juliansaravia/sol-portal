@@ -434,6 +434,12 @@ async function sbPagoAAbonoPlan(pago_id) {
     oExplota(await SB.rpc('pago_a_abono_plan', { p_pago_id: Number(pago_id) })));
 }
 
+/** Un abono a plan ya aplicado sube a aporte a capital (82): también baja el interés de las cuotas. */
+async function sbAbonoPlanACapital(pago_id) {
+  return escribir('pasar el abono a aporte a capital', async () =>
+    oExplota(await SB.rpc('abono_plan_a_capital', { p_pago_id: Number(pago_id) })));
+}
+
 /** Finanzas elimina un pago (74): deja de contar, su recibo queda anulado y el
  *  aviso a NUO se cancela si no había salido. La fila se conserva con el motivo. */
 async function sbEliminarPago(pago_id, motivo) {
