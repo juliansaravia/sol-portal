@@ -2847,6 +2847,50 @@ function diasAtraso(ec){
   const g=(ec.giros||[]).filter(x=>x.estado!=='pagado'&&f(x)&&f(x)<HOY_ISO).sort((a,b)=>f(a)<f(b)?-1:1)[0];
   return g?diasEnt(f(g),HOY_ISO):0;
 }
+/* ---------- Recordatorio de pago por WhatsApp, desde Cobranza (21 sept 2026) ----------
+   Un toque: abre el chat del cliente con el mensaje ya escrito y deja la gestión anotada
+   («Recordatorio de Pago»), para que «Último contacto» se mueva solo. El tono es el que pidió
+   Julián: amable y de interés por el cliente, sin amenazar con la mora. Dos mensajes:
+     · en mora            → preguntamos si todo está bien, ofrecemos ayuda y damos cómo pagar
+     · cuota del mes      → recordatorio suave; todavía está dentro de su plazo
+   El texto se puede editar en WhatsApp antes de enviarlo. */
+function mensajeCobranza(ct, ec){
+  ec=ec||estadoCuenta(ct);
+  const nombre=String(nombreCliente(ct.clienteId)||'').trim().split(/\s+/)[0]||'';
+  const quien=String((window.__user&&window.__user.name)||'').trim().split(/\s+/)[0];
+  const saludo=`Hola ${nombre}, ${quien?`le saluda ${quien} de`:'le saludamos de'} ${(PROYECTO&&PROYECTO.nombre)||'La Esperanza'} 🌿\nEsperamos que usted y su familia estén muy bien.`;
+  const cta=(typeof CUENTAS_COBRO!=='undefined'?CUENTAS_COBRO:[]).find(c=>!c.hasta)||(typeof CUENTAS_COBRO!=='undefined'?CUENTAS_COBRO[0]:null);
+  const pago=cta?`Puede pagar por transferencia o depósito en Banrural:\n*Cuenta ${String(cta.tipo).toLowerCase()} ${cta.numero}*\nA nombre de *${cta.dueno}*`:'';
+  const boleta='Si ya realizó su pago, muchas gracias 🙏 sólo envíenos la foto de la boleta por este medio y lo aplicamos de inmediato.';
+  const _v=g=>String(g.vence||g.venc||'').slice(0,10);
+  const falta=g=>Math.max(0,(g.monto||0)-(g.abonado||0));
+  const impagas=(ec.giros||[]).filter(g=>!g.condicion&&g.estado!=='pagado'&&_v(g)&&_v(g)<HOY_ISO&&falta(g)>0).sort((a,b)=>_v(a)<_v(b)?-1:1);
+  const largo=f=>new Date(f+'T00:00:00').toLocaleDateString('es-GT',{day:'numeric',month:'long'});
+  if(ec.enMora&&impagas.length){
+    const total=impagas.reduce((s,g)=>s+falta(g),0);
+    return `${saludo}\n\nLe escribimos porque nos interesa acompañarle con su lote *${ct.lote}*. En nuestros registros ${impagas.length===1?`aparece pendiente su cuota del ${largo(_v(impagas[0]))}, por *${Q(total)}*`:`aparecen pendientes ${impagas.length} cuotas (desde la del ${largo(_v(impagas[0]))}), por un total de *${Q(total)}*`}.\n\n${boleta}\n\nY si se le ha presentado alguna dificultad, cuéntenos con toda confianza: con gusto buscamos juntos la forma de ponerse al día.\n\n${pago}\n\nGracias por su confianza. Estamos para servirle.`;
+  }
+  if(impagas.length){
+    const g=impagas[0]; const lim=new Date(_v(g)+'T00:00:00'); lim.setDate(lim.getDate()+(typeof PLAZO_PAGO_CUOTA!=='undefined'?PLAZO_PAGO_CUOTA:30));
+    return `${saludo}\n\nLe recordamos con mucho gusto su cuota del lote *${ct.lote}* por *${Q(falta(g))}*, correspondiente al ${largo(_v(g))}. Puede realizarla hasta el *${largo(lim.toISOString().slice(0,10))}*.\n\n${pago}\n\n${boleta}\n\nGracias por su puntualidad y su confianza.`;
+  }
+  const p=ec.prox;
+  return `${saludo}\n\n${p?`Le recordamos su próxima cuota del lote *${ct.lote}* por *${Q(Math.max(0,(p.monto||0)-(p.abonado||0)))}*, con fecha ${largo(_v(p))}.\n\n${pago}\n\n`:''}Cualquier consulta, estamos para servirle.`;
+}
+function telCobranza(ct){
+  const c=(typeof contactoDe==='function'?contactoDe(ct.no):null)||{}; const d=String(c.tel||ct.tel||'').replace(/\D/g,'');
+  return d?(d.length===8?'502'+d:d):'';
+}
+async function recordarPagoWhatsApp(id){
+  const ct=getContrato(id); if(!ct) return; const ec=estadoCuenta(ct);
+  const tel=telCobranza(ct); if(!tel) return toast('Este cliente no tiene teléfono: ponéselo en su ficha (Clientes) para poder escribirle',7000,true);
+  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(mensajeCobranza(ct,ec))}`,'_blank');
+  try{ await registrarGestion(ct.id,'Recordatorio de Pago','Contactado',`WhatsApp · ${ec.enMora?`recordatorio de mora (${ec.vencidas} cuota(s), ${Q(ec.montoVencido)})`:'recordatorio de la cuota del mes'}${ct.nuoNoContacta?' · contrato que NUO no contacta':''}`); }catch(e){}
+  if(typeof traerGestiones==='function'){ try{ await traerGestiones(); }catch(e){} }
+  if(vista==='cobranza') renderCobranza(); else if(drawerCt) pintarContrato();
+  toast('Se abrió WhatsApp con el mensaje · gestión anotada');
+}
+
 function cartaCartera(){
   const F=(VISTA_FILTRO.cobranza&&VISTA_FILTRO.cobranza.f)||cobFiltro; cobFiltro=F;
   const q=cobBusca.trim().toLowerCase();
@@ -2876,7 +2920,7 @@ function cartaCartera(){
       <td class="num">${(()=>{const m=(typeof calcularMora==='function')?calcularMora(c).total:0; return m>0?`<span style="color:var(--mora)">${Qk(m)}</span>`:'—';})()}</td>
       <td class="num">${dias||'—'}</td><td class="num">${ec.vencidas||'—'}</td><td class="num">${Qk(ec.saldo)}</td>
       <td>${ult?esc(ult):'<span class="hint">Sin gestión</span>'}</td><td>${c.vendedor?esc(c.vendedor):'<span class="hint">Sin vendedor</span>'}</td>
-      <td>${accion==='—'?'—':`<a href="#" onclick="event.stopPropagation();abrirContrato('${c.id}','gestiones');return false;">${accion} ›</a>`}</td></tr>`;});
+      <td style="white-space:nowrap">${(ec.enMora||ec.atrasado)&&!['consulta','practicante'].includes(ROLE)?`<button class="btn btn-sm" style="background:#25D366;border-color:#25D366;color:#fff;padding:3px 9px" title="Abre WhatsApp con un recordatorio amable ya escrito y anota la gestión" onclick="event.stopPropagation();recordarPagoWhatsApp('${c.id}')">WhatsApp</button> `:''}${accion==='—'?'':`<a href="#" onclick="event.stopPropagation();abrirContrato('${c.id}','gestiones');return false;">${accion} ›</a>`}${accion==='—'&&!(ec.enMora||ec.atrasado)?'—':''}</td></tr>`;});
   h+=`</tbody></table></div></div>`;
   return h;
 }
@@ -3795,6 +3839,7 @@ function pintarContrato(){
   if(ct.estado==='aprobado')
     h+=`<div class="btn-row drawer-acciones" style="margin:0 0 14px">${['vendedor','practicante','consulta'].includes(ROLE)?'':`<button class="btn btn-primary btn-sm" onclick="modalPago('${ct.id}')">＋ Aplicar pago</button>`}
       <button class="btn btn-ghost btn-sm" onclick="modalGestion('${ct.id}')">＋ Registrar gestión</button>
+      ${(ec.enMora||ec.atrasado)&&!['consulta','practicante'].includes(ROLE)?`<button class="btn btn-sm" style="background:#25D366;border-color:#25D366;color:#fff" title="Abre WhatsApp con un recordatorio amable ya escrito y anota la gestión" onclick="recordarPagoWhatsApp('${ct.id}')">Recordar pago por WhatsApp</button>`:''}
       ${['admin','gerencia','financiero','cobranza'].includes(ROLE)?`<button class="btn btn-ghost btn-sm" onclick="modalNoContactar('${ct.id}')" title="Si está marcado, Wabi (NUO) no le manda recordatorios ni avisos de mora a este cliente">${ct.nuoNoContacta?'🔕 NUO no contacta':'NUO sí contacta'}</button>`:''}
       ${['admin','gerencia','financiero'].includes(ROLE)?`<button class="btn btn-ghost btn-sm" style="margin-left:auto;color:#B0562F" onclick="modalDesistir('${ct.id}')">Desistió de la compra</button>`:''}</div>
       ${ct.nuoNoContacta?`<div class="hint" style="margin:-6px 0 14px;color:#8A5F12">🔕 NUO no le escribe a este cliente${ct.nuoMotivo?': '+esc(ct.nuoMotivo):''}. La gestión la lleva Cobranza.</div>`:''}`;
