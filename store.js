@@ -649,6 +649,8 @@ function discrepanciasMora() {
   return out;
 }
 
+/* Días de atraso de la cuota más vieja a partir de los cuales un contrato cuenta como «en mora». */
+const DIAS_PARA_MORA = 30;
 function estadoCuenta(ct) {
   const giros = ct.obligaciones.flatMap(o => o.giros.map(g => ({ ...g, obl: o.desc })));
   const totalGiros = giros.reduce((s, g) => s + g.monto, 0);
@@ -658,6 +660,12 @@ function estadoCuenta(ct) {
   const _venc = g => g.vence || g.venc;
   const vencidos = giros.filter(g => !g.condicion && (g.estado === 'vencido' || (g.estado === 'parcial' && _venc(g) && String(_venc(g)).slice(0, 10) < HOY_ISO)));
   const montoVencido = Math.round(vencidos.reduce((s, g) => s + Math.max(0, (g.monto || 0) - (g.abonado || 0)), 0) * 100) / 100;
+  /* Atraso ≠ mora (21 sept 2026). Una sola cuota vencida hace menos de DIAS_PARA_MORA días es la
+     cuota del mes que todavía no entra (o que Finanzas no ha registrado): se cobra y se recuerda,
+     pero no es un contrato en mora. Mora = más de ese plazo, o dos o más cuotas vencidas. */
+  const masVieja = vencidos.map(g => String(_venc(g) || '').slice(0, 10)).filter(Boolean).sort()[0] || null;
+  const diasAtrasoMax = masVieja ? Math.max(0, Math.round((new Date(HOY_ISO + 'T00:00:00') - new Date(masVieja + 'T00:00:00')) / 86400000)) : 0;
+  const moraCalculada = vencidos.length >= 2 || diasAtrasoMax > DIAS_PARA_MORA;
   const rec = recaudadoDe(ct);
   const saldo = Math.max(0, totalGiros - rec);
   const prox = giros.find(g => !g.condicion && (g.estado === 'pendiente' || g.estado === 'vencido' || g.estado === 'parcial'));
@@ -694,7 +702,9 @@ function estadoCuenta(ct) {
 
     vencidas:     hayModelo ? (of ? (of.atraso || 0) : 0)    : vencidos.length,
     montoVencido: hayModelo ? (of ? (of.saldoVenc || 0) : 0) : montoVencido,
-    enMora:       hayModelo ? !!of : vencidos.length > 0,
+    enMora:       hayModelo ? !!of : moraCalculada,
+    atrasado:     hayModelo ? false : (vencidos.length > 0 && !moraCalculada),   // cuota del mes sin pagar, todavía no es mora
+    diasAtraso:   diasAtrasoMax,
     cuotasPagadasModelo: of ? of.cuotasPag : null,
     fuenteMora: hayModelo ? 'Modelo Financiero' : 'giros de la base',
     recaudado: rec, saldo, prox, pct,
