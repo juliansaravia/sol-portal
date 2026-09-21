@@ -3411,6 +3411,16 @@ function renderReporteria(){
       ${cm.diferidoSinFecha?`<div class="card-b hint">Además hay ${Q(cm.diferidoSinFecha)} en saldos al desmembrar sin fecha estimada: se ponen desde la ficha del contrato (Marcar contado al 50%).</div>`:''}</div>`;
   }
   /* Y abajo lo que de verdad se lleva uno al cierre. */
+  if(typeof indicadoresDireccion==='function' && DB.meta && DB.meta.carteraLista!==false){ const I=indicadoresDireccion(), pc=x=>(Math.round(x*1000)/10).toFixed(1)+'%';
+    h += `<div class="card"><div class="card-h" style="flex-wrap:wrap;gap:8px"><h2>Indicadores para dirección</h2><span class="hint">al ${fmtD(HOY_ISO)} · ${I.contratos} contratos vigentes</span>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="descargarReporte('direccion')">Descargar en Excel</button></div>
+      <div class="kpis" style="padding:14px 16px 4px">
+        <div class="kpi"><div class="kpi-label">Cartera hoy</div><div class="kpi-value sm">${Qk(I.total)}</div><div class="kpi-sub">${Qk(I.capital)} capital · ${Qk(I.intereses)} intereses${I.diferido?` · ${Qk(I.diferido)} al desmembrar`:''}</div></div>
+        ${I.cortes.map(k=>`<div class="kpi"><div class="kpi-label">Cartera al ${fmtD(k.fecha)}</div><div class="kpi-value sm">${Qk(k.cartera)}</div><div class="kpi-sub">cobrando ${Qk(k.cobros+k.diferidoCobrado)} de aquí a esa fecha</div></div>`).join('')}
+        <div class="kpi accent"><div class="kpi-label">Tasa efectiva anual</div><div class="kpi-value sm">${pc(I.tirAnual)}</div><div class="kpi-sub">${pc(I.tirMensual)} mensual sobre saldo · pactado 1.5% plano</div></div>
+        <div class="kpi ${I.moraMonto>0?'warn':''}"><div class="kpi-label">Morosidad</div><div class="kpi-value sm">${pc(I.moraMonto)}</div><div class="kpi-sub">${Qk(I.vencido)} vencidos · ${I.enMora} de ${I.contratos} contratos (${pc(I.moraContratos)})</div></div>
+      </div>
+      <div class="card-b hint">La proyección supone que cada cuota se paga en su fecha, sin ventas nuevas, bajas ni abonos extra. La tasa efectiva es la TIR de los planes: el 1.5% mensual es plano (sobre el monto original), por eso sobre saldo rinde más. Vencido = cuota con sus 30 días de contrato agotados.</div></div>`; }
   h += `<div class="card"><div class="card-h"><h2>Descargar para el cierre</h2>
       <span class="hint">Excel (.xlsx) · del ${fmtD(n.desde)} al ${fmtD(n.hasta)}</span></div>
     <div class="card-b" style="padding:0"><table class="data"><tbody>`;

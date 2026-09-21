@@ -409,6 +409,94 @@ function repCuadre() {
   return f;
 }
 
+/* ------------------------------------------------------------
+   INDICADORES PARA DIRECCIÓN (21 sept 2026)
+   Lo que pide la junta: cartera hoy, cartera proyectada a fin de 2026 y de 2027, tasa
+   efectiva y % de morosidad. Todo sale de los planes y pagos ya cargados.
+
+   · La PROYECCIÓN supone que cada cuota se paga en su fecha y que no hay ventas nuevas,
+     desistimientos ni abonos extra: es el calendario de cobro de la cartera de hoy.
+   · La TASA EFECTIVA es la TIR de cada plan (lo financiado contra sus cuotas). El 1.5 %
+     mensual es PLANO (sobre el monto original), así que sobre saldo rinde bastante más.
+   · La MOROSIDAD usa la regla vigente: una cuota está vencida cuando se agotan los 30 días
+     que da el contrato (o al día siguiente del tope, en los contados al 50 %).
+   ------------------------------------------------------------ */
+function _tirMensual(financiado, cuota, n) {
+  if (!(financiado > 0) || !(cuota > 0) || !(n > 0) || cuota * n <= financiado + 0.01) return 0;
+  let lo = 0, hi = 0.5;
+  for (let i = 0; i < 80; i++) { const r = (lo + hi) / 2, pv = cuota * (1 - Math.pow(1 + r, -n)) / r; if (pv > financiado) lo = r; else hi = r; }
+  return (lo + hi) / 2;
+}
+function indicadoresDireccion() {
+  const hoy = HOY_ISO, cortes = [hoy.slice(0, 4) + '-12-31', (+hoy.slice(0, 4) + 1) + '-12-31'];
+  const vivos = DB.contratos.filter(c => c.estado === 'aprobado');
+  const R = { contratos: vivos.length, porCobrar: 0, capital: 0, intereses: 0, diferido: 0, vencido: 0, saldoEnMora: 0, enMora: 0, delMes: 0,
+              cortes: cortes.map(f => ({ fecha: f, cartera: 0, cobros: 0, diferidoCobrado: 0 })), finTotal: 0, tirPond: 0, finConTasa: 0, plazoPond: 0 };
+  vivos.forEach(ct => {
+    const ec = estadoCuenta(ct); let saldoCt = 0;
+    /* Datos del plan, con respaldo: si el contrato no trae enganche o tasa, salen de sus cuotas o del proyecto. */
+    const gIni = (ec.giros || []).find(g => /inicial/i.test(g.obl || ''));
+    const engCt = (ct.enganche != null ? +ct.enganche : (gIni ? +gIni.monto : 0)) || 0;
+    const nCt = +ct.plazo || (ec.giros || []).filter(g => !g.condicion && !/inicial|abono|aporte/i.test(g.obl || '')).length || 0;
+    const contado = /contado/.test(ct.modalidad || '');
+    const tasaCt = contado ? 0 : (ct.tasa != null ? +ct.tasa : ((typeof PROYECTO !== 'undefined' && PROYECTO && PROYECTO.tasaMensual != null) ? +PROYECTO.tasaMensual : (typeof TASA_MENSUAL !== 'undefined' ? TASA_MENSUAL : 0)));
+    const finCt = Math.max(0, (ct.precio || 0) - engCt);
+    const pcPlan = (finCt > 0 && nCt > 0) ? (finCt / nCt) / (finCt / nCt + finCt * tasaCt) : 1;      // parte de capital de una cuota normal
+    (ec.giros || []).forEach(g => {
+      const falta = Math.max(0, (g.monto || 0) - (g.abonado || 0)); if (g.estado === 'pagado' || falta <= 0) return;
+      const venc = String(g.vence || g.venc || '').slice(0, 10);
+      if (g.condicion) { R.diferido += falta; const fe = String(g.fechaEstimada || '').slice(0, 10);
+        R.cortes.forEach(k => { if (fe && fe <= k.fecha) k.diferidoCobrado += falta; else k.cartera += falta; }); saldoCt += falta; return; }
+      R.porCobrar += falta; saldoCt += falta;
+      /* Qué parte de la cuota es capital: la que trae la base; si no, la del plan. El enganche y los abonos son todo capital. */
+      const pc = (g.capital != null && g.monto > 0) ? g.capital / g.monto : (/inicial|abono|aporte/i.test(g.obl || '') ? 1 : pcPlan);
+      R.capital += falta * pc; R.intereses += falta * (1 - pc);
+      R.cortes.forEach(k => { if (venc && venc <= k.fecha) k.cobros += falta; else k.cartera += falta; });
+    });
+    R.vencido += ec.montoVencido || 0; R.delMes += ec.montoDelMes || 0;
+    if (ec.enMora) { R.enMora++; R.saldoEnMora += saldoCt; }
+    const fin = finCt, tasa = tasaCt, n = nCt;
+    if (fin > 0 && tasa > 0 && n > 1 && !contado) {
+      const cuota = fin / n + fin * tasa, r = _tirMensual(fin, cuota, n);
+      R.finConTasa += fin; R.tirPond += r * fin; R.plazoPond += n * fin;
+    }
+    R.finTotal += fin;
+  });
+  const total = R.porCobrar + R.diferido;
+  const tm = R.finConTasa ? R.tirPond / R.finConTasa : 0;
+  return { ...R, total, tirMensual: tm, tirAnual: Math.pow(1 + tm, 12) - 1, nominalAnual: tm * 12, plazoMedio: R.finConTasa ? R.plazoPond / R.finConTasa : 0,
+           moraMonto: R.porCobrar ? R.vencido / R.porCobrar : 0, moraContratos: R.contratos ? R.enMora / R.contratos : 0, carteraEnRiesgo: total ? R.saldoEnMora / total : 0 };
+}
+function repDireccion() {
+  const I = indicadoresDireccion(), pct = x => (Math.round(x * 1000) / 10).toFixed(1).replace('.', ',') + ' %';
+  const f = [['Indicador', 'Valor', 'Cómo se lee']];
+  f.push(['CARTERA AL ' + HOY_ISO, '', '']);
+  f.push(['Contratos vigentes', I.contratos, '']);
+  f.push(['Cartera total por cobrar', _repNum(I.total), 'Todo lo que falta cobrar de los contratos vigentes (cuotas + saldos al desmembrar)']);
+  f.push(['  · en cuotas con fecha', _repNum(I.porCobrar), '']);
+  f.push(['      de eso, capital', _repNum(I.capital), 'Parte del precio del lote que falta cobrar']);
+  f.push(['      de eso, intereses por devengar', _repNum(I.intereses), 'Intereses del plazo que aún no se cobran']);
+  f.push(['  · saldos al desmembrar (sin fecha)', _repNum(I.diferido), 'Contados al 50 %: se cobran al desmembrar']);
+  I.cortes.forEach(k => {
+    f.push(['CARTERA PROYECTADA AL ' + k.fecha, '', 'Si cada cuota se paga en su fecha; sin ventas nuevas, bajas ni abonos extra']);
+    f.push(['  Cobros esperados de hoy a esa fecha', _repNum(k.cobros + k.diferidoCobrado), k.diferidoCobrado ? 'Incluye ' + _repNum(k.diferidoCobrado) + ' de saldos al desmembrar con fecha estimada anterior' : '']);
+    f.push(['  Cartera que quedaría por cobrar', _repNum(k.cartera), '']);
+  });
+  f.push(['TASA', '', '']);
+  f.push(['Tasa pactada', '1,5 % mensual plana', 'Se calcula sobre el monto financiado original, no sobre el saldo']);
+  f.push(['Tasa efectiva mensual (TIR) de la cartera', pct(I.tirMensual), 'Ponderada por monto financiado · plazo medio ' + Math.round(I.plazoMedio) + ' meses']);
+  f.push(['Tasa efectiva anual', pct(I.tirAnual), 'La mensual capitalizada 12 veces']);
+  f.push(['Tasa nominal anual equivalente', pct(I.nominalAnual), 'La mensual × 12']);
+  f.push(['MOROSIDAD', '', 'Vencido = cuota con sus 30 días de contrato agotados']);
+  f.push(['Monto vencido', _repNum(I.vencido), '']);
+  f.push(['% de morosidad por monto', pct(I.moraMonto), 'Monto vencido ÷ cartera en cuotas']);
+  f.push(['Contratos en mora', I.enMora + ' de ' + I.contratos, '']);
+  f.push(['% de morosidad por contratos', pct(I.moraContratos), '']);
+  f.push(['Cartera en riesgo', pct(I.carteraEnRiesgo), 'Saldo total de los contratos en mora ÷ cartera total']);
+  f.push(['Cuota del mes por cobrar (no es mora)', _repNum(I.delMes), 'Cuotas dentro de sus 30 días']);
+  return f;
+}
+
 /** Caja esperada por cuotas: lo programado y no pagado, mes a mes. */
 const MESES_CORTOS = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 function cajaMensual(meses) {
@@ -462,6 +550,9 @@ function repCajaMensual() {
 }
 
 const REPORTES = [
+  { id:'direccion',    nombre:'Indicadores para dirección',
+    que:'Cartera hoy (capital e intereses), cartera proyectada al 31 de diciembre de este año y del siguiente, tasa efectiva y % de morosidad.',
+    para:'Lo que pide la junta, en una hoja. No depende del período.', fn: repDireccion },
   { id:'caja',         nombre:'Caja esperada por cuotas',
     que:'Mes a mes, cuántas cuotas vencen y cuánto dinero debería entrar.',
     para:'Para saber con qué caja contar y planear pagos.', fn: repCajaMensual },
