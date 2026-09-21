@@ -4457,7 +4457,7 @@ function modalPago(id){
       <div class="field"><label>Cuota a la que se aplica</label><select id="p-giro" onchange="pistaAplicacion('${id}')">${opcionesCuotas(ct)}</select>
         ${!(+ct.enganche>0)?`<div class="hint" style="color:#8A5F12;margin-top:4px">Este contrato está cargado con <b>enganche Q0</b>, por eso no aparece el enganche en la lista. Si sí lo pagó, corregí primero el monto en <a href="#" onclick="closeModal();modalEnganche('${id}');return false;"><b>Ficha → Enganche → Editar</b></a>: el plan se rehace con su Cuota Inicial y el pago se aplica ahí.</div>`:''}</div>
       <div class="field"><label>Monto de la boleta *</label><input id="p-monto" type="number" step="0.01" placeholder="${ec.prox?'cuota: '+Q(ec.prox.monto):'monto que pagó'}" oninput="totalBoleta('p');pistaAplicacion('${id}')"></div>
-      <div class="field full" id="p-aplicBox" hidden><label id="p-aplicLbl">${PROYECTO&&PROYECTO.metodo==='amortizado'?'Pagó más que la cuota · ¿qué se hace con lo que sobra?':'Pagó más que la cuota · lo que sobra adelanta las cuotas siguientes (interés simple: no se recalcula nada)'}</label>
+      <div class="field full" id="p-aplicBox" hidden><label id="p-aplicLbl">${PROYECTO&&PROYECTO.metodo==='amortizado'?'Pagó más que la cuota · ¿qué se hace con lo que sobra?':'Pagó más que la cuota · el abono extra se rebaja de lo que debe'}</label>
         <select id="p-aplic" ${PROYECTO&&PROYECTO.metodo==='amortizado'?'':'style="display:none"'}><option value="cuotas">Adelantar las cuotas siguientes</option>${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Abonarlo a capital (se recalculan las cuotas, mismo plazo)</option>':''}</select>
         <div class="hint" id="p-aplicPista"></div></div>
       <div class="field"><label>Forma de pago</label><input id="p-forma" value="Transferencia bancaria" readonly style="background:var(--tint)"></div>
@@ -4492,6 +4492,21 @@ function opcionesCuotas(ct){
   return L.map((g,i)=>`<option value="${g.id}" data-pend="${Math.round(((g.monto||0)-(g.abonado||0))*100)/100}" data-vence="${g.vence||''}" ${i===0?'selected':''}>${esc(g.obl)} ${g.n}/${g.de} · vence ${fmtD(g.vence)} · pendiente ${Q((g.monto||0)-(g.abonado||0))}</option>`).join('')
        +`<option value="">Sin cuota fija · en orden</option>`;
 }
+/* Lo que se le dice a Finanzas cuando el cliente paga más que la cuota (21 sept 2026): con interés
+   simple el abono extra NO recalcula nada; simplemente se rebaja de lo que debe, cubriendo las
+   cuotas que siguen. Se dice con números: cuánto debía, cuánto le queda y hasta dónde le alcanza. */
+function textoAbonoExtra(id, giroId, monto, pendCuota){
+  const ct=getContrato(id); if(!ct) return `Cuota pendiente ${Q(pendCuota)} · sobran ${Q(monto-pendCuota)}.`;
+  const {filas,totalPlan}=filasEstadoCuenta(ct); const debia=Math.max(0,totalPlan-pagadoDeFilas(filas));
+  const extra=Math.round((monto-pendCuota)*100)/100;
+  const i0=filas.findIndex(f=>String(f.id)===String(giroId)); let queda=extra, completas=0, parcialA=null;
+  for(let i=(i0<0?0:i0+1);i<filas.length&&queda>0.004;i++){ const f=filas[i]; if(f.condicion||f.estado==='pagado') continue;
+    const falta=Math.max(0,(f.cuota||0)-(f.abonado||0)); if(falta<=0.004) continue;
+    if(queda>=falta-0.004){ completas++; queda=Math.round((queda-falta)*100)/100; } else { parcialA={f,abono:queda}; queda=0; } }
+  const amort=PROYECTO&&PROYECTO.metodo==='amortizado';
+  return `Paga ${Q(pendCuota)} de esta cuota y <b>${Q(extra)} de abono extra</b>, que ${amort?'se aplica como elijas abajo':'<b>se rebaja de lo que debe</b>'}: debía ${Q(debia)} → <b>le quedan ${Q(Math.max(0,debia-monto))}</b>.`+
+    (amort?'':` Con ese abono ${completas?`quedan pagadas ${completas} cuota(s) más`:''}${completas&&parcialA?' y ':''}${parcialA?`se abonan ${Q(parcialA.abono)} a la cuota ${parcialA.f.n} de ${parcialA.f.de} (${fmtD(parcialA.f.venc)})`:''}${!completas&&!parcialA?'queda a favor del cliente':''}.`);
+}
 function pistaAplicacion(id){
   const sel=document.getElementById('p-giro'), caja=document.getElementById('p-aplicBox'), pista=document.getElementById('p-aplicPista'); if(!sel||!caja) return;
   const op=sel.options[sel.selectedIndex]; const pend=op?+op.dataset.pend||0:0; const m=+v('p-monto')||0;
@@ -4500,7 +4515,7 @@ function pistaAplicacion(id){
   caja.hidden=!(sobra||parcial);
   if(sel2) sel2.hidden=!sobra;
   if(lbl) lbl.hidden=!sobra;
-  if(pista) pista.textContent = sobra ? `Cuota pendiente ${Q(pend)} · sobran ${Q(m-pend)}.` : (parcial ? `Pago parcial: quedan ${Q(pend-m)} de esta cuota.` : '');
+  if(pista) pista.innerHTML = sobra ? textoAbonoExtra(id, op&&op.value, m, pend) : (parcial ? `Pago parcial: quedan ${Q(pend-m)} de esta cuota.` : '');
 }
 function pistaMonedaPago(){
   const e=document.getElementById('p-monedaPista'); if(!e) return; const tc=PROYECTO.tipoCambio||7.8; const m=+v('p-monto')||0;
