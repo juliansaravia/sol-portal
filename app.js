@@ -5235,6 +5235,7 @@ function docCaras(){
 const CASOS_ENGANCHE = {
   boleta_sin_pago: { t: 'Boleta subida, sin pago registrado', d: 'La foto del enganche está en el expediente. Falta convertirla en pago: se abre con el monto y la referencia ya leídos de la boleta.', sev: 1 },
   aplicado_otra:   { t: 'Pagó, pero se aplicó a otra cuota', d: 'El contrato tiene pagos confirmados que se ataron a una cuota del saldo; el enganche quedó pendiente. Se reaplican en orden: primero el enganche.', sev: 2 },
+  parcial:         { t: 'Enganche pagado en parte', d: 'Lo confirmado ya está aplicado al enganche, pero no lo completa. Falta registrar el resto (Aplicar pago → Cuota Inicial) o, si el enganche pactado era menor, corregirlo en Ficha → Enganche → Editar.', sev: 2.5 },
   por_confirmar:   { t: 'Pago registrado, falta confirmarlo', d: 'Ya está subido. Se aplica al enganche en cuanto Finanzas lo confirme contra el banco.', sev: 3 },
   eng0_boleta:     { t: 'El contrato dice enganche Q0, pero hay boleta de enganche', d: 'O el enganche está mal cargado (se corrige en Ficha → Enganche → Editar) o la boleta es de la primera cuota.', sev: 4 },
   sin_nada:        { t: 'Sin boleta ni pago', d: 'No hay respaldo del enganche en el sistema. Hay que conseguir la boleta y registrarla.', sev: 5 },
@@ -5257,7 +5258,11 @@ function revisionEnganches() {
     else {
       falta = Math.round(((g.monto || 0) - (g.abonado || 0)) * 100) / 100;
       if (falta <= tol || g.estado === 'pagado') return;
-      caso = reg > 0 ? 'por_confirmar' : conf > 0 ? 'aplicado_otra' : boleta ? 'boleta_sin_pago' : 'sin_nada';
+      /* Con pagos confirmados: si todo lo confirmado ya está en el enganche y aun así falta, es un
+         enganche pagado en parte (B-00: Q5,000 de Q10,000); si hay dinero confirmado que NO está en
+         el enganche, se fue a otra cuota y se puede reaplicar. */
+      const enOtra = conf - (g.abonado || 0) > tol;
+      caso = reg > 0 ? 'por_confirmar' : conf > 0 ? (enOtra ? 'aplicado_otra' : 'parcial') : boleta ? 'boleta_sin_pago' : 'sin_nada';
     }
     if (!caso) return;
     out.push({ ct, caso, enganche: eng, abonado: g ? (g.abonado || 0) : 0, falta, conf, reg, boleta });
@@ -5278,6 +5283,7 @@ function cartaEnganches() {
       const id = x.ct.id;
       const accion = k === 'boleta_sin_pago' ? (typeof PUEDE_PAGO_DESDE_BOLETA === 'function' && PUEDE_PAGO_DESDE_BOLETA() ? `<button class="btn btn-gold btn-sm" onclick="event.stopPropagation();modalPagoDesdeBoleta('${x.boleta.id}')">Registrar como pago</button>` : `<span class="hint">lo registra Finanzas</span>`)
         : k === 'aplicado_otra' ? (PUEDE_REAPLICAR() ? `<button class="btn btn-gold btn-sm" onclick="event.stopPropagation();reaplicarEnganche('${id}')">Aplicar primero al enganche</button>` : `<span class="hint">lo reaplica Finanzas</span>`)
+        : k === 'parcial' ? (['vendedor','practicante','consulta'].includes(ROLE) ? '' : `<button class="btn btn-gold btn-sm" onclick="event.stopPropagation();modalPago('${id}')">Registrar lo que falta</button>`)
         : k === 'por_confirmar' ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();setView('confirmacion')">Ir a confirmarlo</button>`
         : k === 'eng0_boleta' ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();abrirContrato('${id}','docs')">Ver la boleta</button>`
         : `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();abrirContrato('${id}','cuenta')">Abrir</button>`;
