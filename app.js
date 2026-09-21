@@ -3993,6 +3993,67 @@ function filasEstadoCuenta(ct){
   });
   return {filas,totalPlan,plan};
 }
+/* ── Estado de cuenta que se entiende (21 sept 2026) ──
+   En la ficha (un cajón angosto) la tabla contable —monto debido, capital, interés, monto final—
+   no se leía: se cortaba de lado y el primer número que saltaba era «Q261,270 debido». Aquí va
+   en el orden en que se le explica a un cliente:
+     1. de qué se compone lo que paga (precio → financiado → intereses → total)
+     2. cuánto lleva y cuánto le falta
+     3. sus cuotas, en palabras: las pagadas resumidas en una línea, la que sigue y las próximas
+   El desglose completo (capital e interés por cuota) sigue en «ver el plan completo» y en el PDF. */
+function ecComposicionHTML(ct, filas, totalPlan, plan, pagado) {
+  const eng = plan.enganche || 0, financiado = Math.max(0, (ct.precio || 0) - eng);
+  const conInteres = filas.some(f => f.interes != null);
+  const intereses = Math.max(0, Math.round((conInteres ? filas.reduce((s, f) => s + (f.exonerado ? 0 : (f.interes || 0)), 0) : (totalPlan - (ct.precio || 0))) * 100) / 100);
+  const tasa = (ct.tasa != null ? +ct.tasa : (plan.tasa != null ? +plan.tasa : null));
+  const fila = (a, b, o) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;${o && o.linea ? 'border-top:1px solid var(--line);margin-top:4px;padding-top:9px;' : ''}${o && o.fuerte ? 'font-weight:700;' : ''}"><span style="${o && o.suave ? 'color:var(--muted)' : ''}">${a}</span><span style="white-space:nowrap">${b}</span></div>`;
+  let h = `<div class="card" style="margin:0 0 14px"><div class="card-b" style="padding:12px 14px">
+    <div class="sect-t" style="margin:0 0 6px">Cómo se compone</div>`;
+  h += fila('Precio del lote', Q(ct.precio || 0));
+  if (eng > 0) h += fila('Enganche (cuota inicial)', '− ' + Q(eng), { suave: 1 });
+  h += fila(intereses > 0 ? 'Lo que se financia' : 'Saldo a pagar en cuotas', Q(financiado));
+  if (intereses > 0) h += fila(`Intereses de los ${plan.plazo} meses${tasa ? ` <span class="hint">(${(tasa * 100).toFixed(1).replace(/\.0$/, '')}% mensual, fijo)</span>` : ''}`, '+ ' + Q(intereses), { suave: 1 });
+  h += fila('Total que paga en todo el plazo', Q(totalPlan), { linea: 1, fuerte: 1 });
+  h += fila('Ya pagó', Q(pagado), { suave: 1 });
+  h += fila('Le falta', Q(Math.max(0, totalPlan - pagado)), { fuerte: 1 });
+  return h + `</div></div>`;
+}
+function ecCuotasCompactasHTML(ct, filas, mora) {
+  const fechaDe = f => f.condicion?'Al desmembrar':fmtD(f.venc);   // un saldo al desmembrar lleva 2099 en la base: nunca se muestra
+  const falta = f => Math.max(0, Math.round(((f.cuota || 0) - (f.abonado || 0)) * 100) / 100);
+  const pagadas = filas.filter(f => f.estado === 'pagado');
+  const resto = filas.filter(f => f.estado !== 'pagado');
+  const moraDe = new Map((mora.detalle || []).map(d => [String(d.obl) + '#' + d.giro, d]));
+  const etq = f => /inicial/i.test(f.obl || '') ? 'Enganche' : `Cuota ${f.n} de ${f.de}`;
+  let h = `<div class="sect-t" style="margin:4px 0 8px">Sus cuotas</div>`;
+  if (pagadas.length) {
+    const tot = pagadas.reduce((s, f) => s + (f.cuota || 0), 0), ult = pagadas[pagadas.length - 1];
+    h += `<details style="margin:0 0 8px;border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:var(--tint)"><summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:8px;align-items:center">
+        <span><b style="color:var(--green)">✓ ${pagadas.length} pagada${pagadas.length === 1 ? '' : 's'}</b> <span class="hint">· hasta la del ${fechaDe(ult)}</span></span><span><b>${Q(tot)}</b> <span class="hint">ver ▾</span></span></summary>
+      <div style="margin-top:8px">${pagadas.map(f => `<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;font-size:12.5px;border-top:1px solid var(--line)"><span>${etq(f)} · ${fechaDe(f)}</span><span>${Q(f.cuota)}</span></div>`).join('')}</div></details>`;
+  }
+  const mostrar = resto.slice(0, 6);
+  mostrar.forEach((f, i) => {
+    const m = moraDe.get(String(f.obl) + '#' + f.n);
+    const vencida = f.estado === 'vencido' || (f.estado === 'parcial' && m);
+    const estado = f.condicion ? `<span class="badge b-nod">Al desmembrar</span>`
+      : vencida ? `<span class="badge b-mora">Vencida</span>`
+      : (f.abonado > 0 ? `<span class="badge b-pend">Abonada</span>` : (i === 0 ? `<span class="badge b-apar">La que sigue</span>` : `<span class="badge b-nod">Pendiente</span>`));
+    h += `<div style="border:1px solid ${vencida ? 'var(--mora)' : 'var(--line)'};border-radius:10px;padding:9px 12px;margin:0 0 6px;${i === 0 && !vencida ? 'background:#fffdf5;' : ''}">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span><b>${etq(f)}</b> <span class="hint">· ${f.condicion ? 'sin fecha' : 'vence ' + fechaDe(f)}</span></span>${estado}</div>
+        <div style="display:flex;justify-content:space-between;gap:8px;margin-top:4px"><span class="hint">${f.abonado > 0 ? `Cuota ${Q(f.cuota)} · ya abonó ${Q(f.abonado)}` : (f.exonerado ? 'Cuota sin interés (exonerado)' : 'Cuota')}</span><b>${f.abonado > 0 ? 'falta ' + Q(falta(f)) : Q(f.cuota)}</b></div>
+        ${m ? `<div class="hint" style="color:var(--mora);margin-top:3px">${m.dias} día(s) de atraso · recargo ${Q(m.mora)}</div>` : ''}</div>`;
+  });
+  if (resto.length > mostrar.length) {
+    const fin = resto[resto.length - 1];
+    h += `<div class="hint" style="text-align:center;margin:8px 0 2px">…y ${resto.length - mostrar.length} cuota(s) más, la última ${fin.condicion ? 'al desmembrar' : 'el ' + fechaDe(fin)} · <a href="#" onclick="verEstadoCuenta('${ct.id}');return false;"><b>ver el plan completo con capital e interés</b></a></div>`;
+  } else {
+    h += `<div class="hint" style="text-align:center;margin:8px 0 2px"><a href="#" onclick="verEstadoCuenta('${ct.id}');return false;">Ver el plan completo con capital e interés</a></div>`;
+  }
+  if (mora.total > 0) h += `<div class="hint" style="margin:6px 0 0">El recargo por atraso (${(mora.tasa * 100).toFixed(1).replace(/\.0$/, '')}% mensual, proporcional a los días, después del plazo que da el contrato) se calcula al día; no se suma al saldo hasta que Finanzas lo cobre.</div>`;
+  return h;
+}
+
 function estadoCuentaHTML(ct,ec,completo){
   const {filas,totalPlan,plan}=filasEstadoCuenta(ct);
   const pagado=pagadoDeFilas(filas);
@@ -4004,10 +4065,11 @@ function estadoCuentaHTML(ct,ec,completo){
   let h=`<div class="ec">
     <div class="ec-hero">
       <div class="ec-hero-l">
-        <div class="ec-lbl">Saldo pendiente</div>
+        <div class="ec-lbl">Le falta pagar</div>
         <div class="ec-big">${Q(pend)}</div>
         <div class="ec-bar"><span style="width:${pct}%"></span></div>
-        <div class="ec-mini">${pct}% pagado · ${filas.filter(f=>f.estado==='pagado').length} de ${filas.length} cuotas</div>
+        <div class="ec-mini">${pct}% pagado · lleva ${Q(pagado)} de ${Q(totalPlan)}</div>
+        ${prox&&prox.venc&&!prox.condicion&&diasEnt(HOY_ISO,String(prox.venc).slice(0,10))>31&&!venc.length?`<div class="ec-mini" style="margin-top:4px">✓ Va adelantado: no le toca pagar hasta el ${fmtD(prox.venc)}</div>`:''}
       </div>
       <div class="ec-hero-r">
         ${prox?`<div class="ec-next"><span>${abonadoDeFila(prox)>0?'Falta de la próxima cuota':'Próxima cuota'}</span><b>${Q(faltaDeFila(prox))}</b><i>vence ${fmtD(prox.venc)}${abonadoDeFila(prox)>0?` · ya abonó ${Q(abonadoDeFila(prox))} de ${Q(prox.cuota)}`:''}</i></div>`
@@ -4017,7 +4079,8 @@ function estadoCuentaHTML(ct,ec,completo){
           ${mora.total>0?`<i style="display:block;font-size:11.5px;color:#f3cfc8;font-style:normal;margin-top:4px">+ ${Q(mora.total)} de mora (${(mora.tasa*100).toFixed(1).replace(/\.0$/,'')}% mensual${mora.gracia?', '+mora.gracia+' días de gracia':''}) · a pagar hoy <b>${Q(venc.reduce((s,f)=>s+f.cuota,0)+mora.total)}</b></i>`:''}</div>`:''}
       </div>
     </div>
-    <div class="ec-grid">
+    ${completo?'':ecComposicionHTML(ct,filas,totalPlan,plan,pagado)}
+    <div class="ec-grid" ${completo?'':'hidden'}>
       <div><span>Precio de venta</span><b>${Q(ct.precio)}</b></div>
       <div><span>Cuota inicial</span><b>${Q(plan.enganche)}</b></div>
       <div><span>Plazo</span><b>${plan.plazo} meses</b></div>
@@ -4032,7 +4095,8 @@ function estadoCuentaHTML(ct,ec,completo){
   /* Desglose capital / interés por cuota (59): se muestra cuando la base lo trae. */
   const conDesglose=filas.some(f=>f.capital!=null);
   const moraDe=new Map(mora.detalle.map(d=>[String(d.obl)+'#'+d.giro,d])); const conMora=mora.total>0;
-  h+=`<table class="ec-tbl"><thead><tr>
+  if(!completo) h+=ecCuotasCompactasHTML(ct,filas,mora);
+  h+=`<table class="ec-tbl" ${completo?'':'hidden'}><thead><tr>
       <th>Cuota</th><th>Vence</th><th class="num">Monto debido</th>
       ${conDesglose?'<th class="num">Capital</th><th class="num">Interés</th>':''}
       <th class="num">Cuota</th><th class="num">Pagado</th><th class="num">Monto final</th>${conMora?'<th class="num">Mora</th>':''}<th></th></tr></thead><tbody>`;
@@ -4051,13 +4115,17 @@ function estadoCuentaHTML(ct,ec,completo){
       <td class="ec-st">${ic}</td></tr>`;});
   if(conDesglose){ const tc=filas.reduce((s,f)=>s+(f.capital||0),0), ti=filas.reduce((s,f)=>s+(f.exonerado?0:(f.interes||0)),0);
     h+=`<tr><td colspan="3"><b>Totales del plan</b></td><td class="num"><b>${Q(tc)}</b></td><td class="num"><b>${Q(ti)}</b></td><td class="num"><b>${Q(totalPlan)}</b></td><td class="num"><b>${Q(pagado)}</b></td><td></td>${conMora?`<td class="num"><b style="color:var(--mora)">${Q(mora.total)}</b></td>`:''}<td></td></tr>`; }
-  if(conMora) h+=`<div class="hint" style="margin:6px 0 0">Mora: ${(mora.tasa*100).toFixed(1).replace(/\.0$/,'')}% mensual sobre lo vencido, proporcional a los días de atraso${mora.gracia?`, después de ${mora.gracia} días de gracia`:''}. Se calcula al día; no se suma al saldo hasta que Finanzas la cobre.</div>`;
+  if(conMora&&completo) h+=`<div class="hint" style="margin:6px 0 0">Mora: ${(mora.tasa*100).toFixed(1).replace(/\.0$/,'')}% mensual sobre lo vencido, proporcional a los días de atraso${mora.gracia?`, después de ${mora.gracia} días de gracia`:''}. Se calcula al día; no se suma al saldo hasta que Finanzas la cobre.</div>`;
   h+=`</tbody></table>`;
   { const PA=pagosAplicados(ct,filas);
-    if(PA.length){ h+=`<div class="sect-t" style="margin-top:14px">Pagos recibidos · ${PA.length}</div><table class="ec-tbl"><thead><tr><th>Fecha</th><th class="num">Monto</th><th>Forma · referencia</th><th>Recibo</th><th>Se aplicó a</th></tr></thead><tbody>`+
+    if(PA.length&&!completo){ h+=`<div class="sect-t" style="margin-top:16px">Pagos recibidos · ${PA.length} · ${Q(PA.reduce((s,x)=>s+x.monto,0))}</div>`+
+      PA.slice().reverse().map(x=>`<div style="border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin:0 0 6px">
+        <div style="display:flex;justify-content:space-between;gap:8px"><span><b>${fmtD(x.fecha)}</b> <span class="hint">· ${esc(x.forma||'—')}${x.referencia?' · ref. '+esc(x.referencia):''}${x.recibo?' · recibo '+esc(String(x.recibo).padStart(6,'0')):''}</span></span><b>${Q(x.monto)}</b></div>
+        <div class="hint" style="margin-top:3px">Se aplicó a: ${x.detalle.map(d=>`${esc(d.etq)} ${Q(d.monto)}`).join(' · ')||'—'}</div></div>`).join(''); }
+    else if(PA.length){ h+=`<div class="sect-t" style="margin-top:14px">Pagos recibidos · ${PA.length}</div><table class="ec-tbl"><thead><tr><th>Fecha</th><th class="num">Monto</th><th>Forma · referencia</th><th>Recibo</th><th>Se aplicó a</th></tr></thead><tbody>`+
       PA.map(x=>`<tr><td>${fmtD(x.fecha)}</td><td class="num"><b>${Q(x.monto)}</b></td><td>${esc(x.forma||'—')}${x.referencia?' · '+esc(x.referencia):''}</td><td>${x.recibo?esc(String(x.recibo)):'—'}</td><td>${x.detalle.map(d=>`${esc(d.etq)} ${Q(d.monto)}`).join(' · ')||'—'}</td></tr>`).join('')+
       `<tr><td><b>Total</b></td><td class="num"><b>${Q(PA.reduce((s,x)=>s+x.monto,0))}</b></td><td colspan="3"></td></tr></tbody></table>`; } }
-  if(!completo&&muestra.length<filas.length)
+  if(false&&!completo&&muestra.length<filas.length)
     h+=`<div class="hint" style="text-align:center">Mostrando ${muestra.length} de ${filas.length} cuotas · <a href="#" onclick="verEstadoCuenta('${ct.id}');return false;">ver el plan completo</a></div>`;
   h+=`</div>`;
   return h;
