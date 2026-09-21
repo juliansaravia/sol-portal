@@ -2678,7 +2678,12 @@ async function guardarDesistir(id){
 }
 async function revertirDesistir(id){
   const ct=getContrato(id); if(!ct) return;
-  const motivo=prompt('¿Por qué vuelve a estar vigente? (queda en la bitácora)'); if(motivo===null) return;
+  /* El lote volvió al inventario al desistir: si ya se le vendió o reservó a otra persona, no se puede reactivar. */
+  const otro=DB.contratos.find(c=>!mismoId(c.id,ct.id)&&['aprobado','borrador','en_aprobacion'].includes(c.estado)&&((c.clave&&ct.clave&&c.clave===ct.clave)||(!c.clave&&!ct.clave&&c.lote===ct.lote)||(c.lote===ct.lote&&(c.fase||'')===(ct.fase||''))));
+  if(otro) return toast(`El lote ${ct.lote} ya tiene otro contrato vigente (${otro.no} · ${nombreCliente(otro.clienteId)}): no se puede reactivar éste. Si el cliente vuelve, se le cambia de lote desde la ficha.`,10000,true);
+  const lt=(typeof getLote==='function')?getLote(ct.clave||ct.lote):null;
+  if(lt&&lt.estado&&!['disponible','vendido'].includes(lt.estado)&&!confirm(`El lote ${ct.lote} figura «${lt.estado}» en el inventario. ¿Reactivar el contrato de todos modos?`)) return;
+  const motivo=prompt('¿Por qué vuelve a estar vigente? (queda en la bitácora)\n\nEl contrato queda aprobado, el lote vuelve a «vendido» y su plan de pagos sigue donde iba: las cuotas que vencieron mientras estuvo desistido aparecerán pendientes.'); if(motivo===null) return;
   if(typeof hayBase==='function'&&hayBase()){ const r=await conBoton(()=>sbEstadoContrato(ct.id,'activo','vendido')); if(!r||!r.ok) return; }
   try{ if(typeof revertirDesistimiento==='function') revertirDesistimiento(ct.id,motivo||'sin motivo'); else ct.estado='aprobado'; }
   catch(e){ toast(e.message,6000,true); return; }
@@ -3786,7 +3791,7 @@ function pintarContrato(){
   if(ct.estado==='desistido'){
     const d=ct.desistimiento||{};
     h+=`<div class="aviso-err" style="margin:0 0 14px"><b>El cliente desistió de la compra</b>${d.fecha?' el '+fmtD(d.fecha):''}${d.motivo?' · '+esc(d.motivo):''}${d.nota?'<br>'+esc(d.nota):''}<br>El lote volvió al inventario; lo pagado queda anotado y no se persigue lo pendiente.
-      ${['admin','gerencia'].includes(ROLE)?`<div style="margin-top:8px"><button class="btn btn-ghost btn-sm" onclick="revertirDesistir('${ct.id}')">Revertir · el cliente sigue</button></div>`:''}</div>`;
+      ${['admin','gerencia','financiero'].includes(ROLE)?`<div style="margin-top:8px"><button class="btn btn-primary btn-sm" onclick="revertirDesistir('${ct.id}')">Volver a activar el contrato · el cliente sigue</button></div>`:'<div class="hint" style="margin-top:6px">Para volver a activarlo: administración, gerencia o finanzas.</div>'}</div>`;
   }
 
   if(drawerTab==='ficha'){
