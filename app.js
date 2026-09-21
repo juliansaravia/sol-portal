@@ -4457,7 +4457,7 @@ function modalPago(id){
       <div class="field"><label>Cuota a la que se aplica</label><select id="p-giro" onchange="pistaAplicacion('${id}')">${opcionesCuotas(ct)}</select>
         ${!(+ct.enganche>0)?`<div class="hint" style="color:#8A5F12;margin-top:4px">Este contrato está cargado con <b>enganche Q0</b>, por eso no aparece el enganche en la lista. Si sí lo pagó, corregí primero el monto en <a href="#" onclick="closeModal();modalEnganche('${id}');return false;"><b>Ficha → Enganche → Editar</b></a>: el plan se rehace con su Cuota Inicial y el pago se aplica ahí.</div>`:''}</div>
       <div class="field"><label>Monto de la boleta *</label><input id="p-monto" type="number" step="0.01" placeholder="${ec.prox?'cuota: '+Q(ec.prox.monto):'monto que pagó'}" oninput="totalBoleta('p');pistaAplicacion('${id}')"></div>
-      <div class="field full" id="p-aplicBox" hidden><label id="p-aplicLbl">${PROYECTO&&PROYECTO.metodo==='amortizado'?'Pagó más que la cuota · ¿qué se hace con lo que sobra?':'Pagó más que la cuota · el abono extra se rebaja de lo que debe'}</label>
+      <div class="field full" id="p-aplicBox" hidden><label id="p-aplicLbl">${PROYECTO&&PROYECTO.metodo==='amortizado'?'Pagó más que la cuota · ¿qué se hace con lo que sobra?':'Pagó más que la cuota · abono a plan'}</label>
         <select id="p-aplic" ${PROYECTO&&PROYECTO.metodo==='amortizado'?'':'style="display:none"'}><option value="cuotas">Adelantar las cuotas siguientes</option>${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Abonarlo a capital (se recalculan las cuotas, mismo plazo)</option>':''}</select>
         <div class="hint" id="p-aplicPista"></div></div>
       <div class="field"><label>Forma de pago</label><input id="p-forma" value="Transferencia bancaria" readonly style="background:var(--tint)"></div>
@@ -4504,8 +4504,8 @@ function textoAbonoExtra(id, giroId, monto, pendCuota){
     const falta=Math.max(0,(f.cuota||0)-(f.abonado||0)); if(falta<=0.004) continue;
     if(queda>=falta-0.004){ completas++; queda=Math.round((queda-falta)*100)/100; } else { parcialA={f,abono:queda}; queda=0; } }
   const amort=PROYECTO&&PROYECTO.metodo==='amortizado';
-  return `Paga ${Q(pendCuota)} de esta cuota y <b>${Q(extra)} de abono extra</b>, que ${amort?'se aplica como elijas abajo':'<b>se rebaja de lo que debe</b>'}: debía ${Q(debia)} → <b>le quedan ${Q(Math.max(0,debia-monto))}</b>.`+
-    (amort?'':` Con ese abono ${completas?`quedan pagadas ${completas} cuota(s) más`:''}${completas&&parcialA?' y ':''}${parcialA?`se abonan ${Q(parcialA.abono)} a la cuota ${parcialA.f.n} de ${parcialA.f.de} (${fmtD(parcialA.f.venc)})`:''}${!completas&&!parcialA?'queda a favor del cliente':''}.`);
+  return `Paga ${Q(pendCuota)} de esta cuota y <b>${Q(extra)} de ${amort?'abono extra':'abono a plan'}</b>, que ${amort?'se aplica como elijas abajo':'<b>se rebaja de lo que debe</b>'}: debía ${Q(debia)} → <b>le quedan ${Q(Math.max(0,debia-monto))}</b>.`+
+    (amort?'':` Con ese abono ${completas?`quedan pagadas ${completas} cuota(s) más`:''}${completas&&parcialA?' y ':''}${parcialA?`se abonan ${Q(parcialA.abono)} a la cuota ${parcialA.f.n} de ${parcialA.f.de} (${fmtD(parcialA.f.venc)})`:''}${!completas&&!parcialA?'queda a favor del cliente':''}. <span style="opacity:.8">El contrato fija ${'los pagos'} mensuales como abonos al precio total: el abono a plan los adelanta; no cambia el monto de las cuotas ni lo pactado.</span>`);
 }
 function pistaAplicacion(id){
   const sel=document.getElementById('p-giro'), caja=document.getElementById('p-aplicBox'), pista=document.getElementById('p-aplicPista'); if(!sel||!caja) return;
