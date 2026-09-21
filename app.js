@@ -1285,6 +1285,9 @@ const FILTROS_CT={
   bajo_recaudo:{t:'Bajo % recaudado',f:(c,ec)=>c.estado==='aprobado'&&ec.totalGiros>0&&ec.recaudado/ec.totalGiros<0.15},
   sin_boleta:{t:'Pagos sin respaldo',f:c=>c.estado==='aprobado'&&(indices().pagosPorContrato.get(String(c.id))||[]).some(p=>p.estado==='confirmado'&&!pagoRespaldado(p))},
   sin_firmado:{t:'Sin contrato firmado',f:c=>c.estado==='aprobado'&&!contratoFirmadoDe(c)},
+  /* Contado en pagos que todavía tiene cuotas mensuales fijas: su trato real es completar el 50%
+     con un tope de fecha (se marca en la ficha → «Marcar contado al 50%»). */
+  contado_pagos:{t:'Contado en pagos (por marcar)',f:c=>c.estado==='aprobado'&&c.modalidad!=='contado_diferido'&&c.modalidad!=='desmembrado'&&(c.modalidad==='contado_fraccionado'||(+c.tasa===0&&(+c.plazo||0)>1))},
   anulados:{t:'Anulados',f:c=>c.estado==='anulado'},
   desistidos:{t:'Desistieron',f:c=>c.estado==='desistido'},
 };
@@ -5897,6 +5900,18 @@ async function fraccionarEnganche(id){
   await registrarGestion(id,'Bitácora Socios','Contactado',`Enganche pendiente ${Q(d.pendiente||0)} en ${n} pago(s) de ${Q(d.cuota||0)} desde ${fmtD(f)}`);
   closeModal(); toast('Enganche de '+ct.no+' en '+n+' pagos de '+Q(d.cuota||0)); await traerCartera(); if(typeof pintarContrato==='function') pintarContrato();
 }
+/* Atajos del pago pactado: lo que falta para completar el 50% del precio y, si es contado
+   fraccionado, la fecha tope = fecha del contrato + N meses (un año por regla de la casa). */
+function pactoRapido(id, meses){
+  const ct=getContrato(id); if(!ct) return; const ec=estadoCuenta(ct);
+  const falta=Math.max(0,Math.round((ct.precio/2-(ec.recaudado||0))*100)/100);
+  if(!(falta>0)) return toast('Ya pagó el 50% o más: todo el saldo queda al desmembrar',5000);
+  document.getElementById('cd-pacto').value=falta.toFixed(2);
+  if(meses>0){ const d=new Date(String(ct.fecha||HOY_ISO).slice(0,10)+'T00:00:00'); d.setMonth(d.getMonth()+meses); let f=d.toISOString().slice(0,10);
+    if(f<=HOY_ISO){ toast('El año desde el contrato ya pasó: poné la fecha límite que acordaron',6000,true); f=''; }
+    document.getElementById('cd-pactoFecha').value=f; }
+  pistaPacto(id);
+}
 function pistaPacto(id){
   const s=+v('cd-saldo')||0, p=+v('cd-pacto')||0, el=document.getElementById('cd-pactoPista'); if(!el) return;
   el.value = p>0 ? (p>=s ? 'El pago pactado tiene que ser menor que el saldo' : `${Q(p)} con fecha · ${Q(Math.round((s-p)*100)/100)} al desmembrar`) : 'Todo el saldo queda al desmembrar';
@@ -5912,12 +5927,15 @@ function modalContadoDiferido(id){
         <div class="field"><label>Saldo que espera la desmembración (Q)</label><input id="cd-saldo" type="number" step="0.01" value="${saldo}"></div>
         <div class="field"><label>Fecha estimada de escrituras</label><input id="cd-fecha" type="date" value="2026-10-31"><div class="hint">Sólo para la caja esperada del mes; no vence ni genera mora.</div></div>
       </div>
-      <div class="sect-t" style="margin-top:14px">¿Pactó pagar una parte en una fecha? <span class="hint" style="font-weight:400">(opcional)</span></div>
-      <div class="hint" style="margin-bottom:8px">Ej.: «reservó con Q2,500 y paga el 50% en diciembre». Esa parte queda como una cuota normal con su fecha (se le recuerda por WhatsApp y sólo cae en mora si no la paga); el resto espera la desmembración.</div>
+      <div class="sect-t" style="margin-top:14px">¿Pactó pagar una parte con fecha? <span class="hint" style="font-weight:400">(opcional)</span></div>
+      <div class="hint" style="margin-bottom:8px">Dos casos típicos: <b>contado fraccionado</b> (va pagando su 50% en los abonos que quiera, con un año de tope) y <b>reserva + un pago fuerte</b> («paga el 50% en diciembre»). Esa parte queda como UN compromiso con fecha límite: cada pago abona ahí, y sólo hay mora si llega la fecha sin completarlo. El resto espera la desmembración.</div>
+      <div class="btn-row" style="margin:0 0 10px;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="pactoRapido('${id}',12)">Contado fraccionado · 50% con tope de 1 año</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="pactoRapido('${id}',0)">Sólo calcular lo que falta para el 50%</button>
+      </div>
       <div class="form-grid">
-        <div class="field"><label>Monto del pago pactado (Q)</label><input id="cd-pacto" type="number" step="0.01" min="0" placeholder="vacío = todo al desmembrar" oninput="pistaPacto('${id}')">
-          <div class="hint"><a href="#" onclick="document.getElementById('cd-pacto').value=(Math.max(0,Math.round((${ct.precio}/2-${ec.recaudado||0})*100)/100)).toFixed(2);pistaPacto('${id}');return false;">Completar el 50% del precio: ${Q(Math.max(0,ct.precio/2-(ec.recaudado||0)))}</a></div></div>
-        <div class="field"><label>Vence el</label><input id="cd-pactoFecha" type="date" min="${HOY_ISO}"></div>
+        <div class="field"><label>Lo que falta pagar con fecha (Q)</label><input id="cd-pacto" type="number" step="0.01" min="0" placeholder="vacío = todo al desmembrar" oninput="pistaPacto('${id}')"></div>
+        <div class="field"><label>Fecha límite</label><input id="cd-pactoFecha" type="date"></div>
         <div class="field full"><input id="cd-pactoPista" readonly style="background:var(--tint)" value="Todo el saldo queda al desmembrar"></div>
       </div>
       <div class="hint">Las cuotas pendientes se reemplazan por una sola por este saldo, sin fecha: no aparece en mora, en la agenda ni en los recordatorios. Cuando se desmembre, desde la ficha o desde Cobranza se libera con fecha y en las cuotas que se acuerden.</div>
