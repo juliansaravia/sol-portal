@@ -225,7 +225,8 @@ function calcSim(){
     <div><span>Enganche</span><b>${Qk(p.enganche)}</b></div>
     <div><span>Saldo a financiar</span><b>${Qk(p.saldo)}</b></div>
     <div><span>Plazo</span><b>${p.plazo} meses</b></div>
-    <div><span>Total del plan</span><b>${Qk(p.total)}</b></div>`;
+    <div><span>Total de las ${p.plazo} cuotas</span><b>${Qk(p.totalGiros)}</b></div>
+    <div><span>Total a pagar (enganche + cuotas)</span><b>${Qk(p.total)}</b></div>`;
 }
 
 /* ---------- Captura del lead (lo importante del embudo) ---------- */

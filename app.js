@@ -1470,7 +1470,8 @@ function pintarCot(){
       <div class="cot-row"><span>Enganche (cuota inicial)</span><b>${Q(p.enganche)}</b></div>
       <div class="cot-row"><span>Saldo a financiar</span><b>${Q(p.saldo)}</b></div>
       <div class="cot-row"><span>Plazo</span><b>${p.plazo} meses</b></div>
-      <div class="cot-row tot"><span>Total del plan</span><b>${Q(p.total)}</b></div>
+      <div class="cot-row"><span>Total de las ${p.plazo} cuotas</span><b>${Q(p.totalGiros)}</b></div>
+      <div class="cot-row tot"><span>Total a pagar (enganche + cuotas)</span><b>${Q(p.total)}</b></div>
     </div>
     <div class="cot-body" style="border-top:1px solid var(--line)">
       <div class="cot-row"><span>Saldo financiado</span><b>${Q(p.saldo)}</b></div>
@@ -1490,7 +1491,7 @@ function pintarCot(){
   // comparativa de plazos
   h+=`<div class="card"><div class="card-h"><h2>Compara los plazos</h2></div>
     <div class="card-b" style="padding:0"><table class="data"><thead><tr>
-    <th>Plazo</th><th class="num">Cuota mensual</th><th class="num">Total del plan</th></tr></thead><tbody>`;
+    <th>Plazo</th><th class="num">Cuota mensual</th><th class="num">Total a pagar (con enganche)</th></tr></thead><tbody>`;
   PLAZOS.forEach(n=>{const q=planFinanciamiento(cot.precio,cot.enganche,n);
     h+=`<tr class="click ${n===cot.plazo?'cot-sel':''}" onclick="cot.plazo=${n};renderCotizador()">
       <td><b>${n} meses</b></td><td class="num">${Q(q.cuota)}</td>
@@ -1506,7 +1507,7 @@ function cotCompartir(){
     (l?`Lote ${l.codigo} · ${l.area} m²\n`:'')+
     `\nPrecio: ${Q(p.precio)}\nEnganche: ${Q(p.enganche)}\n`+
     `Plazo: ${p.plazo} meses\n*Cuota mensual: ${Q(p.cuota)}*\n`+
-    `Total del plan: ${Q(p.total)}\n\nSOL Desarrollos`;
+    `Total de las ${p.plazo} cuotas: ${Q(p.totalGiros)}\nTotal a pagar (enganche + cuotas): ${Q(p.total)}\n\nSOL Desarrollos`;
   window.open('https://wa.me/?text='+encodeURIComponent(txt),'_blank');
   toast('Cotización lista para enviar');
 }
@@ -4017,7 +4018,7 @@ function estadoCuentaHTML(ct,ec,completo){
       <div><span>Cuota inicial</span><b>${Q(plan.enganche)}</b></div>
       <div><span>Plazo</span><b>${plan.plazo} meses</b></div>
       <div><span>Cuota mensual</span><b>${Q(plan.cuota)}</b></div>
-      <div><span>Total del plan</span><b>${Q(totalPlan)}</b></div>
+      <div><span>Total del plan <i style="font-weight:400;font-style:normal;opacity:.7">(con enganche)</i></span><b>${Q(totalPlan)}</b></div>
       <div><span>Pagado a la fecha</span><b>${Q(pagado)}</b></div>
       ${mora.total>0?`<div><span>Mora acumulada</span><b style="color:var(--vend)">${Q(mora.total)}</b></div>
       <div><span>Total a pagar hoy</span><b>${Q(venc.reduce((s,f)=>s+f.cuota,0)+mora.total)}</b></div>`:''}
@@ -4085,7 +4086,7 @@ function enviarEC(id){
   const prox=filas.find(f=>f.estado!=='pagado'&&!f.condicion);
   const cli=getCliente(ct.clienteId);
   const txt=`*Estado de cuenta · ${ct.no}*\n${nombreCliente(ct.clienteId)} · Lote ${ct.lote}\n\n`+
-    `Total del plan: ${Q(totalPlan)}\nPagado: ${Q(pagado)}\n*Saldo: ${Q(totalPlan-pagado)}*\n`+
+    `Total del plan (con enganche): ${Q(totalPlan)}\nPagado: ${Q(pagado)}\n*Saldo: ${Q(totalPlan-pagado)}*\n`+
     (prox?`\nPróxima cuota: ${Q(faltaDeFila(prox))}${abonadoDeFila(prox)>0?` (ya abonó ${Q(abonadoDeFila(prox))} de ${Q(prox.cuota)})`:''}\nVence: ${fmtD(prox.venc)}\n`:'\nPlan liquidado\n')+
     `\nSOL Desarrollos · La Esperanza`;
   const tel=(cli&&(cli.telefono||cli.tel)||'').replace(/\D/g,'');
@@ -4213,7 +4214,13 @@ const borradorVenta={
       if(!Object.values(d).some(x=>x&&x!==true&&String(x).trim())) return;
       localStorage.setItem(this.clave(), JSON.stringify({t:Date.now(),d})); }catch(e){} },
   restaurar(){ const j=this.leer(); if(!j) return; let n=0;
-    Object.entries(j.d).forEach(([id,val])=>{ const e=document.getElementById(id); if(!e||val===''||val==null) return; if(e.type==='checkbox'){ if(val&&!e.checked){ e.checked=true; if(id==='n-hist') ventaHistorica(true); } } else if(!e.value||/^(n-lote|n-vend|n-plz|n-res|n-precio|n-dir_depto|n-pdir_depto)$/.test(id)){ e.value=val; n++; } });
+    /* El precio y el enganche del borrador sólo valen para SU lote. Si el lote del borrador ya no
+       está (se vendió) o el formulario se abrió con otro, se quedan los del lote actual: si no, un
+       precio viejo (Q57,500) aparecía solo sobre un lote de Q55,000 como «sobreprecio». */
+    const selLote=document.getElementById('n-lote'); const loteBorrador=j.d['n-lote'];
+    const mismoLote=!!(selLote&&loteBorrador&&[...selLote.options].some(o=>o.value===loteBorrador));
+    Object.entries(j.d).forEach(([id,val])=>{ const e=document.getElementById(id); if(!e||val===''||val==null) return;
+      if(!mismoLote&&/^(n-lote|n-precio|n-res)$/.test(id)) return; if(e.type==='checkbox'){ if(val&&!e.checked){ e.checked=true; if(id==='n-hist') ventaHistorica(true); } } else if(!e.value||/^(n-lote|n-vend|n-plz|n-res|n-precio|n-dir_depto|n-pdir_depto)$/.test(id)){ e.value=val; n++; } });
     if(!n) return; if(typeof prevPlan==='function') prevPlan();
     const caja=document.getElementById('n-errores'); if(caja) caja.innerHTML=`<div class="aviso-info">Se recuperó lo que estabas escribiendo (${fmtD(new Date(j.t).toISOString().slice(0,10))}). <a href="#" onclick="borradorVenta.descartar();return false;"><b>Empezar en blanco</b></a></div>`; },
   vigilar(){ const m=document.getElementById('modal'); if(!m) return; m.addEventListener('input',()=>this.guardar()); m.addEventListener('change',()=>this.guardar()); },
@@ -4259,7 +4266,7 @@ function precioVentaElegido(){
 function _pistaPrecio(){
   const l=getLote(v('n-lote'))||{}; const e=document.getElementById('n-precioLista'); if(!e) return;
   const p=precioVentaElegido();
-  e.textContent = l.precio&&Math.abs(p-l.precio)>0.005 ? `lista ${Q(l.precio)} · ${p<l.precio?'descuento':'sobreprecio'} de ${Q(Math.abs(p-l.precio))}` : (l.precio?'precio de lista':'');
+  e.innerHTML = l.precio&&Math.abs(p-l.precio)>0.005 ? `lista ${Q(l.precio)} · ${p<l.precio?'descuento':'sobreprecio'} de ${Q(Math.abs(p-l.precio))} · <a href="#" onclick="precioDeLista();return false;">volver al de lista</a>` : (l.precio?'precio de lista · el enganche sale de este precio, no se le suma':'');
   e.style.color = l.precio&&Math.abs(p-l.precio)>0.005 ? '#8A5F12' : '';
 }
 
@@ -4316,7 +4323,8 @@ function prevPlan(){
   const p=planFinanciamiento(precio,+v('n-res')||0,md.plazo);
   el.innerHTML=`<div class="pp-row"><span>Saldo a financiar</span><b>${Q(p.saldo)}</b></div>
     <div class="pp-row"><span>Cuota mensual</span><b class="pp-big">${Q(p.cuota)}</b></div>
-    <div class="pp-row"><span>Total del plan</span><b>${Q(p.total)}</b></div>`;
+    <div class="pp-row"><span>Total de las ${p.plazo} cuotas</span><b>${Q(p.totalGiros)}</b></div>
+    <div class="pp-row"><span>Total a pagar <span class="hint" style="font-weight:400">(enganche ${Q(p.enganche)} + cuotas)</span></span><b>${Q(p.total)}</b></div>`;
 }
 async function crearContrato(){
   const d={}; CAMPOS_VENTA.forEach(c=>{ d[c.id]=v('n-'+c.id); });
@@ -4338,6 +4346,8 @@ async function crearContrato(){
     return;
   }
 
+  { const lt=getLote(v('n-lote'))||{}, pv=precioVentaElegido();
+    if(!historico&&lt.precio>0&&Math.abs(pv-lt.precio)>0.005&&!confirm(`El precio de venta (${Q(pv)}) es ${pv>lt.precio?'MAYOR':'MENOR'} que el precio de lista del lote (${Q(lt.precio)}): ${pv>lt.precio?'sobreprecio':'descuento'} de ${Q(Math.abs(pv-lt.precio))}.\n\nEl enganche NO se suma al precio: sale de él.\n\n¿Guardar la venta con ${Q(pv)}?`)) return; }
   const ct=await conBoton(()=>nuevoContrato({lote:v('n-lote'),nombre:`${d.nom} ${d.ape}`.trim(),dpi:validaDPI(d.dpi).valor,
     telefono:validaTel(d.tel).valor,email:validaMail(d.mail).valor,
     direccion:d.dir_depto?direccionCompleta(d,'dir'):'', ocupacion:[d.ocup,d.empleador].filter(Boolean).join(' · '), nit:d.nit||'', ingresoMensual:+String(d.ingreso).replace(/[^\d.]/g,''),

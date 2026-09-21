@@ -218,7 +218,8 @@ function hojaInterna(o) {
       ${fila('Interés', _q2(plan.interes) + ' <span class="mut">mensual</span>')}
       ${fila('Cuota mensual', `<b>${_q2(plan.cuota)}</b>`, 'destaca')}
       ${fila('Total de intereses', _q2(plan.totalInteres))}
-      ${fila('Total del plan', `<b>${_q2(plan.total)}</b>`, 'destaca')}
+      ${fila('Total de las ' + plan.plazo + ' cuotas', _q2(plan.totalGiros))}
+      ${fila('Total a pagar (enganche + cuotas)', `<b>${_q2(plan.total)}</b>`, 'destaca')}
       ${carga ? fila('Cuota / ingreso declarado',
           `${Math.round(carga.pct * 100)}% <span class="mut">(${carga.nivel})</span>`,
           carga.nivel === 'riesgoso' ? 'alerta' : '') : ''}
@@ -230,7 +231,7 @@ function hojaInterna(o) {
   <h2 class="hoja-int-t2">Alternativas de plazo</h2>
   <table class="hoja-int-tb comp">
     <thead><tr><th>Plazo</th><th class="num">Capital</th><th class="num">Interés</th>
-      <th class="num">Cuota</th><th class="num">Total intereses</th><th class="num">Total del plan</th></tr></thead>
+      <th class="num">Cuota</th><th class="num">Total intereses</th><th class="num">Total a pagar (con enganche)</th></tr></thead>
     <tbody>${plazos.map(p => {
       const x = planFinanciamiento(precio, enganche, p);
       return `<tr class="${p === plazo ? 'sel' : ''}"><td>${textoAnios(p)}</td>
