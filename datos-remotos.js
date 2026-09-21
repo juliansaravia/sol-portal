@@ -46,8 +46,13 @@ const estadoDePortal = e => ESTADO_PORTAL[e] || e;
 /* La base sólo pasa una cuota a 'vencido' cuando alguien recalcula el contrato. Para que la mora
    no dependa de eso, una cuota pendiente cuya fecha ya pasó se lee como vencida (no aplica al
    saldo «al desmembrar», que no vence por fecha). */
+/* Tolerancia por cuota (71): si a la cuota le faltan Q5 o menos, está pagada. La base ya lo
+   aplica al recalcular; aquí se repite para que un estado viejo de la base («parcial» por
+   centavos) no ponga al cliente en mora en la pantalla. El faltante sigue en el saldo. */
+const TOLERANCIA_CUOTA = 5;
 const estadoGiroAlDia = g => {
   const hoy = new Date().toISOString().slice(0, 10);
+  if (g.estado !== 'pagado' && !g.condicion && (Number(g.monto) || 0) - (Number(g.abonado) || 0) <= TOLERANCIA_CUOTA) return 'pagado';
   if (g.estado === 'pendiente' && !g.condicion && g.vencimiento && String(g.vencimiento).slice(0, 10) < hoy) return 'vencido';
   return g.estado;
 };
