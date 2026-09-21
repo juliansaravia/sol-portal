@@ -3870,6 +3870,8 @@ function pintarContrato(){
         <div>${(()=>{const rc=reciboDe(p.id); return rc?`<button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">Recibo ${String(rc.numero).padStart(6,'0')}</button>`:((bol.length||(p.referencia&&String(p.referencia).trim()))&&p.estado!=='rechazado'?`<button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">Emitir recibo</button>`:'');})()}
           ${bol.length?`<button class="btn btn-ghost btn-sm" onclick="verAdjunto('${bol[0].id}')">Ver</button>`:''}
           ${p.estado!=='rechazado'?`<button class="btn ${bol.length?'btn-ghost':'btn-gold'} btn-sm" onclick="modalBoleta('${p.id}')">${bol.length?'Otra boleta':'Subir boleta'}</button>`:''}
+          ${puedeBajarCuotasCon(ct,p)?`<button class="btn btn-ghost btn-sm" onclick="pagoABajarCuotas('${p.id}')" title="Este pago fue mayor que la cuota: lo que sobró adelantó cuotas. Con esto, en vez de adelantar, baja el monto de las cuotas que faltan.">Usar para bajar cuotas</button>`:''}
+          ${p.esAbono?`<span class="badge b-ok" title="Lo que sobró de este pago se repartió entre las cuotas que faltaban">abono a plan</span>`:''}
           ${p.estado!=='rechazado'&&PUEDE_ELIMINAR_PAGO()?`<button class="btn btn-ghost btn-sm" style="color:#B0562F" onclick="modalEliminarPago('${p.id}')">Eliminar</button>`:''}</div></div>`;});
   }
 
@@ -4526,6 +4528,28 @@ function pistaMonedaPago(){
    en el contrato otro pago vivo con la misma referencia. La misma referencia en
    OTRO contrato es legítima (una boleta que pagó varios lotes); en el mismo, casi
    siempre es un duplicado. Se avisa y se deja seguir sólo con un sí explícito. */
+/* Un pago confirmado mayor que la cuota, que entró adelantando cuotas, se puede pasar a «abono a plan que
+   baja cuotas» (81). Sólo interés simple, sólo administración y Finanzas, y sólo si aún no es un abono. */
+function puedeBajarCuotasCon(ct,p){
+  if(!ct||!p||p.estado!=='confirmado'||p.esAbono||(p.aplicacion&&p.aplicacion!=='cuotas')) return false;
+  if(!['admin','financiero'].includes(ROLE)||(PROYECTO&&PROYECTO.metodo==='amortizado')) return false;
+  const cuota=(planDelContratoSeguro(ct)||{}).cuota||0; return cuota>0 && (+p.monto||0) > cuota*1.02;
+}
+function planDelContratoSeguro(ct){ try{ return (typeof planDelContrato==='function')?planDelContrato(ct):(ct.plan||null); }catch(e){ return ct.plan||null; } }
+async function pagoABajarCuotas(pagoId){
+  const p=(DB.pagos||[]).find(x=>mismoId(x.id,pagoId)); if(!p) return; const ct=getContrato(p.contratoId)||{};
+  if(!confirm(`${ct.no||''} · pago de ${Q(p.monto)} del ${fmtD(p.fecha)}\n\nLo que ese pago tuvo DE MÁS sobre su cuota deja de adelantar cuotas y se reparte entre las cuotas que faltan, que BAJAN de monto. Mismo plazo, mismas fechas, mismos intereses; el cliente sigue debiendo lo mismo en total.\n\nNo cambia el pago ni su recibo. Para deshacerlo después habría que rehacer el plan.\n\n¿Bajar las cuotas con este pago?`)) return;
+  if(!(typeof hayBase==='function'&&hayBase()&&typeof sbPagoAAbonoPlan==='function')) return toast('Sólo con la base conectada',5000,true);
+  const r=await sbPagoAAbonoPlan(pagoId); if(!r||!r.ok) return;
+  const d=r.dato||{};
+  if(d.ok===false) return toast('Ese pago no tenía nada de más sobre su cuota: no hay abono que repartir',6000,true);
+  p.aplicacion='rebajar'; p.esAbono=true;
+  if(typeof cargarCartera==='function'){ try{ await cargarCartera(); }catch(e){} }
+  if(typeof reindexar==='function') reindexar();
+  anotar('pago.abono_plan', (ct.no||'')+' · '+Q(d.abono_a_plan||0)+' · cuota '+Q(d.cuota_antes||0)+' → '+Q(d.cuota_despues||0));
+  if(drawerCt) pintarContrato();
+  toast(`Abono a plan de ${Q(d.abono_a_plan||0)}: las ${d.cuotas_por_pagar||''} cuotas que faltan bajan de ${Q(d.cuota_antes||0)} a ${Q(d.cuota_despues||0)}`, 9000);
+}
 /* Eliminar un pago (74): administración y Finanzas. No se borra la fila: el pago
    deja de contar, su recibo se anula y queda quién lo eliminó y por qué. */
 const PUEDE_ELIMINAR_PAGO=()=>['admin','financiero'].includes(ROLE);
