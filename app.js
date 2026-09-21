@@ -5886,6 +5886,10 @@ async function fraccionarEnganche(id){
   await registrarGestion(id,'Bitácora Socios','Contactado',`Enganche pendiente ${Q(d.pendiente||0)} en ${n} pago(s) de ${Q(d.cuota||0)} desde ${fmtD(f)}`);
   closeModal(); toast('Enganche de '+ct.no+' en '+n+' pagos de '+Q(d.cuota||0)); await traerCartera(); if(typeof pintarContrato==='function') pintarContrato();
 }
+function pistaPacto(id){
+  const s=+v('cd-saldo')||0, p=+v('cd-pacto')||0, el=document.getElementById('cd-pactoPista'); if(!el) return;
+  el.value = p>0 ? (p>=s ? 'El pago pactado tiene que ser menor que el saldo' : `${Q(p)} con fecha · ${Q(Math.round((s-p)*100)/100)} al desmembrar`) : 'Todo el saldo queda al desmembrar';
+}
 function modalContadoDiferido(id){
   const ct=getContrato(id); if(!ct) return; const ec=estadoCuenta(ct);
   const saldo=Math.max(0,Math.round((ct.precio-(ec.recaudado||0))*100)/100);
@@ -5897,6 +5901,14 @@ function modalContadoDiferido(id){
         <div class="field"><label>Saldo que espera la desmembración (Q)</label><input id="cd-saldo" type="number" step="0.01" value="${saldo}"></div>
         <div class="field"><label>Fecha estimada de escrituras</label><input id="cd-fecha" type="date" value="2026-10-31"><div class="hint">Sólo para la caja esperada del mes; no vence ni genera mora.</div></div>
       </div>
+      <div class="sect-t" style="margin-top:14px">¿Pactó pagar una parte en una fecha? <span class="hint" style="font-weight:400">(opcional)</span></div>
+      <div class="hint" style="margin-bottom:8px">Ej.: «reservó con Q2,500 y paga el 50% en diciembre». Esa parte queda como una cuota normal con su fecha (se le recuerda por WhatsApp y sólo cae en mora si no la paga); el resto espera la desmembración.</div>
+      <div class="form-grid">
+        <div class="field"><label>Monto del pago pactado (Q)</label><input id="cd-pacto" type="number" step="0.01" min="0" placeholder="vacío = todo al desmembrar" oninput="pistaPacto('${id}')">
+          <div class="hint"><a href="#" onclick="document.getElementById('cd-pacto').value=(Math.max(0,Math.round((${ct.precio}/2-${ec.recaudado||0})*100)/100)).toFixed(2);pistaPacto('${id}');return false;">Completar el 50% del precio: ${Q(Math.max(0,ct.precio/2-(ec.recaudado||0)))}</a></div></div>
+        <div class="field"><label>Vence el</label><input id="cd-pactoFecha" type="date" min="${HOY_ISO}"></div>
+        <div class="field full"><input id="cd-pactoPista" readonly style="background:var(--tint)" value="Todo el saldo queda al desmembrar"></div>
+      </div>
       <div class="hint">Las cuotas pendientes se reemplazan por una sola por este saldo, sin fecha: no aparece en mora, en la agenda ni en los recordatorios. Cuando se desmembre, desde la ficha o desde Cobranza se libera con fecha y en las cuotas que se acuerden.</div>
     </div>
     <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -5905,9 +5917,12 @@ function modalContadoDiferido(id){
 async function guardarContadoDiferido(id){
   const saldo=+v('cd-saldo'); if(!(saldo>0)) return toast('El saldo tiene que ser mayor que cero',4000,true);
   if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se puede marcar',5000,true);
-  const r=await conBoton(()=>sbContadoDiferido(id, saldo, v('cd-fecha')||null)); if(!r||!r.ok) return;
-  anotar('contrato.contado_diferido', (getContrato(id)||{}).no+' · '+Q(saldo));
-  closeModal(); toast('Marcado: '+Q(saldo)+' quedan al desmembrar, fuera de la mora'); await traerCartera(); if(typeof pintarContrato==='function') pintarContrato();
+  const pacto=+v('cd-pacto')||0, pactoFecha=v('cd-pactoFecha');
+  if(pacto>0){ if(pacto>=saldo) return toast('El pago pactado tiene que ser menor que el saldo',5000,true);
+    if(!pactoFecha) return toast('Poné la fecha en que vence el pago pactado',5000,true); }
+  const r=await conBoton(()=>sbContadoDiferido(id, saldo, v('cd-fecha')||null, pacto>0?pacto:null, pacto>0?pactoFecha:null)); if(!r||!r.ok) return;
+  anotar('contrato.contado_diferido', (getContrato(id)||{}).no+' · '+Q(saldo)+(pacto>0?' · pactado '+Q(pacto)+' al '+pactoFecha:''));
+  closeModal(); toast(pacto>0?`Marcado: ${Q(pacto)} vence el ${fmtD(pactoFecha)} y ${Q(Math.round((saldo-pacto)*100)/100)} quedan al desmembrar`:'Marcado: '+Q(saldo)+' quedan al desmembrar, fuera de la mora', 6000); await traerCartera(); if(typeof pintarContrato==='function') pintarContrato();
 }
 function modalLiberarDiferido(id){
   const ct=getContrato(id); if(!ct) return; const ec=estadoCuenta(ct);

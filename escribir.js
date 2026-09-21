@@ -323,10 +323,18 @@ async function sbRegistrarPago(contrato_id, { monto, forma, cuenta, referencia, 
 }
 
 /** Contado al 50%: lo pendiente queda como saldo al desmembrar (40). */
-async function sbContadoDiferido(contrato_id, saldo, fecha_estimada) {
-  return escribir('marcar el saldo al desmembrar', async () =>
-    oExplota(await SB.rpc('contado_diferido', { p_contrato_id: Number(contrato_id), p_saldo: saldo == null ? null : Number(saldo),
-                                               p_fecha_estimada: fecha_estimada || null })));
+async function sbContadoDiferido(contrato_id, saldo, fecha_estimada, pago_pactado, pago_vence) {
+  return escribir('marcar el saldo al desmembrar', async () => {
+    const base = { p_contrato_id: Number(contrato_id), p_saldo: saldo == null ? null : Number(saldo), p_fecha_estimada: fecha_estimada || null };
+    const conPacto = Number(pago_pactado) > 0;
+    /* El pago pactado con fecha llega con 77_contado_con_pago_pactado.sql. */
+    let r = await SB.rpc('contado_diferido', { ...base, p_pago_pactado: conPacto ? Number(pago_pactado) : null, p_pago_vence: conPacto ? pago_vence : null });
+    if (r.error && /PGRST202/.test(String(r.error.code || ''))) {
+      if (conPacto) throw new Error('Para dejar un pago pactado con fecha falta correr la migración 77 en la base.');
+      r = await SB.rpc('contado_diferido', base);
+    }
+    return oExplota(r);
+  });
 }
 /** Enganche: cambiar el monto (se rehace el plan) o repartir lo pendiente en N pagos sin interés (54). */
 /** Posición de un lote en el plano de su proyecto (58). */
