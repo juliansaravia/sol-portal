@@ -548,7 +548,8 @@ function tasaMoraDe() { const P = (typeof PROYECTO !== 'undefined' && PROYECTO) 
 function diasGraciaDe() { const P = (typeof PROYECTO !== 'undefined' && PROYECTO) || {}; return (P.diasGracia != null) ? +P.diasGracia : DIAS_GRACIA; }
 function calcularMora(ct, hasta) {
   hasta = hasta || HOY_ISO;
-  const tasa = tasaMoraDe(), gracia = diasGraciaDe();
+  /* La mora corre desde que se agotan los 30 días del contrato (más los días de gracia del proyecto, si los hay). */
+  const tasa = tasaMoraDe(), gracia = (typeof PLAZO_PAGO_CUOTA !== 'undefined' ? PLAZO_PAGO_CUOTA : 30) + diasGraciaDe();
   let total = 0; const detalle = [];
   (ct.obligaciones || []).forEach(o => (o.giros || []).forEach(g => {
     if (g.estado !== 'vencido' && g.estado !== 'parcial') return;
@@ -649,8 +650,9 @@ function discrepanciasMora() {
   return out;
 }
 
-/* Días de atraso de la cuota más vieja a partir de los cuales un contrato cuenta como «en mora». */
-const DIAS_PARA_MORA = 30;
+/* Plazo que el contrato da para pagar cada cuota, contado desde la fecha de la cuota (cláusula tercera, C-II). */
+const PLAZO_PAGO_CUOTA = 30;
+const DIAS_PARA_MORA = PLAZO_PAGO_CUOTA;
 function estadoCuenta(ct) {
   const giros = ct.obligaciones.flatMap(o => o.giros.map(g => ({ ...g, obl: o.desc })));
   const totalGiros = giros.reduce((s, g) => s + g.monto, 0);
@@ -658,14 +660,23 @@ function estadoCuenta(ct) {
   /* Vencido = toda cuota cuya fecha ya pasó y no está pagada completa: también la que tiene un
      abono parcial, por lo que le falta. Así Cobranza y la caja esperada dicen lo mismo. */
   const _venc = g => g.vence || g.venc;
-  const vencidos = giros.filter(g => !g.condicion && (g.estado === 'vencido' || (g.estado === 'parcial' && _venc(g) && String(_venc(g)).slice(0, 10) < HOY_ISO)));
-  const montoVencido = Math.round(vencidos.reduce((s, g) => s + Math.max(0, (g.monto || 0) - (g.abonado || 0)), 0) * 100) / 100;
-  /* Atraso ≠ mora (21 sept 2026). Una sola cuota vencida hace menos de DIAS_PARA_MORA días es la
-     cuota del mes que todavía no entra (o que Finanzas no ha registrado): se cobra y se recuerda,
-     pero no es un contrato en mora. Mora = más de ese plazo, o dos o más cuotas vencidas. */
-  const masVieja = vencidos.map(g => String(_venc(g) || '').slice(0, 10)).filter(Boolean).sort()[0] || null;
-  const diasAtrasoMax = masVieja ? Math.max(0, Math.round((new Date(HOY_ISO + 'T00:00:00') - new Date(masVieja + 'T00:00:00')) / 86400000)) : 0;
-  const moraCalculada = vencidos.length >= 2 || diasAtrasoMax > DIAS_PARA_MORA;
+  /* ── Cuándo se atrasa una cuota (21 sept 2026) ──
+     El contrato lo dice (cláusula tercera, C-II): «Cada cuota deberá ser pagada dentro de un
+     plazo de treinta (30) días calendario». La fecha de la cuota abre ese plazo; se atrasa
+     cuando pasan los 30 días sin pagarla completa. El sistema la daba por vencida al día
+     siguiente de su fecha y casi toda la cartera salía «en mora» estando al día.
+       · enPlazo   cuotas cuya fecha ya llegó, sin pagar, dentro de sus 30 días: la cuota del mes
+       · vencidos  cuotas sin pagar con el plazo agotado: eso sí es mora */
+  const yaLlego = g => _venc(g) && String(_venc(g)).slice(0, 10) < HOY_ISO;
+  const impaga = g => !g.condicion && yaLlego(g) && (g.estado === 'vencido' || g.estado === 'parcial' || g.estado === 'pendiente');
+  const diasDesde = g => Math.round((new Date(HOY_ISO + 'T00:00:00') - new Date(String(_venc(g)).slice(0, 10) + 'T00:00:00')) / 86400000);
+  const vencidos = giros.filter(g => impaga(g) && diasDesde(g) > PLAZO_PAGO_CUOTA);
+  const enPlazo  = giros.filter(g => impaga(g) && diasDesde(g) <= PLAZO_PAGO_CUOTA);
+  const falta = g => Math.max(0, (g.monto || 0) - (g.abonado || 0));
+  const montoVencido = Math.round(vencidos.reduce((t, g) => t + falta(g), 0) * 100) / 100;
+  const montoDelMes  = Math.round(enPlazo.reduce((t, g) => t + falta(g), 0) * 100) / 100;
+  const diasAtrasoMax = vencidos.length ? Math.max(...vencidos.map(g => diasDesde(g) - PLAZO_PAGO_CUOTA)) : 0;
+  const moraCalculada = vencidos.length > 0;
   const rec = recaudadoDe(ct);
   const saldo = Math.max(0, totalGiros - rec);
   const prox = giros.find(g => !g.condicion && (g.estado === 'pendiente' || g.estado === 'vencido' || g.estado === 'parcial'));
@@ -703,7 +714,9 @@ function estadoCuenta(ct) {
     vencidas:     hayModelo ? (of ? (of.atraso || 0) : 0)    : vencidos.length,
     montoVencido: hayModelo ? (of ? (of.saldoVenc || 0) : 0) : montoVencido,
     enMora:       hayModelo ? !!of : moraCalculada,
-    atrasado:     hayModelo ? false : (vencidos.length > 0 && !moraCalculada),   // cuota del mes sin pagar, todavía no es mora
+    /* La cuota del mes, dentro de sus 30 días: se cobra y se recuerda, pero el contrato está al día. */
+    atrasado:     hayModelo ? false : (enPlazo.length > 0 && !moraCalculada),
+    montoDelMes, diaDelPlazo: enPlazo.length ? Math.max(...enPlazo.map(diasDesde)) : 0,
     diasAtraso:   diasAtrasoMax,
     cuotasPagadasModelo: of ? of.cuotasPag : null,
     fuenteMora: hayModelo ? 'Modelo Financiero' : 'giros de la base',

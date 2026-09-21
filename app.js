@@ -846,7 +846,7 @@ function renderInicio(){
     const paso = ec.enMora ? ['Gestionar',`abrirContrato('${c.id}')`]
                : (!cli ? ['Completar datos',`abrirContrato('${c.id}')`] : ['Abrir ficha',`abrirContrato('${c.id}')`]);
     h+=`<tr><td><b>${c.no}</b></td><td>${esc(c.lote)}</td><td>${cli?esc(cli.nombre):'<span class="hint">Pendiente de datos</span>'}</td>
-      <td>${ec.enMora?'<span class="badge b-mora">Mora</span>':(ec.atrasado?`<span class="badge b-pend" title="Una cuota vencida hace ${ec.diasAtraso} día(s): todavía no es mora">Atraso</span>`:estadoBadge(c.estado))}</td>
+      <td>${ec.enMora?'<span class="badge b-mora">Mora</span>':estadoBadge(c.estado)}</td>
       <td><a href="#" onclick="${paso[1]};return false;">${paso[0]} ›</a></td></tr>`;});
   h+=`</tbody></table></div></div>`;
 
@@ -1318,7 +1318,7 @@ function renderContratos(){
       <td>${cli&&cli!=='(sin titular)'?esc(cli):'<span class="hint">Sin cliente</span>'}</td><td>${c.vendedor?esc(c.vendedor):'<span class="hint">Sin vendedor</span>'}</td>
       <td>${fmtD(c.fecha)}</td><td class="num">${Qk(c.precio)}</td><td class="num">${Qk(ec.recaudado)}</td>
       <td class="num">${ec.montoVencido?`<span style="color:var(--mora)">${Qk(ec.montoVencido)}</span>`:'—'}</td>
-      <td>${ec.enMora?'<span class="badge b-mora">Mora</span>':(ec.atrasado?`<span class="badge b-pend" title="Una cuota vencida hace ${ec.diasAtraso} día(s): todavía no es mora">Atraso</span>`:estadoBadge(c.estado))}</td></tr>`;});
+      <td>${ec.enMora?'<span class="badge b-mora">Mora</span>':estadoBadge(c.estado)}</td></tr>`;});
   h+=`</tbody></table></div></div>`;
   C().innerHTML=h;
 }
@@ -2796,7 +2796,7 @@ function renderCobranza(){
   let h=`<div class="kpis">
     <div class="kpi"><div class="kpi-label">Contratos activos</div><div class="kpi-value">${activos.length}</div><div class="kpi-sub">${M.vigentes} al día</div></div>
     <div class="kpi warn"><div class="kpi-label">En mora</div><div class="kpi-value">${M.enMora}</div><div class="kpi-sub">${M.cuotasAtraso} cuota(s) en atraso</div></div>
-    <div class="kpi" style="cursor:pointer" onclick="irA('cobranza',{f:'atraso'})" title="Una sola cuota vencida hace ${typeof DIAS_PARA_MORA!=='undefined'?DIAS_PARA_MORA:30} días o menos: es la cuota del mes que todavía no entra. Se recuerda, pero no es mora."><div class="kpi-label">Atraso del mes</div><div class="kpi-value">${filas.filter(x=>x.ec.atrasado).length}</div><div class="kpi-sub">${Qk(filas.filter(x=>x.ec.atrasado).reduce((s,x)=>s+(x.ec.montoVencido||0),0))} · 1 cuota, hasta ${typeof DIAS_PARA_MORA!=='undefined'?DIAS_PARA_MORA:30} días</div></div>
+    <div class="kpi" style="cursor:pointer" onclick="irA('cobranza',{f:'atraso'})" title="Cuotas cuya fecha ya llegó y siguen dentro de los 30 días que el contrato da para pagarlas. El contrato está al día."><div class="kpi-label">Cuota del mes por cobrar</div><div class="kpi-value">${filas.filter(x=>x.ec.atrasado).length}</div><div class="kpi-sub">${Qk(filas.filter(x=>x.ec.atrasado).reduce((t,x)=>t+(x.ec.montoDelMes||0),0))} · dentro de sus 30 días</div></div>
     <div class="kpi accent"><div class="kpi-label">Saldo vencido</div><div class="kpi-value sm">${Qk(M.saldoVencido)}</div><div class="kpi-sub">a gestionar</div></div>
     <div class="kpi"><div class="kpi-label">Nunca pagaron</div><div class="kpi-value">${M.nuncaPagaron.length}</div><div class="kpi-sub">ventas que no arrancaron</div></div>
   </div>
@@ -2830,7 +2830,7 @@ function renderCobranza(){
 /* La cartera, priorizada: lo más vencido arriba, con días de atraso,
    último contacto, responsable y qué sigue. Manus: «no obligar a
    revisar listados largos sin priorización». */
-const FILTROS_COB={todos:'Todos',mora:'En mora',atraso:'Atraso del mes',aldia:'Al día',nunca:'Nunca pagaron',nuo:'NUO no contacta'};
+const FILTROS_COB={todos:'Todos',mora:'En mora',atraso:'Cuota del mes por cobrar',aldia:'Al día',nunca:'Nunca pagaron',nuo:'NUO no contacta'};
 let cobBusca='', cobFiltro='mora', cobOrden={k:'vencido',asc:false};
 function cobOrdenar(k){ cobOrden = cobOrden.k===k ? {k,asc:!cobOrden.asc} : {k,asc:k==='cliente'}; renderCobranza(); }
 function diasAtraso(ec){
@@ -2864,7 +2864,7 @@ function cartaCartera(){
     const accion = ec.enMora ? (dias>60?'Escalar':'Gestionar') : (ec.atrasado?'Recordar el pago':(ec.prox?'Recordar':'—'));
     h+=`<tr class="click" onclick="abrirContrato('${c.id}','cuenta')"><td><b>${c.no}</b>${c.nuoNoContacta?` <span title="NUO no contacta${c.nuoMotivo?': '+esc(c.nuoMotivo):''}">🔕</span>`:''}</td>
       <td>${esc(cli)}</td><td>${esc(c.lote)}</td>
-      <td class="num">${ec.montoVencido?`<span style="color:var(--mora);font-weight:600">${Qk(ec.montoVencido)}</span>`:'—'}${(()=>{const n=DB.pagos.filter(p=>mismoId(p.contratoId,c.id)&&p.estado==='registrado').length; return n?`<div class="hint" title="Hay boleta registrada que Finanzas aún no confirma: hasta entonces la cuota sigue vencida">${n} boleta(s) por confirmar</div>`:'';})()}</td>
+      <td class="num">${ec.montoVencido?`<span style="color:var(--mora);font-weight:600">${Qk(ec.montoVencido)}</span>`:(ec.atrasado?`<span title="Cuota del mes: está dentro de los 30 días que da el contrato">${Qk(ec.montoDelMes)}<div class="hint">día ${ec.diaDelPlazo} de 30</div></span>`:'—')}${(()=>{const n=DB.pagos.filter(p=>mismoId(p.contratoId,c.id)&&p.estado==='registrado').length; return n?`<div class="hint" title="Hay boleta registrada que Finanzas aún no confirma: hasta entonces la cuota sigue vencida">${n} boleta(s) por confirmar</div>`:'';})()}</td>
       <td class="num">${(()=>{const m=(typeof calcularMora==='function')?calcularMora(c).total:0; return m>0?`<span style="color:var(--mora)">${Qk(m)}</span>`:'—';})()}</td>
       <td class="num">${dias||'—'}</td><td class="num">${ec.vencidas||'—'}</td><td class="num">${Qk(ec.saldo)}</td>
       <td>${ult?esc(ult):'<span class="hint">Sin gestión</span>'}</td><td>${c.vendedor?esc(c.vendedor):'<span class="hint">Sin vendedor</span>'}</td>
