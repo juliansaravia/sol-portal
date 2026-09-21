@@ -55,12 +55,26 @@ function fechaEnLetras(iso){
   return `${numeroALetras(d.getDate())} de ${MESES[d.getMonth()]} de dos mil ${numeroALetras(d.getFullYear()-2000)}`;
 }
 
+/** El plan con el que se imprime cualquier papel del contrato. */
+function planDelContrato(ct){
+  const p=planFinanciamiento(ct.precio, ct.enganche!=null?ct.enganche:ENGANCHE_MIN, ct.plazo||60, ct.tasa);
+  const saldo=(ct.obligaciones||[]).find(o=>o.tipo==='saldo'||/saldo/i.test(o.desc||''));
+  const giros=saldo?(saldo.giros||[]).filter(g=>!g.condicion):[];
+  if(giros.length){ p.plazo=giros.length; p.cuota=+giros[0].monto||p.cuota; }
+  return p;
+}
+
 /* ---------- Generación del contrato ---------- */
 async function generarContrato(id){
   const ct=getContrato(id); if(!ct){toast('Contrato no encontrado');return;}
   const cli=getCliente(ct.clienteId)||{};
   const l=getLote(ct.clave || ct.lote)||{};
-  const plan=ct.plan||planFinanciamiento(ct.precio,ENGANCHE_MIN,60);
+  /* El plan sale SIEMPRE de los datos del contrato (precio, enganche, plazo, tasa),
+     igual que el formulario y el plan de pagos. Antes se usaba `ct.plan`, que un
+     contrato recién creado todavía no trae, y el respaldo era «60 meses con el
+     enganche mínimo»: un contado en 6 pagos salía impreso a 60 meses (21 sept 2026).
+     Si el contrato ya tiene sus cuotas reales en la base, mandan ellas. */
+  const plan=planDelContrato(ct);
   const E=EMPRESA;
   const nombre=`${cli.nombre||''} ${cli.apellido||''}`.trim().toUpperCase();
   const bl=v=>v?esc(v):'<span class="bl"></span>';

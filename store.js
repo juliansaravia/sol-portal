@@ -958,6 +958,8 @@ async function nuevoContrato({ lote, nombre, dpi, telefono, email, vendedor, res
       estado: r.dato.estado, obligaciones: [], origen: historico ? null : (origen || 'Campo'), fuente: historico ? 'Carga masiva' : 'Suite',
       modalidad: modalidad || null
     };
+    /* El plan desde ya, con SU plazo y SU tasa: lo leen la ficha y los papeles antes de recargar. */
+    ct.plan = planFinanciamiento(ct.precio, ct.enganche, ct.plazo, ct.tasa);
     DB.contratos.push(ct);
     l.estado = 'reservado';
     if (historico) {
