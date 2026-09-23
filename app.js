@@ -4032,6 +4032,9 @@ function pagosAplicados(ct,filas){
   const pagos=(indices().pagosPorContrato.get(String(ct.id))||[]).filter(p=>p.estado==='confirmado').slice().sort((a,b)=>String(a.fecha||'').localeCompare(String(b.fecha||''))||String(a.id).localeCompare(String(b.id),undefined,{numeric:true}));
   const resto=filas.map(f=>f.condicion?0:f.cuota); const etq=i=>`${filas[i].obl==='Cuota Inicial'?'enganche':(/abono/i.test(filas[i].obl||'')?String(filas[i].obl).toLowerCase():'cuota '+filas[i].n+'/'+filas[i].de)}`;
   const out=pagos.map(p=>({p,queda:+p.monto||0,det:[]}));
+  /* Primero el abono a plan / aporte a capital que la base le creó a ese pago (su propia línea del plan). */
+  out.forEach(x=>{ const i=filas.findIndex(f=>f.id!=null&&x.p.giroCapitalId!=null&&String(f.id)===String(x.p.giroCapitalId)); if(i<0) return;
+    const m=r2(Math.min(x.queda,resto[i])); if(m>0){ x.det.push({etq:etq(i),monto:m}); resto[i]=r2(resto[i]-m); x.queda=r2(x.queda-m); } });
   out.forEach(x=>{ const i=filas.findIndex(f=>f.id!=null&&x.p.giroId!=null&&String(f.id)===String(x.p.giroId)); if(i<0) return;
     const m=r2(Math.min(x.queda,resto[i])); if(m>0){ x.det.push({etq:etq(i),monto:m}); resto[i]=r2(resto[i]-m); x.queda=r2(x.queda-m); } });
   out.forEach(x=>{ for(let i=0;i<filas.length&&x.queda>0.004;i++){ if(resto[i]<=0.004) continue; const m=r2(Math.min(x.queda,resto[i])); x.det.push({etq:etq(i),monto:m}); resto[i]=r2(resto[i]-m); x.queda=r2(x.queda-m); } });
@@ -4045,15 +4048,20 @@ function filasEstadoCuenta(ct){
   const filas=[]; let saldo=0;
   ct.obligaciones.forEach(o=>{ saldo+=o.monto; });
   const totalPlan=saldo;
-  let restante=totalPlan;
-  ct.obligaciones.forEach(o=>{
+  ct.obligaciones.forEach((o,oi)=>{
     o.giros.forEach(g=>{
-      const antes=restante; restante=r2(restante-g.monto);
       filas.push({id:g.id!=null?g.id:null,obl:o.desc,n:g.n,de:o.nGiros||(o.giros||[]).length,venc:g.venc||g.vence||null,cuota:g.monto,
                   capital:g.capital!=null?g.capital:null, interes:g.interes!=null?g.interes:null, exonerado:!!g.exonerado, abonado:g.abonado||0,
-                  debido:antes,final:Math.max(0,restante),estado:g.estado,condicion:g.condicion||null});
+                  estado:g.estado,condicion:g.condicion||null,_o:o.orden!=null?o.orden:oi});
     });
   });
+  /* En orden de fecha (22 sept 2026): el enganche primero, después cada cuota y cada abono a plan o aporte a
+     capital en la fecha en que entró; el saldo al desmembrar al final. Antes los abonos salían al final del
+     plan y parecía que no se habían aplicado. */
+  const clave=f=>(/inicial/i.test(f.obl||'')?'0':(f.condicion?'2':'1'))+'|'+(f.condicion?'9999-12-31':String(f.venc||'9999-12-31').slice(0,10))+'|'+String(f._o).padStart(3,'0')+'|'+String(f.n).padStart(4,'0');
+  filas.sort((x,y)=>clave(x)<clave(y)?-1:1);
+  let restante=totalPlan;
+  filas.forEach(f=>{ f.debido=restante; restante=r2(restante-f.cuota); f.final=Math.max(0,restante); delete f._o; });
   return {filas,totalPlan,plan};
 }
 /* ── Estado de cuenta que se entiende (21 sept 2026) ──
@@ -4570,7 +4578,7 @@ function textoAbonoExtra(id, giroId, monto, pendCuota){
   const esCap=!amort&&v('p-aplic')==='capital';
   const sinAbono=filas.filter((f,i)=>i>(i0<0?-1:i0)&&!f.condicion&&f.estado!=='pagado'&&!(f.abonado>0)).length;
   const ahorro=esCap?Math.round(extra*(+(ct.tasa!=null?ct.tasa:0.015))*100)/100*sinAbono:0;
-  return `Paga ${Q(pendCuota)} de esta cuota y <b>${Q(extra)} de ${amort?'abono extra':(esCap?'aporte a capital':'abono a plan')}</b>, que ${amort?'se aplica como elijas abajo':'<b>se rebaja de lo que debe</b>'}: debía ${Q(debia)} → <b>le quedan ${Q(Math.max(0,debia-monto-ahorro))}</b>${esCap?' (ya descontados los intereses que deja de pagar)':''}.`+
+  return `${pendCuota>0?`Paga ${Q(pendCuota)} de esta cuota y `:(v('p-aplic')==='cuotas'?'Se aplica en orden a lo que deba (cuotas vencidas primero): ':'Todo el pago entra como ')}<b>${Q(extra)} de ${amort?'abono extra':(esCap?'aporte a capital':'abono a plan')}</b>, que ${amort?'se aplica como elijas abajo':'<b>se rebaja de lo que debe</b>'}: debía ${Q(debia)} → <b>le quedan ${Q(Math.max(0,debia-monto-ahorro))}</b>${esCap?' (ya descontados los intereses que deja de pagar)':''}.`+
     (amort?'':(v('p-aplic')==='capital'?(()=>{ const pend=filas.filter((f,i)=>i>(i0<0?-1:i0)&&!f.condicion&&f.estado!=='pagado'&&!(f.abonado>0)); if(!pend.length) return ' No quedan cuotas sin abono que bajar.';
         const tasa=+(ct.tasa!=null?ct.tasa:0.015), bajaCap=Math.floor(extra/pend.length*100)/100, bajaInt=Math.round(extra*tasa*100)/100;
         return ` <b>Aporte a capital:</b> las ${pend.length} cuotas que faltan bajan de ${Q(pend[0].cuota)} a <b>${Q(Math.max(0,pend[0].cuota-bajaCap-bajaInt))}</b> (−${Q(bajaCap)} de capital y −${Q(bajaInt)} de interés cada una). <span style="color:#8A5F12">La empresa deja de cobrar ${Q(bajaInt*pend.length)} de intereses en lo que resta del plazo.</span>`; })()
@@ -4580,12 +4588,14 @@ function textoAbonoExtra(id, giroId, monto, pendCuota){
 function pistaAplicacion(id){
   const sel=document.getElementById('p-giro'), caja=document.getElementById('p-aplicBox'), pista=document.getElementById('p-aplicPista'); if(!sel||!caja) return;
   const op=sel.options[sel.selectedIndex]; const pend=op?+op.dataset.pend||0:0; const m=+v('p-monto')||0;
-  const sobra=pend>0&&m>pend+0.005, parcial=pend>0&&m>0&&m<pend-0.005;
+  /* Sin cuota elegida («Sin cuota fija») y con monto: es un abono suelto, que también puede bajar cuotas o ir a capital. */
+  const sinCuota=!(op&&op.value)&&m>0;
+  const sobra=(pend>0&&m>pend+0.005)||sinCuota, parcial=pend>0&&m>0&&m<pend-0.005;
   const sel2=document.getElementById('p-aplic'), lbl=document.getElementById('p-aplicLbl');
   caja.hidden=!(sobra||parcial);
   if(sel2) sel2.hidden=!sobra;
-  if(lbl) lbl.hidden=!sobra;
-  if(pista) pista.innerHTML = sobra ? textoAbonoExtra(id, op&&op.value, m, pend) : (parcial ? `Pago parcial: quedan ${Q(pend-m)} de esta cuota.` : '');
+  if(lbl){ lbl.hidden=!sobra; if(sinCuota) lbl.textContent='Este pago no va a una cuota fija · ¿qué se hace con él?'; }
+  if(pista) pista.innerHTML = sobra ? textoAbonoExtra(id, op&&op.value, m, sinCuota?0:pend) : (parcial ? `Pago parcial: quedan ${Q(pend-m)} de esta cuota.` : '');
 }
 function pistaMonedaPago(){
   const e=document.getElementById('p-monedaPista'); if(!e) return; const tc=PROYECTO.tipoCambio||7.8; const m=+v('p-monto')||0;

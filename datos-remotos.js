@@ -275,7 +275,7 @@ async function cargarDesdeSupabase() {
       fecha: _fecha(p.fecha_pago), forma: p.forma_pago, giroId: p.giro_id || null,
       referencia: p.referencia, estado: p.estado,
       eliminado: !!p.eliminado, eliminadoMotivo: p.eliminado_motivo || '',
-      aplicacion: p.aplicacion || 'cuotas', esAbono: !!p.giro_capital_id
+      aplicacion: p.aplicacion || 'cuotas', esAbono: !!p.giro_capital_id, giroCapitalId: p.giro_capital_id || null
     }));
 
     const porContrato = new Map(DB.contratos.map(c => [c.id, c]));
