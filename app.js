@@ -4903,7 +4903,9 @@ async function estadoCuentaPDF(ct){
     if(sub){ doc.setFont('helvetica','normal'); doc.setTextColor(115); cabe(sub,x+12,y+51,CW-24,8); } doc.setTextColor(0); };
   const porPagar=filas.filter(f=>f.estado!=='pagado').length, pctPag=totalPlan?Math.round(pagado/totalPlan*100):0;
   caja(0,'Pagado a la fecha',Q(pagado),`${pctPag}% del plan`);
-  caja(1,'Saldo pendiente',Q(pend),porPagar?`${porPagar} cuota(s) por pagar`:'plan liquidado');
+  /* El saldo incluye los intereses del plazo que faltan: se dice, para que no se compare contra el precio del lote. */
+  { const capPend=filas.filter(f=>f.estado!=='pagado').reduce((s,f)=>s+(f.capital!=null?Math.max(0,f.capital-Math.min(f.abonado||0,f.capital)):faltaDeFila(f)),0);
+    caja(1,'Saldo pendiente (con intereses)',Q(pend),porPagar?`${porPagar} cuota(s) · capital ${Q(Math.min(pend,capPend))} + intereses ${Q(Math.max(0,pend-Math.min(pend,capPend)))}`:'plan liquidado'); }
   if(venc.length) caja(2,`${venc.length} cuota(s) vencida(s)`,Q(venc.reduce((s,f)=>s+faltaDeFila(f),0)),prox?`la más antigua venció el ${fmtD(venc[0].venc)}`:'',true);
   else caja(2,prox&&abonadoDeFila(prox)>0?'Falta de la próxima cuota':'Próxima cuota',prox?Q(faltaDeFila(prox)):'Plan liquidado',prox?`vence ${fmtD(prox.venc)}${abonadoDeFila(prox)>0?' · ya abonó '+Q(abonadoDeFila(prox)):''}`:'sin saldo');
   y+=CH+16;
