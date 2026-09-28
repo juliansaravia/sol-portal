@@ -2003,7 +2003,7 @@ function modalCobro(contrato,fecha){
         <div class="hint" id="rcPista">Si es menor, queda como pago parcial de esta cuota.</div></div>
       <div class="field"><label>Fecha del pago</label><input id="rcFecha" type="date" value="${HOY_ISO}" max="${HOY_ISO}"></div>
       <div class="field" id="rcAplicBox" hidden><label>${PROYECTO&&PROYECTO.metodo==='amortizado'?'Lo que sobra de la cuota':'Lo que sobra adelanta las cuotas siguientes'}</label>
-        <select id="rcAplic"><option value="cuotas">Adelanta las cuotas que siguen</option>${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Se abona a capital (recalcula las cuotas)</option>':'<option value="rebajar">Abono a plan · baja el monto de las cuotas que faltan</option>'+(['admin','gerencia','financiero'].includes(ROLE)?'<option value="capital">Aporte a capital · bajan capital E interés (la empresa cobra menos intereses)</option>':'')}</select></div>
+        <select id="rcAplic">${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Abono a capital</option><option value="cuotas">Adelantar cuotas</option>':'<option value="capital">Aporte a capital</option><option value="cuotas">Adelantar cuotas</option><option value="rebajar">Abono a plan (mismos intereses)</option>'}</select></div>
       <div class="field"><label>Forma de pago</label>
         <input id="rcForma" value="Transferencia bancaria" readonly style="background:var(--tint)">
         <div class="hint">Solo se reciben transferencias a la cuenta recaudadora. Decisión del dueño.</div></div>
@@ -2808,8 +2808,7 @@ function renderCobranza(){
     <div class="kpi accent"><div class="kpi-label">Saldo vencido</div><div class="kpi-value sm">${Qk(M.saldoVencido)}</div><div class="kpi-sub">a gestionar</div></div>
     <div class="kpi"><div class="kpi-label">Nunca pagaron</div><div class="kpi-value">${M.nuncaPagaron.length}</div><div class="kpi-sub">ventas que no arrancaron</div></div>
   </div>
-  <div class="hint" style="margin-bottom:14px">Fuente: <b>${M.fuente}</b>. El portal calcula la mora por su cuenta y no coincide — hasta que reproduzca la lógica del CRM, manda el modelo.
-    ${disc.length?` · <a href="#" onclick="verCuadreMora();return false;"><b>${disc.length} contrato(s) no cuadran</b></a>`:''}</div>`;
+`;
 
   h+=seccionDiferidos(activos);
   h+=cartaEnganches();
@@ -3930,9 +3929,8 @@ function pintarContrato(){
         <div>${(()=>{const rc=reciboDe(p.id); return rc?`<button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">Recibo ${String(rc.numero).padStart(6,'0')}</button>`:((bol.length||(p.referencia&&String(p.referencia).trim()))&&p.estado!=='rechazado'?`<button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">Emitir recibo</button>`:'');})()}
           ${bol.length?`<button class="btn btn-ghost btn-sm" onclick="verAdjunto('${bol[0].id}')">Ver</button>`:''}
           ${p.estado!=='rechazado'?`<button class="btn ${bol.length?'btn-ghost':'btn-gold'} btn-sm" onclick="modalBoleta('${p.id}')">${bol.length?'Otra boleta':'Subir boleta'}</button>`:''}
-          ${puedeBajarCuotasCon(ct,p)?`<button class="btn btn-ghost btn-sm" onclick="pagoABajarCuotas('${p.id}')" title="Este pago fue mayor que la cuota: lo que sobró adelantó cuotas. Con esto, en vez de adelantar, baja el monto de las cuotas que faltan.">Usar para bajar cuotas</button>`:''}
-          ${p.esAbono?`<span class="badge b-ok" title="Lo que sobró de este pago se repartió entre las cuotas que faltaban">${p.aplicacion==='capital'?'aporte a capital':'abono a plan'}</span>`:''}
-          ${p.esAbono&&p.aplicacion==='rebajar'&&['admin','gerencia','financiero'].includes(ROLE)&&!(PROYECTO&&PROYECTO.metodo==='amortizado')?`<button class="btn btn-ghost btn-sm" onclick="abonoACapital('${p.id}')" title="Hoy es abono a plan: bajó las cuotas sin tocar intereses. Como aporte a capital también baja el interés de cada cuota.">Pasar a aporte a capital</button>`:''}
+          ${(puedeBajarCuotasCon(ct,p)||(p.esAbono&&p.aplicacion==='rebajar'&&['admin','gerencia','financiero'].includes(ROLE)))?`<button class="btn btn-ghost btn-sm" onclick="pagoAAporte('${p.id}')">Aporte a capital</button>`:''}
+          ${p.esAbono?`<span class="badge b-ok">${p.aplicacion==='capital'?'aporte a capital':'abono a plan'}</span>`:''}
           ${p.estado!=='rechazado'&&PUEDE_ELIMINAR_PAGO()?`<button class="btn btn-ghost btn-sm" style="color:#B0562F" onclick="modalEliminarPago('${p.id}')">Eliminar</button>`:''}</div></div>`;});
   }
 
@@ -4526,10 +4524,10 @@ function modalPago(id){
   openModal(`<div class="modal-h"><h3>Registrar pago</h3><p>${ct.no} · ${esc(nombreCliente(ct.clienteId))}</p></div>
     <div class="modal-b"><div class="form-grid">
       <div class="field"><label>Cuota a la que se aplica</label><select id="p-giro" onchange="pistaAplicacion('${id}')">${opcionesCuotas(ct)}</select>
-        ${!(+ct.enganche>0)?`<div class="hint" style="color:#8A5F12;margin-top:4px">Este contrato está cargado con <b>enganche Q0</b>, por eso no aparece el enganche en la lista. Si sí lo pagó, corregí primero el monto en <a href="#" onclick="closeModal();modalEnganche('${id}');return false;"><b>Ficha → Enganche → Editar</b></a>: el plan se rehace con su Cuota Inicial y el pago se aplica ahí.</div>`:''}</div>
+        ${!(+ct.enganche>0)?`<div class="hint" style="color:#8A5F12;margin-top:4px">Enganche Q0 · <a href="#" onclick="closeModal();modalEnganche('${id}');return false;">corregir</a></div>`:''}</div>
       <div class="field"><label>Monto de la boleta *</label><input id="p-monto" type="number" step="0.01" placeholder="${ec.prox?'cuota: '+Q(ec.prox.monto):'monto que pagó'}" oninput="totalBoleta('p');pistaAplicacion('${id}')"></div>
-      <div class="field full" id="p-aplicBox" hidden><label id="p-aplicLbl">${PROYECTO&&PROYECTO.metodo==='amortizado'?'Pagó más que la cuota · ¿qué se hace con lo que sobra?':'Pagó más que la cuota · abono a plan'}</label>
-        <select id="p-aplic" onchange="pistaAplicacion('${id}')"><option value="cuotas">Adelantar las cuotas que siguen</option>${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Abonarlo a capital (se recalculan las cuotas, mismo plazo)</option>':'<option value="rebajar">Abono a plan · bajar el monto de las cuotas que faltan</option>'+(['admin','gerencia','financiero'].includes(ROLE)?'<option value="capital">Aporte a capital · bajan capital E interés de las cuotas (la empresa cobra menos intereses)</option>':'')}</select>
+      <div class="field full" id="p-aplicBox" hidden><label id="p-aplicLbl">Pagó más que la cuota</label>
+        <select id="p-aplic" onchange="pistaAplicacion('${id}')">${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Abono a capital</option><option value="cuotas">Adelantar cuotas</option>':'<option value="capital">Aporte a capital</option><option value="cuotas">Adelantar cuotas</option><option value="rebajar">Abono a plan (mismos intereses)</option>'}</select>
         <div class="hint" id="p-aplicPista"></div></div>
       <div class="field"><label>Forma de pago</label><input id="p-forma" value="Transferencia bancaria" readonly style="background:var(--tint)"></div>
       <div class="field"><label>Cuenta acreditada</label><select id="p-cta">${opcionesCuenta()}</select></div>
@@ -4575,15 +4573,15 @@ function textoAbonoExtra(id, giroId, monto, pendCuota){
     const falta=Math.max(0,(f.cuota||0)-(f.abonado||0)); if(falta<=0.004) continue;
     if(queda>=falta-0.004){ completas++; queda=Math.round((queda-falta)*100)/100; } else { parcialA={f,abono:queda}; queda=0; } }
   const amort=PROYECTO&&PROYECTO.metodo==='amortizado';
-  const esCap=!amort&&v('p-aplic')==='capital';
-  const sinAbono=filas.filter((f,i)=>i>(i0<0?-1:i0)&&!f.condicion&&f.estado!=='pagado'&&!(f.abonado>0)).length;
-  const ahorro=esCap?Math.round(extra*(+(ct.tasa!=null?ct.tasa:0.015))*100)/100*sinAbono:0;
-  return `${pendCuota>0?`Paga ${Q(pendCuota)} de esta cuota y `:(v('p-aplic')==='cuotas'?'Se aplica en orden a lo que deba (cuotas vencidas primero): ':'Todo el pago entra como ')}<b>${Q(extra)} de ${amort?'abono extra':(esCap?'aporte a capital':'abono a plan')}</b>, que ${amort?'se aplica como elijas abajo':'<b>se rebaja de lo que debe</b>'}: debía ${Q(debia)} → <b>le quedan ${Q(Math.max(0,debia-monto-ahorro))}</b>${esCap?' (ya descontados los intereses que deja de pagar)':''}.`+
-    (amort?'':(v('p-aplic')==='capital'?(()=>{ const pend=filas.filter((f,i)=>i>(i0<0?-1:i0)&&!f.condicion&&f.estado!=='pagado'&&!(f.abonado>0)); if(!pend.length) return ' No quedan cuotas sin abono que bajar.';
-        const tasa=+(ct.tasa!=null?ct.tasa:0.015), bajaCap=Math.floor(extra/pend.length*100)/100, bajaInt=Math.round(extra*tasa*100)/100;
-        return ` <b>Aporte a capital:</b> las ${pend.length} cuotas que faltan bajan de ${Q(pend[0].cuota)} a <b>${Q(Math.max(0,pend[0].cuota-bajaCap-bajaInt))}</b> (−${Q(bajaCap)} de capital y −${Q(bajaInt)} de interés cada una). <span style="color:#8A5F12">La empresa deja de cobrar ${Q(bajaInt*pend.length)} de intereses en lo que resta del plazo.</span>`; })()
-      :v('p-aplic')==='rebajar'?(()=>{ const pend=filas.filter((f,i)=>i>(i0<0?-1:i0)&&!f.condicion&&f.estado!=='pagado'&&!(f.abonado>0)); if(!pend.length) return ' No quedan cuotas sin abono que bajar: se adelantan las que siguen.';
-        const baja=Math.floor(extra/pend.length*100)/100; return ` Las <b>${pend.length} cuotas que faltan bajan de ${Q(pend[0].cuota)} a ${Q(Math.max(0,pend[0].cuota-baja))}</b> (−${Q(baja)} cada una), con las mismas fechas. `; })()+'<span style="opacity:.8">Los intereses pactados no cambian: sólo se reparte el abono entre las cuotas.</span>':'')||` Con ese abono ${completas?`quedan pagadas ${completas} cuota(s) más`:''}${completas&&parcialA?' y ':''}${parcialA?`se abonan ${Q(parcialA.abono)} a la cuota ${parcialA.f.n} de ${parcialA.f.de} (${fmtD(parcialA.f.venc)})`:''}${!completas&&!parcialA?'queda a favor del cliente':''}. <span style="opacity:.8">El contrato fija ${'los pagos'} mensuales como abonos al precio total: el abono a plan los adelanta; no cambia el monto de las cuotas ni lo pactado.</span>`);
+  const modo=v('p-aplic'), esCap=!amort&&modo==='capital';
+  const sinAbono=filas.filter((f,i)=>i>(i0<0?-1:i0)&&!f.condicion&&f.estado!=='pagado'&&!(f.abonado>0));
+  const tasa=+(ct.tasa!=null?ct.tasa:0.015);
+  if(amort) return `${Q(extra)} de más`;
+  if(modo==='capital'&&sinAbono.length){ const bc=Math.floor(extra/sinAbono.length*100)/100, bi=Math.round(extra*tasa*100)/100;
+    return `Aporte ${Q(extra)} · cuotas de ${Q(sinAbono[0].cuota)} a <b>${Q(Math.max(0,sinAbono[0].cuota-bc-bi))}</b> · ${Q(bi*sinAbono.length)} menos de intereses`; }
+  if(modo==='rebajar'&&sinAbono.length){ const bc=Math.floor(extra/sinAbono.length*100)/100;
+    return `Abono ${Q(extra)} · cuotas de ${Q(sinAbono[0].cuota)} a <b>${Q(Math.max(0,sinAbono[0].cuota-bc))}</b>`; }
+  return `${Q(extra)} de más · adelanta ${completas} cuota(s)${parcialA?' y abona '+Q(parcialA.abono)+' a la siguiente':''}`;
 }
 function pistaAplicacion(id){
   const sel=document.getElementById('p-giro'), caja=document.getElementById('p-aplicBox'), pista=document.getElementById('p-aplicPista'); if(!sel||!caja) return;
@@ -4625,6 +4623,20 @@ async function abonoACapital(pagoId){
   anotar('pago.aporte_capital', (ct.no||'')+' · aporte '+Q(d.aporte||0)+' · cuota '+Q(d.cuota_antes||0)+' → '+Q(d.cuota_despues||0)+' · intereses que no se cobran '+Q(d.interes_que_se_deja_de_cobrar||0));
   if(drawerCt) pintarContrato();
   toast(`Aporte a capital de ${Q(d.aporte||0)}: las ${d.cuotas||''} cuotas bajan de ${Q(d.cuota_antes||0)} a ${Q(d.cuota_despues||0)} · se dejan de cobrar ${Q(d.interes_que_se_deja_de_cobrar||0)} de intereses`, 11000);
+}
+/* Un pago confirmado mayor que la cuota pasa a aporte a capital (en uno o dos pasos, según como entró). */
+async function pagoAAporte(pagoId){
+  const p=(DB.pagos||[]).find(x=>mismoId(x.id,pagoId)); if(!p) return; const ct=getContrato(p.contratoId)||{};
+  if(!confirm(`${ct.no||''} · ${Q(p.monto)} del ${fmtD(p.fecha)}\n\nLo que pasa de la cuota se vuelve aporte a capital: bajan el capital y el interés de las cuotas que faltan. ¿Seguir?`)) return;
+  if(!(typeof hayBase==='function'&&hayBase())) return toast('Sólo con la base conectada',5000,true);
+  if(!p.esAbono){ const r1=await sbPagoAAbonoPlan(pagoId); if(!r1||!r1.ok) return; if((r1.dato||{}).ok===false) return toast('Ese pago no pasa de su cuota',6000,true); }
+  const r=await sbAbonoPlanACapital(pagoId); if(!r||!r.ok) return; const d=r.dato||{};
+  p.aplicacion='capital'; p.esAbono=true;
+  if(typeof cargarCartera==='function'){ try{ await cargarCartera(); }catch(e){} }
+  if(typeof reindexar==='function') reindexar();
+  anotar('pago.aporte_capital', (ct.no||'')+' · '+Q(d.aporte||0));
+  if(drawerCt) pintarContrato();
+  toast(`Aporte ${Q(d.aporte||0)} · cuotas de ${Q(d.cuota_antes||0)} a ${Q(d.cuota_despues||0)}`, 8000);
 }
 async function pagoABajarCuotas(pagoId){
   const p=(DB.pagos||[]).find(x=>mismoId(x.id,pagoId)); if(!p) return; const ct=getContrato(p.contratoId)||{};
