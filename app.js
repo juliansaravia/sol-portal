@@ -4895,23 +4895,49 @@ async function estadoCuentaPDF(ct){
   fila2('Precio de venta',Q(ct.precio),'Enganche',Q(plan.enganche));
   fila2('Plazo',`${plan.plazo} meses`,'Cuota mensual',Q(plan.cuota));
   y+=4; doc.setDrawColor(215); doc.setLineWidth(0.6); doc.line(M,y,W-M,y); y+=16;
-  // resumen en tres cajas del mismo ancho: etiqueta, valor que se ajusta y una línea de detalle
-  const GAP=12, CW=(W-2*M-2*GAP)/3, CH=60;
-  const caja=(i,t,v,sub,rojo)=>{ const x=M+i*(CW+GAP); doc.setDrawColor(205); doc.setLineWidth(0.8); doc.roundedRect(x,y,CW,CH,6,6);
-    doc.setFontSize(7.8); doc.setTextColor(115); doc.setFont('helvetica','normal'); doc.text(t.toUpperCase(),x+12,y+16);
-    doc.setFont('helvetica','bold'); doc.setTextColor(rojo?184:46,rojo?69:107,rojo?46:79); cabe(v,x+12,y+37,CW-24,16);
-    if(sub){ doc.setFont('helvetica','normal'); doc.setTextColor(115); cabe(sub,x+12,y+51,CW-24,8); } doc.setTextColor(0); };
-  const porPagar=filas.filter(f=>f.estado!=='pagado').length, pctPag=totalPlan?Math.round(pagado/totalPlan*100):0;
-  caja(0,'Pagado a la fecha',Q(pagado),`${pctPag}% del plan`);
-  /* El saldo incluye los intereses del plazo que faltan: se dice, para que no se compare contra el precio del lote. */
-  { const capPend=filas.filter(f=>f.estado!=='pagado').reduce((s,f)=>s+(f.capital!=null?Math.max(0,f.capital-Math.min(f.abonado||0,f.capital)):faltaDeFila(f)),0);
-    caja(1,'Saldo pendiente (con intereses)',Q(pend),porPagar?`${porPagar} cuota(s) · capital ${Q(Math.min(pend,capPend))} + intereses ${Q(Math.max(0,pend-Math.min(pend,capPend)))}`:'plan liquidado'); }
-  if(venc.length) caja(2,`${venc.length} cuota(s) vencida(s)`,Q(venc.reduce((s,f)=>s+faltaDeFila(f),0)),prox?`la más antigua venció el ${fmtD(venc[0].venc)}`:'',true);
-  else caja(2,prox&&abonadoDeFila(prox)>0?'Falta de la próxima cuota':'Próxima cuota',prox?Q(faltaDeFila(prox)):'Plan liquidado',prox?`vence ${fmtD(prox.venc)}${abonadoDeFila(prox)>0?' · ya abonó '+Q(abonadoDeFila(prox)):''}`:'sin saldo');
-  y+=CH+16;
+  /* ── Estado de cuenta resumido (28 sept 2026), en el formato que usa Finanzas ──
+     1 condiciones del contrato · 2 pagos recibidos (capital / interés) · 3 saldos pendientes
+     (capital si cancela de contado, intereses pendientes, total) · 4 detalle de cuotas. */
+  const esAbono=f=>/abono|aporte/i.test(f.obl||''), esIni=f=>/inicial/i.test(f.obl||'');
+  const capDe=f=>esAbono(f)?f.cuota:(f.capital!=null?f.capital:(esIni(f)?f.cuota:f.cuota)), intDe=f=>(esAbono(f)||esIni(f)||f.exonerado)?0:(f.interes!=null?f.interes:0);
+  const pagCap=f=>{ const p=abonadoDeFila(f), c=capDe(f), t=c+intDe(f); return t>0?Math.min(c,p*c/t):0; }, pagInt=f=>abonadoDeFila(f)-pagCap(f);
+  const S={eng:filas.filter(esIni), cuo:filas.filter(f=>!esIni(f)&&!esAbono(f)), abo:filas.filter(esAbono)};
+  const sum=(L,fn)=>Math.round(L.reduce((s,f)=>s+fn(f),0)*100)/100;
+  const finCap=sum(S.cuo,capDe), finInt=sum(S.cuo,intDe), engT=sum(S.eng,f=>f.cuota);
+  const pagadas=S.cuo.filter(f=>f.estado==='pagado'), parciales=S.cuo.filter(f=>f.estado!=='pagado'&&abonadoDeFila(f)>0);
+  const capPend=Math.max(0,sum(filas,capDe)-sum(filas,pagCap)), intPend=Math.max(0,sum(filas,intDe)-sum(filas,pagInt));
+  const seccion=t=>{ doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(0); doc.text(t,M,y); y+=6; doc.setDrawColor(46,107,79); doc.setLineWidth(1); doc.line(M,y,M+22,y); y+=12; };
+  const linea=(a,b,neg,sub)=>{ doc.setFont('helvetica',neg?'bold':'normal'); doc.setFontSize(sub?8.3:9.5); doc.setTextColor(sub?110:(neg?0:60)); doc.text(a,M+8,y); doc.setTextColor(0); doc.setFont('helvetica',neg?'bold':'normal'); if(b!=null) cabe(b,W-M-8,y,120,neg?10:9.5,{align:'right'}); y+=sub?12:15; };
+  const tabla3=(cabs,filasT)=>{ const cx=[M+8,W-M-300,W-M-190,W-M-8]; doc.setFillColor(238,242,240); doc.rect(M,y-11,W-2*M,16,'F'); doc.setFont('helvetica','bold'); doc.setFontSize(8.3); doc.setTextColor(80);
+      doc.text(cabs[0],cx[0],y); doc.text('Capital',cx[1],y,{align:'right'}); doc.text('Interés',cx[2],y,{align:'right'}); doc.text('Total',cx[3],y,{align:'right'}); doc.setTextColor(0); y+=15;
+      filasT.forEach(r=>{ doc.setFont('helvetica',r.neg?'bold':'normal'); doc.setFontSize(9.3); cabe(r.t,cx[0],y,cx[1]-cx[0]-70,9.3); cabe(Q(r.c),cx[1],y,95,9.3,{align:'right'}); cabe(Q(r.i),cx[2],y,95,9.3,{align:'right'}); cabe(Q(r.c+r.i),cx[3],y,120,9.3,{align:'right'}); y+=15; }); };
+  seccion('1. Condiciones del contrato');
+  /* Las condiciones son las pactadas al firmar (plan original); lo que un aporte a capital rebaja se ve en los saldos. */
+  const cap0=Math.max(0,(ct.precio||0)-engT), int0=Math.max(0,Math.round(((plan.totalGiros!=null?plan.totalGiros:finCap+finInt)-cap0)*100)/100);
+  linea('Monto de la venta',Q(ct.precio)); linea('Cuota inicial (enganche)',Q(engT)); linea('Monto financiado (capital)',Q(cap0));
+  linea(int0>0?`Intereses del plan de pagos (${(+(ct.tasa!=null?ct.tasa:0.015)*100).toFixed(1).replace(/\.0$/,'')}% mensual fijo)`:'Intereses del plan de pagos',Q(int0));
+  linea('Total a pagar (capital + intereses)',Q(engT+cap0+int0),true); linea('Plazo',`${plan.plazo} cuotas mensuales`); linea('Cuota mensual',Q(plan.cuota)); y+=6;
+  seccion('2. Pagos recibidos');
+  { const rango=pagadas.length?`giros ${String(pagadas[0].n).padStart(2,'0')}/${pagadas[0].de} al ${String(pagadas[pagadas.length-1].n).padStart(2,'0')}/${pagadas[pagadas.length-1].de}`:'ninguna completa';
+    const T=[{t:'Cuota inicial',c:sum(S.eng,pagCap),i:sum(S.eng,pagInt)},{t:`Cuotas pagadas (${rango})`,c:sum(pagadas,pagCap),i:sum(pagadas,pagInt)}];
+    if(parciales.length) T.push({t:`Abono a la cuota ${parciales.map(f=>f.n+'/'+f.de).join(', ')}`,c:sum(parciales,pagCap),i:sum(parciales,pagInt)});
+    S.abo.forEach(f=>T.push({t:`${f.obl} (${f.condicion?'Al desmembrar':fmtD(f.venc)})`,c:pagCap(f),i:0}));
+    T.push({t:'Total pagado',c:sum(filas,pagCap),i:sum(filas,pagInt),neg:true}); tabla3(['Pagos recibidos del cliente'],T);
+    if(S.abo.length){ doc.setFont('helvetica','normal'); doc.setFontSize(8.3); doc.setTextColor(110);
+      doc.text(S.abo.some(f=>/aporte/i.test(f.obl))?'El aporte a capital se descuenta del capital financiado y deja de generar interés: las cuotas que faltan bajan en capital y en interés.':'El abono a plan se descuenta del capital financiado y baja el monto de las cuotas que faltan; los intereses pactados no cambian.',M+8,y,{maxWidth:W-2*M-16}); doc.setTextColor(0); y+=22; } }
+  y+=4; seccion('3. Saldos pendientes');
+  linea('Saldo de capital — si se cancela de contado',Q(capPend)); const cuotasPend=S.cuo.filter(f=>f.estado!=='pagado');
+  linea(`Intereses pendientes del plan de pagos${cuotasPend.length?` (giros ${cuotasPend[0].n} - ${cuotasPend[cuotasPend.length-1].n})`:''}`,Q(intPend));
+  { const exon=Math.round((engT+cap0+int0-pagado-pend)*100)/100; if(exon>0.5) linea('Intereses que dejan de cobrarse por el aporte a capital','− '+Q(exon)); }
+  linea('Saldo total a adeudar — con intereses',Q(pend),true);
+  if(venc.length){ doc.setTextColor(184,69,46); linea(`${venc.length} cuota(s) vencida(s) · la más antigua venció el ${fmtD(venc[0].venc)}`,Q(venc.reduce((s,f)=>s+faltaDeFila(f),0)),true); doc.setTextColor(0); }
+  else if(prox) linea(abonadoDeFila(prox)>0?`Falta de la próxima cuota (${prox.n}/${prox.de}, vence ${fmtD(prox.venc)})`:`Próxima cuota (${prox.n}/${prox.de}, vence ${fmtD(prox.venc)})`,Q(faltaDeFila(prox)));
+  y+=6;
   { const mo=(typeof calcularMora==='function')?calcularMora(ct):{total:0};
     if(mo.total>0){ doc.setFont('helvetica','bold'); doc.setTextColor(184,69,46);
       cabe(`Mora acumulada al ${fmtD(HOY_ISO)}: ${Q(mo.total)} (${(mo.tasa*100).toFixed(1).replace(/\.0$/,'')}% mensual sobre lo vencido) · Total a pagar hoy: ${Q(venc.reduce((s,f)=>s+faltaDeFila(f),0)+mo.total)}`,M,y,W-2*M,9.5); doc.setTextColor(0); y+=16; } }
+  if(y>600){ doc.addPage(); y=48; }
+  seccion('4. Detalle de cuotas'); y-=4;
   // tabla de cuotas: columnas medidas al ancho de la página, números a la derecha
   const desg=filas.some(f=>f.capital!=null);
   const COLS=desg
@@ -4924,7 +4950,10 @@ async function estadoCuentaPDF(ct){
   const cab=()=>{ doc.setFillColor(238,242,240); doc.rect(M,y,W-2*M,19,'F'); doc.setTextColor(80);
     COLS.forEach((c,i)=>celda(i,c[0],y+12.5,8.3,true)); doc.setTextColor(0); y+=19; };
   cab();
-  filas.forEach((f,idx)=>{
+  /* Resumido: las cuotas pagadas o abonadas y las 3 que siguen; el resto se resume en una línea. */
+  const iProx=filas.findIndex(f=>f.estado!=='pagado'&&!(abonadoDeFila(f)>0)); const corte=iProx<0?filas.length:Math.min(filas.length,iProx+3);
+  const detalle=filas.slice(0,corte), resto=filas.slice(corte);
+  detalle.forEach((f,idx)=>{
     if(y>730){ doc.addPage(); y=48; cab(); }
     const est={pagado:['Pagada',46,107,79],vencido:['Vencida',184,69,46],parcial:['Falta '+Q(faltaDeFila(f)),138,95,18]}[f.estado]||['Pendiente',110,110,110];
     if(idx%2){ doc.setFillColor(249,250,249); doc.rect(M,y,W-2*M,ALTO,'F'); }
@@ -4935,6 +4964,8 @@ async function estadoCuentaPDF(ct){
     doc.setTextColor(est[1],est[2],est[3]); celda(k,est[0],y+11.5,8.6,true); doc.setTextColor(0);
     y+=ALTO;
   });
+  if(resto.length){ doc.setFont('helvetica','normal'); doc.setFontSize(8.6); doc.setTextColor(110);
+    const ult=resto[resto.length-1]; cabe(`… y ${resto.length} cuota(s) más, de ${Q(resto[0].cuota)} cada una, hasta ${ult.condicion?'la desmembración':fmtD(ult.venc)}.`,M+6,y+11.5,W-2*M-12,8.6); doc.setTextColor(0); y+=ALTO; }
   /* Totales del plan */
   doc.setDrawColor(190); doc.setLineWidth(0.8); doc.line(M,y,W-2*M+M,y); y+=1;
   { let k=0; doc.setTextColor(0); celda(k++,'',y+12,9); celda(k++,'Totales',y+12,9,true); k++;
