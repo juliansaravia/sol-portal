@@ -4928,7 +4928,7 @@ async function estadoCuentaPDF(ct){
   y+=4; seccion('3. Saldos pendientes');
   linea('Saldo de capital — si se cancela de contado',Q(capPend)); const cuotasPend=S.cuo.filter(f=>f.estado!=='pagado');
   linea(`Intereses pendientes del plan de pagos${cuotasPend.length?` (giros ${cuotasPend[0].n} - ${cuotasPend[cuotasPend.length-1].n})`:''}`,Q(intPend));
-  { const exon=Math.round((engT+cap0+int0-pagado-pend)*100)/100; if(exon>0.5) linea('Intereses que dejan de cobrarse por el aporte a capital','− '+Q(exon)); }
+  { const exon=Math.round((engT+cap0+int0-pagado-pend)*100)/100; if(exon>0.5) linea('Intereses que dejan de cobrarse por el aporte a capital','- '+Q(exon)); }
   linea('Saldo total a adeudar — con intereses',Q(pend),true);
   if(venc.length){ doc.setTextColor(184,69,46); linea(`${venc.length} cuota(s) vencida(s) · la más antigua venció el ${fmtD(venc[0].venc)}`,Q(venc.reduce((s,f)=>s+faltaDeFila(f),0)),true); doc.setTextColor(0); }
   else if(prox) linea(abonadoDeFila(prox)>0?`Falta de la próxima cuota (${prox.n}/${prox.de}, vence ${fmtD(prox.venc)})`:`Próxima cuota (${prox.n}/${prox.de}, vence ${fmtD(prox.venc)})`,Q(faltaDeFila(prox)));
