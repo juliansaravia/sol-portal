@@ -2770,7 +2770,12 @@ async function doEnviarAprobacion(id){
   pintarContrato(); if(typeof vista!=='undefined'&&vista==='vender') renderVender();
 }
 async function doAprobar(id){ if(await aprobarContrato(id)){toast('Contrato aprobado ✓');renderAprobacion();} }
-async function doRechazar(id){ if(await rechazarContrato(id)){toast('Contrato rechazado · lote liberado');renderAprobacion();} }
+/* Rechazar anula la solicitud y libera el lote: no va con un solo clic (1 oct 2026). */
+async function doRechazar(id){
+  const ct=getContrato(id); if(!ct) return;
+  const motivo=prompt(`Rechazar ${ct.no} · lote ${ct.lote} · ${nombreCliente(ct.clienteId)}\n\nLa solicitud se anula y el lote vuelve a estar disponible.\nMotivo del rechazo:`);
+  if(motivo===null) return; if(motivo.trim().length<5) return toast('Escribí el motivo del rechazo',5000,true);
+  if(await rechazarContrato(id)){ await registrarGestion(id,'Bitácora Socios','Solucionado','Motivo del rechazo: '+motivo.trim()); anotar('contrato.rechazar',ct.no+' · '+motivo.trim()); toast('Contrato rechazado · lote liberado');renderAprobacion();} }
 
 /* Dónde el portal y el modelo no coinciden. Se muestra, no se esconde. */
 function verCuadreMora(){
@@ -3023,6 +3028,15 @@ function renderConfirmacion(){
   C().innerHTML=h;
 }
 async function doConfirmar(id,ok){
+  if(!ok){ /* Rechazar saca el pago de la lista: se pregunta y queda el motivo (1 oct 2026). */
+    const p=DB.pagos.find(x=>mismoId(x.id,id)); const ct=p?getContrato(p.contratoId):null;
+    const motivo=prompt(`Rechazar el pago de ${p?Q(p.monto):''}${ct?' · '+ct.no+' · lote '+ct.lote:''}\n\nEl pago deja de estar por confirmar y no cuenta en el saldo.\nMotivo del rechazo:`);
+    if(motivo===null) return; if(motivo.trim().length<5) return toast('Escribí el motivo del rechazo',5000,true);
+    if(!(await confirmarPago(id,false))) return;
+    if(ct) await registrarGestion(ct.id,'Cobranza','Contactado','Pago de '+Q(p.monto)+(p.referencia?' (ref. '+p.referencia+')':'')+' rechazado · motivo: '+motivo.trim());
+    anotar('pago.rechazar',(ct?ct.no+' · ':'')+Q(p?p.monto:0)+' · '+motivo.trim());
+    toast('Pago rechazado'); renderConfirmacion(); return;
+  }
   if(!(await confirmarPago(id,ok))) return;
   toast(ok?'Pago confirmado ✓ · actualizando la cartera…':'Pago rechazado'); renderConfirmacion();
   /* La base aplicó el pago a las cuotas (02_funciones.sql); si el portal
