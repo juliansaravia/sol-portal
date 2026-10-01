@@ -2961,6 +2961,32 @@ async function confirmarCuadrados(){
   toast(`${ok} pago(s) confirmados · actualizando la cartera…`);
   if(typeof cargarCartera==='function' && hayRemoto()){ const r=await cargarCartera(); if(r.ok) renderConfirmacion(); } else renderConfirmacion();
 }
+/* Posible duplicado: otro pago vivo del mismo contrato con la misma referencia, o con el mismo monto a 3 días o menos. */
+function posibleDuplicado(p){
+  const nr=x=>String(x||'').replace(/\D/g,'').replace(/^0+/,''); const r=nr(p.referencia);
+  return (DB.pagos||[]).find(o=>!mismoId(o.id,p.id)&&mismoId(o.contratoId,p.contratoId)&&o.estado!=='rechazado'&&
+    ((r&&r.length>=5&&nr(o.referencia)===r)||(Math.abs((+o.monto||0)-(+p.monto||0))<0.01&&Math.abs(diasEnt(String(o.fecha).slice(0,10),String(p.fecha).slice(0,10)))<=3)))||null;
+}
+const nombrePersona=id=>{ if(id==null) return ''; const x=(DB.equipo||[]).find(e=>mismoId(e.id,id)); return x?x.nombre:''; };
+let histF='todos', histQ='';
+function historialPagosHTML(){
+  const q=histQ.trim().toLowerCase();
+  const L=(DB.pagos||[]).filter(p=>histF==='todos'||p.estado===histF).map(p=>({p,ct:getContrato(p.contratoId)}))
+    .filter(x=>!q||`${x.ct?x.ct.no:''} ${x.ct?x.ct.lote:''} ${x.ct?nombreCliente(x.ct.clienteId):''} ${x.p.referencia||''}`.toLowerCase().includes(q))
+    .sort((a,b)=>String(b.p.creado||b.p.fecha||'').localeCompare(String(a.p.creado||a.p.fecha||''))).slice(0,300);
+  const EST={confirmado:['Confirmado','b-ok'],registrado:['Por confirmar','b-pend'],rechazado:['Rechazado','b-mora']};
+  return `<div class="card"><div class="card-h" style="flex-wrap:wrap;gap:8px"><h2>Historial de pagos</h2>
+      <input class="chip" style="min-width:200px" placeholder="Contrato, lote, cliente o referencia" value="${esc(histQ)}" onchange="histQ=this.value;renderConfirmacion()"></div>
+    <div class="card-b chips">${[['todos','Todos'],['registrado','Por confirmar'],['confirmado','Confirmados'],['rechazado','Rechazados']].map(([k,t])=>`<button class="chip ${histF===k?'on':''}" onclick="histF='${k}';renderConfirmacion()">${t}</button>`).join('')}</div>
+    <div class="card-b" style="padding:0;overflow-x:auto"><table class="data"><thead><tr><th>Fecha de pago</th><th>Contrato</th><th>Lote</th><th>Cliente</th><th class="num">Monto</th><th>Referencia</th><th>Registró</th><th>Estado</th><th>Confirmó / rechazó</th></tr></thead><tbody>
+    ${L.length?L.map(({p,ct})=>{ const e=EST[p.estado]||[p.estado,'b-nod']; const quien=nombrePersona(p.aprobadoPor);
+      return `<tr class="click" ${ct?`onclick="abrirContrato('${ct.id}','cuenta')"`:''}><td>${fmtD(p.fecha)}</td><td><b>${ct?esc(ct.no):'—'}</b></td><td>${ct?esc(ct.lote):'—'}</td><td>${ct?esc(nombreCliente(ct.clienteId)):'—'}</td>
+        <td class="num">${Q(p.monto)}</td><td>${esc(p.referencia||'—')}</td>
+        <td>${esc(nombrePersona(p.registradoPor)||'WhatsApp')}${p.creado?`<div class="hint">${fmtD(String(p.creado).slice(0,10))}</div>`:''}</td>
+        <td><span class="badge ${e[1]}">${p.eliminado?'Eliminado':e[0]}</span></td>
+        <td>${p.estado==='registrado'?'—':`${esc(quien||'—')}${p.aprobadoEn?`<div class="hint">${fmtD(String(p.aprobadoEn).slice(0,10))}</div>`:''}`}</td></tr>`; }).join(''):'<tr><td colspan="9" class="empty">Sin pagos</td></tr>'}
+    </tbody></table></div></div>`;
+}
 function renderConfirmacion(){
   const pend=DB.pagos.filter(p=>p.estado==='registrado');
   const cu=window.__cuadre; const cuadran=cu?[...cu.porPago.keys()].filter(id=>pend.some(p=>mismoId(p.id,id))).length:0;
@@ -2986,14 +3012,14 @@ function renderConfirmacion(){
     const q=cu?cu.porPago.get(String(p.id)):null;
     h+=`<tr><td><b>${ct?ct.no:'—'}</b></td><td>${ct?esc(ct.lote):'—'}</td><td><span class="pill">${tipo}</span></td><td>${ct?esc(nombreCliente(ct.clienteId)):'—'}</td>
       <td>${fmtD(p.fecha)}</td><td>${esc(p.cuenta)||'—'}</td><td>${esc(p.forma)}</td><td>${esc(p.referencia)||'—'}</td>
-      <td class="num">${Q(p.monto)}</td>
+      <td class="num">${Q(p.monto)}${(()=>{ const d=posibleDuplicado(p); return d?`<div class="hint" style="color:#B0562F"><b>¿Duplicado?</b> ya hay ${Q(d.monto)} del ${fmtD(d.fecha)} (${d.estado==='confirmado'?'confirmado':'por confirmar'}${d.referencia?' · ref. '+esc(d.referencia):''})</div>`:''; })()}</td>
       <td>${bol.length?`<button class="btn btn-ghost btn-sm" onclick="verAdjunto('${bol[0].id}')">Ver boleta</button>`:(pagoRespaldado(p)?'<span class="hint">ref. banco</span>':'<span class="hint">sin boleta</span>')}</td>
       ${cu?`<td>${q?`<span class="badge b-ok">✓ ${q.via}</span><div class="hint">${fmtD(q.mov.fecha)} · ${esc(q.mov.ref||'')}</div>`:'<span class="badge b-mora">✗ no aparece</span>'}</td>`:''}
       <td><button class="btn btn-primary btn-sm" onclick="doConfirmar('${p.id}',true)">Confirmar</button>
           <button class="btn btn-ghost btn-sm" onclick="doConfirmar('${p.id}',false)">Rechazar</button>
+          <button class="btn btn-ghost btn-sm" onclick="modalEditarPago('${p.id}')">Editar</button>
           <button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">${reciboDe(p.id)?'Recibo':'Emitir recibo'}</button></td></tr>`;});
-  h+=`</tbody></table></div></div>
-    <div class="hint">La boleta se registra y quien confirma verifica el depósito contra el banco antes de aplicarlo a la cartera.</div>`;
+  h+=`</tbody></table></div></div>`+historialPagosHTML();
   C().innerHTML=h;
 }
 async function doConfirmar(id,ok){
@@ -3931,6 +3957,7 @@ function pintarContrato(){
           ${p.estado!=='rechazado'?`<button class="btn ${bol.length?'btn-ghost':'btn-gold'} btn-sm" onclick="modalBoleta('${p.id}')">${bol.length?'Otra boleta':'Subir boleta'}</button>`:''}
           ${(puedeBajarCuotasCon(ct,p)||(p.esAbono&&p.aplicacion==='rebajar'&&['admin','gerencia','financiero'].includes(ROLE)))?`<button class="btn btn-ghost btn-sm" onclick="pagoAAporte('${p.id}')">Aporte a capital</button>`:''}
           ${p.esAbono?`<span class="badge b-ok">${p.aplicacion==='capital'?'aporte a capital':'abono a plan'}</span>`:''}
+          ${p.estado!=='rechazado'&&PUEDE_EDITAR_PAGO()?`<button class="btn btn-ghost btn-sm" onclick="modalEditarPago('${p.id}')">Editar</button>`:''}
           ${p.estado!=='rechazado'&&PUEDE_ELIMINAR_PAGO()?`<button class="btn btn-ghost btn-sm" style="color:#B0562F" onclick="modalEliminarPago('${p.id}')">Eliminar</button>`:''}</div></div>`;});
   }
 
@@ -5412,6 +5439,48 @@ async function guardarBoleta(pagoId){
   closeModal(); toast('Boleta subida ✓ · emitiendo el recibo…'); drawerTab='cuenta'; pintarContrato(); pintarBadgeAsuntos();
   emitirYCompartirRecibo(p.id);
 }
+const PUEDE_EDITAR_PAGO=()=>['admin','gerencia','financiero','cobranza','confirmacion'].includes(ROLE);
+function modalEditarPago(pagoId){
+  const p=DB.pagos.find(x=>mismoId(x.id,pagoId)); if(!p) return;
+  const ct=getContrato(p.contratoId)||{}; const abierto=p.estado==='registrado';
+  const bol=adjuntosDe('pago',p.id).filter(a=>!/^Recibo \d/.test(a.descripcion||''));
+  openModal(`<div class="modal-h"><h3>Editar pago</h3><p>${esc(ct.no||'')} · Lote ${esc(ct.lote||'')} · ${esc(nombreCliente(ct.clienteId)||'')}</p></div>
+    <div class="modal-b"><div class="form-grid">
+      <div class="field"><label>Referencia de la boleta</label><input id="ed-ref" autocomplete="off" value="${esc(p.referencia||'')}"></div>
+      <div class="field"><label>Fecha de pago</label><input id="ed-fecha" type="date" max="${HOY_ISO}" value="${esc(String(p.fecha||'').slice(0,10))}" ${abierto?'':'disabled'}></div>
+      <div class="field"><label>Monto (Q)</label><input id="ed-monto" type="number" step="0.01" min="0" value="${(+p.monto||0).toFixed(2)}" ${abierto?'':'disabled'}></div>
+      <div class="field"><label>Boleta (foto o PDF)${bol.length?' · ya tiene '+bol.length:''}</label><input id="ed-archivo" type="file" accept="image/jpeg,image/png,image/webp,application/pdf"></div>
+    </div>${abierto?'':'<div class="hint">Pago ya confirmado: sólo cambian la referencia y la boleta.</div>'}</div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarEditarPago('${p.id}')">Guardar</button></div>`);
+}
+async function guardarEditarPago(pagoId){
+  const p=DB.pagos.find(x=>mismoId(x.id,pagoId)); if(!p) return;
+  const abierto=p.estado==='registrado';
+  const ref=v('ed-ref').trim(); const fecha=abierto?v('ed-fecha'):''; const monto=abierto?+v('ed-monto'):0;
+  if(abierto&&!(monto>0)) return toast('Escribí el monto',5000,true);
+  if(abierto&&(!fecha||fecha>HOY_ISO)) return toast('Revisá la fecha de pago',5000,true);
+  const entrada=document.getElementById('ed-archivo'); const archivo=entrada&&entrada.files&&entrada.files[0];
+  const cambiaRef=ref&&ref!==(p.referencia||''); const cambiaMonto=abierto&&Math.abs(monto-(+p.monto||0))>0.004; const cambiaFecha=abierto&&fecha!==String(p.fecha||'').slice(0,10);
+  if(!cambiaRef&&!cambiaMonto&&!cambiaFecha&&!archivo) return closeModal();
+  const antes=`${Q(p.monto)} · ${fmtD(p.fecha)} · ref. ${p.referencia||'—'}`;
+  if(typeof hayBase==='function'&&hayBase()){
+    const r=await conBoton(async()=>{
+      if(cambiaRef||cambiaMonto||cambiaFecha){
+        let r1=await sbCorregirPago(p.id, cambiaRef?ref:null, cambiaMonto?monto:null, cambiaFecha?fecha:null);
+        if(!r1.ok&&cambiaRef&&!cambiaMonto&&!cambiaFecha) r1=await sbReferenciaPago(p.id, ref);
+        if(!r1.ok) return r1;
+      }
+      if(cambiaRef) p.referencia=ref; if(cambiaMonto) p.monto=monto; if(cambiaFecha) p.fecha=fecha;
+      if(archivo){ const r2=await sbAdjuntar('pago', p.id, archivo, 'Boleta '+(p.referencia||'')); if(!r2.ok) return r2;
+        const a=r2.dato||{}; (DB.adjuntos=DB.adjuntos||[]).push({ id:a.id, entidad:'pago', entidadId:p.id, bucket:a.bucket, ruta:a.ruta, nombre:a.nombre, mime:a.mime, bytes:a.bytes, descripcion:a.descripcion, fecha:HOY_ISO }); }
+      return {ok:true}; });
+    if(!r||!r.ok) return;
+  } else { if(cambiaRef) p.referencia=ref; if(cambiaMonto) p.monto=monto; if(cambiaFecha) p.fecha=fecha; if(typeof saveDB==='function') saveDB(); }
+  anotar('pago.corregir', (getContrato(p.contratoId)||{}).no+' · antes '+antes+' · ahora '+`${Q(p.monto)} · ${fmtD(p.fecha)} · ref. ${p.referencia||'—'}`);
+  closeModal(); toast('Pago corregido ✓'); if(typeof reindexar==='function') reindexar();
+  if(drawerCt) pintarContrato(); if(typeof vista!=='undefined'&&vista==='confirmacion') renderConfirmacion(); if(typeof pintarBadgeAsuntos==='function') pintarBadgeAsuntos();
+}
 async function verAdjunto(id){
   const a=(DB.adjuntos||[]).find(x=>mismoId(x.id,id)); if(!a) return toast('No se encontró el respaldo');
   const r=await sbVerDocumento(a.bucket,a.ruta); if(!r||!r.ok){ if(r) toast(r.error,6000,true); return; }
@@ -6021,6 +6090,56 @@ function notaDiferido(ct){
 /* Enganche: corregir el monto y/o repartir lo que falta en pagos mensuales
    sin interés. Caso típico: enganche de Q25,000, pagó Q2,500 y el resto lo
    paga en tres meses. Lo hacen Administración, Gerencia y Finanzas. */
+/* Pagos a la medida (87): el saldo en los abonos que pactó el cliente, cada uno con su fecha y monto. */
+let __medida=[];
+function modalPlanMedida(id){
+  const ct=getContrato(id); if(!ct) return; const saldo=Math.round(((ct.precio||0)-(ct.enganche||0))*100)/100;
+  const saldoObl=(ct.obligaciones||[]).find(o=>o.tipo==='saldo'); const act=saldoObl?(saldoObl.giros||[]).filter(g=>!g.condicion):[];
+  __medida=(ct.modalidad==='contado_fraccionado'&&act.length&&act.length<=24)?act.map(g=>({fecha:String(g.vence||'').slice(0,10),monto:g.monto})):[{fecha:isoMas(HOY_ISO,30),monto:saldo}];
+  openModal(`<div class="modal-h"><h3>Pagos a la medida</h3><p>${esc(ct.no)} · Lote ${esc(ct.lote)} · saldo ${Q(saldo)}</p></div>
+    <div class="modal-b">
+      <div class="form-grid">
+        <div class="field"><label>Pagos iguales</label><input id="pm-n" type="number" min="1" max="60" value="5"></div>
+        <div class="field"><label>De (Q)</label><input id="pm-monto" type="number" step="0.01" value="1000"></div>
+        <div class="field"><label>Primero el</label><input id="pm-desde" type="date" value="${isoMas(HOY_ISO,30)}"></div>
+        <div class="field"><label>&nbsp;</label><button type="button" class="btn btn-ghost" onclick="medidaGenerar(${saldo})">Armar · el último por el resto</button></div>
+      </div>
+      <div id="pm-filas" style="margin-top:10px"></div>
+      <div class="btn-row" style="margin-top:6px"><button type="button" class="btn btn-ghost btn-sm" onclick="__medida.push({fecha:'',monto:0});medidaPintar(${saldo})">＋ Pago</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="medidaResto(${saldo})">Último = resto</button><span id="pm-suma" class="hint"></span></div>
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarPlanMedida('${ct.id}',${saldo})">Guardar plan</button></div>`);
+  medidaPintar(saldo);
+}
+function medidaPintar(saldo){
+  const c=document.getElementById('pm-filas'); if(!c) return;
+  c.innerHTML=__medida.map((p,i)=>`<div style="display:flex;gap:8px;align-items:center;margin:0 0 6px"><span class="hint" style="width:22px">${i+1}</span>
+    <div class="field" style="flex:1;margin:0"><input type="date" value="${esc(p.fecha||'')}" onchange="__medida[${i}].fecha=this.value"></div>
+    <div class="field" style="flex:1;margin:0"><input type="number" step="0.01" value="${p.monto||''}" oninput="__medida[${i}].monto=+this.value||0;medidaSuma(${saldo})"></div>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="__medida.splice(${i},1);medidaPintar(${saldo})">✕</button></div>`).join('');
+  medidaSuma(saldo);
+}
+function medidaSuma(saldo){ const s=Math.round(__medida.reduce((t,p)=>t+(+p.monto||0),0)*100)/100, d=Math.round((saldo-s)*100)/100; const e=document.getElementById('pm-suma');
+  if(e){ e.textContent=Math.abs(d)<0.01?`Suma ${Q(s)} ✓`:(d>0?`Faltan ${Q(d)}`:`Sobran ${Q(-d)}`); e.style.color=Math.abs(d)<0.01?'var(--green)':'#B0562F'; } }
+function medidaResto(saldo){ if(!__medida.length) return; const otros=__medida.slice(0,-1).reduce((t,p)=>t+(+p.monto||0),0); __medida[__medida.length-1].monto=Math.max(0,Math.round((saldo-otros)*100)/100); medidaPintar(saldo); }
+function medidaGenerar(saldo){
+  const n=Math.max(1,Math.min(60,+v('pm-n')||1)), m=+v('pm-monto')||0, d0=v('pm-desde')||isoMas(HOY_ISO,30);
+  if(m<=0||m*n>=saldo) return toast('Los pagos iguales tienen que sumar menos que el saldo',5000,true);
+  const [y0,m0,dd]=d0.split('-').map(Number);
+  const f=k=>{ const t=m0-1+k, y=y0+Math.floor(t/12), m=t%12, fin=new Date(Date.UTC(y,m+1,0)).getUTCDate(); return `${y}-${String(m+1).padStart(2,'0')}-${String(Math.min(dd,fin)).padStart(2,'0')}`; };
+  __medida=Array.from({length:n},(_,k)=>({fecha:f(k),monto:m})); __medida.push({fecha:f(n),monto:Math.round((saldo-m*n)*100)/100}); medidaPintar(saldo);
+}
+async function guardarPlanMedida(id,saldo){
+  const P=__medida.filter(p=>(+p.monto||0)>0);
+  if(!P.length||P.some(p=>!p.fecha)) return toast('Cada pago lleva fecha y monto',5000,true);
+  if(P.some((p,i)=>i&&p.fecha<P[i-1].fecha)) return toast('Las fechas van en orden',5000,true);
+  if(Math.abs(P.reduce((t,p)=>t+(+p.monto||0),0)-saldo)>0.01) return toast('Los pagos tienen que sumar '+Q(saldo),5000,true);
+  if(!(typeof hayBase==='function'&&hayBase()&&typeof sbPlanMedida==='function')) return toast('Sólo con la base conectada',5000,true);
+  const r=await conBoton(()=>sbPlanMedida(id,P)); if(!r||!r.ok) return;
+  anotar('contrato.plan_medida',(getContrato(id)||{}).no+' · '+P.length+' pagos');
+  closeModal(); toast('Plan guardado · '+P.length+' pagos'); if(typeof traerCartera==='function') await traerCartera(); if(typeof pintarContrato==='function') pintarContrato();
+}
 function modalEnganche(id){
   const ct=getContrato(id); if(!ct) return;
   const eng=ct.enganche!=null?ct.enganche:((ct.plan||{}).enganche||0);
@@ -6042,6 +6161,7 @@ function modalEnganche(id){
         <div class="field full"><label>Cuota pactada (opcional)</label><input id="en-cuotaFija" type="number" step="0.01" min="0" placeholder="Ej. 7707.58 · el precio se ajusta para que cuadre" oninput="precioDesdeCuota('${ct.id}')">
           <div class="hint">Si el contrato dice «N pagos de Q X», poné X aquí: se calcula el precio de venta que da exactamente esa cuota con el enganche, plazo y tasa de arriba.</div></div>
       </div>
+      <div class="btn-row" style="margin:0 0 8px"><button type="button" class="btn btn-ghost btn-sm" onclick="closeModal();modalPlanMedida('${ct.id}')">Pagos a la medida (fechas y montos distintos)</button></div>
       <div class="hint">Rehace todas las cuotas del saldo con estos datos, desde la primera fecha, y vuelve a aplicar en orden los pagos confirmados. Sirve cuando se firma un contrato nuevo con otras condiciones.</div>
       <div class="btn-row" style="margin:8px 0 0"><button class="btn btn-ghost btn-sm" onclick="guardarPlan('${ct.id}')">Rehacer plan</button></div>
       ${(()=>{ const sd=(ct.obligaciones||[]).find(o=>String(o.tipo||'').toLowerCase()==='saldo'); const gs=sd?(sd.giros||[]).filter(g=>g.capital!=null):[]; if(!gs.length) return '';

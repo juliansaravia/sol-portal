@@ -393,6 +393,13 @@ async function sbReferenciaPago(pago_id, referencia) {
   });
 }
 
+/** Corregir un pago: la referencia siempre; el monto y la fecha sólo mientras está por confirmar. */
+async function sbCorregirPago(pago_id, referencia, monto, fecha) {
+  return escribir('corregir el pago', async () => {
+    return oExplota(await SB.rpc('corregir_pago', { p_pago_id: Number(pago_id), p_referencia: referencia || null, p_monto: monto || null, p_fecha: fecha || null }));
+  });
+}
+
 /** Lotes comprados juntos: el expediente de `contrato_id` vive en `principal_id` (null = separar). */
 async function sbVincularExpediente(contrato_id, principal_id) {
   return escribir(principal_id ? 'compartir el expediente' : 'separar el expediente', async () => {
@@ -438,6 +445,12 @@ async function sbPagoAAbonoPlan(pago_id) {
 async function sbAbonoPlanACapital(pago_id) {
   return escribir('pasar el abono a aporte a capital', async () =>
     oExplota(await SB.rpc('abono_plan_a_capital', { p_pago_id: Number(pago_id) })));
+}
+
+/** Plan a la medida (87): el saldo en pagos con fecha y monto propios. */
+async function sbPlanMedida(contrato_id, pagos) {
+  return escribir('guardar el plan', async () =>
+    oExplota(await SB.rpc('plan_a_medida', { p_contrato_id: Number(contrato_id), p_pagos: pagos.map(p => ({ fecha: p.fecha, monto: Number(p.monto) })) })));
 }
 
 /** Finanzas elimina un pago (74): deja de contar, su recibo queda anulado y el
