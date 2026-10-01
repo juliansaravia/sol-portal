@@ -2747,14 +2747,14 @@ async function hacerReasignacion(de){
 function renderAprobacion(){
   const pend=DB.contratos.filter(c=>c.estado==='en_aprobacion');
   let h=`<div class="card"><div class="card-h"><h2>Bandeja del comité · ${pend.length} pendientes</h2></div>
-    <div class="card-b" style="padding:0"><table class="data"><thead><tr>
-    <th>No.</th><th>Lote</th><th>Cliente</th><th>Origen</th><th class="num">Valor</th><th>Expediente</th><th>Acción</th></tr></thead><tbody>`;
-  if(!pend.length)h+=`<tr><td colspan="7" class="empty">Sin solicitudes pendientes</td></tr>`;
-  pend.forEach(c=>{
+    <div class="card-b" style="padding:0;overflow-x:auto"><table class="data"><thead><tr>
+    <th>No.</th><th>Fecha</th><th>Lote</th><th>Cliente</th><th>Vendedor</th><th>Origen</th><th class="num">Valor</th><th>Expediente</th><th>Acción</th></tr></thead><tbody>`;
+  if(!pend.length)h+=`<tr><td colspan="9" class="empty">Sin solicitudes pendientes</td></tr>`;
+  pend.sort((a,b)=>String(a.fecha||'').localeCompare(String(b.fecha||''))).forEach(c=>{
     const cli=getCliente(c.clienteId), docs=documentosDe(c.id).length;
     const completo=cli&&cli.dpi&&cli.telefono;
-    h+=`<tr><td><b>${c.no}</b></td><td>${c.lote}</td><td>${esc(nombreCliente(c.clienteId))}</td>
-      <td><span class="pill">${esc(c.origen||'—')}</span></td><td class="num">${Qk(c.precio)}</td>
+    h+=`<tr><td><b>${c.no}</b></td><td>${c.fecha?fmtD(c.fecha):'—'}</td><td>${c.lote}</td><td>${esc(nombreCliente(c.clienteId))}</td>
+      <td>${esc(c.vendedor||'—')}</td><td><span class="pill">${esc(c.origen||'—')}</span></td><td class="num">${Qk(c.precio)}</td>
       <td>${completo?'<span class="badge b-ok">Completo</span>':'<span class="badge b-pend">Falta info</span>'} <span class="muted">${docs} doc.</span></td>
       <td><button class="btn btn-ghost btn-sm" onclick="abrirContrato('${c.id}')">Ver</button>
           <button class="btn btn-primary btn-sm" onclick="doAprobar('${c.id}')">Aprobar</button>
