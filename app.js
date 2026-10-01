@@ -4371,7 +4371,8 @@ function modalNuevoContrato(loteSel,pre){
       <div class="form-grid">
         ${campo('nom','Nombres',`value="${esc(nom.slice(0,2).join(' '))}"`)}
         ${campo('ape','Apellidos',`value="${esc(nom.slice(2).join(' '))}"`)}
-        ${campo('dpi','DPI (CUI)','placeholder="13 dígitos" inputmode="numeric"')}
+        ${campo('dpi','DPI (CUI) o pasaporte','placeholder="13 dígitos"')}
+        <div class="field"><label>&nbsp;</label><label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" id="n-extranjero" style="width:auto"> Pasaporte o documento de otro país</label></div>
         ${campo('nit','NIT','placeholder="1234567-8 o CF"')}
         ${campo('tel','Teléfono celular','placeholder="5555 5555 · extranjero: +1 305 555 0123" inputmode="tel"')}
         ${campo('mail','Correo electrónico','type="email" placeholder="nombre@correo.com"','full')}
@@ -4544,7 +4545,8 @@ async function crearContrato(){
   if(historico&&!v('n-fecha')) return toast('Falta la fecha del contrato',5000,true);
   if(!historico&&PROYECTO&&PROYECTO.enganchePct&&modalidadElegida().tipo==='credito'){ const min=Math.round(precioVentaElegido()*PROYECTO.enganchePct*100)/100; if((+v('n-res')||0)<min-0.01) return toast(`El enganche mínimo en ${PROYECTO.corto} es el ${Math.round(PROYECTO.enganchePct*100)}%: ${Q(min)}`,7000,true); }
   const robusto=!!(PROYECTO&&PROYECTO.creditoRobusto)&&modalidadElegida().tipo==='credito';
-  const r=validarVenta(d,{historico,robusto});
+  const docExtranjero=!!(document.getElementById('n-extranjero')&&document.getElementById('n-extranjero').checked);
+  const r=validarVenta(d,{historico,robusto,docExtranjero});
   if(!r.ok){
     r.errores.forEach(e=>{const el=document.getElementById('e-'+e.campo); if(el) el.textContent=e.msg;});
     const caja=document.getElementById('n-errores');
@@ -4558,7 +4560,7 @@ async function crearContrato(){
 
   { const lt=getLote(v('n-lote'))||{}, pv=precioVentaElegido();
     if(!historico&&lt.precio>0&&Math.abs(pv-lt.precio)>0.005&&!confirm(`El precio de venta (${Q(pv)}) es ${pv>lt.precio?'MAYOR':'MENOR'} que el precio de lista del lote (${Q(lt.precio)}): ${pv>lt.precio?'sobreprecio':'descuento'} de ${Q(Math.abs(pv-lt.precio))}.\n\nEl enganche NO se suma al precio: sale de él.\n\n¿Guardar la venta con ${Q(pv)}?`)) return; }
-  const ct=await conBoton(()=>nuevoContrato({lote:v('n-lote'),nombre:`${d.nom} ${d.ape}`.trim(),dpi:validaDPI(d.dpi).valor,
+  const ct=await conBoton(()=>nuevoContrato({lote:v('n-lote'),nombre:`${d.nom} ${d.ape}`.trim(),dpi:(docExtranjero?validaDocExtranjero(d.dpi):validaDPI(d.dpi)).valor,
     telefono:validaTel(d.tel).valor,email:validaMail(d.mail).valor,
     direccion:d.dir_depto?direccionCompleta(d,'dir'):'', ocupacion:[d.ocup,d.empleador].filter(Boolean).join(' · '), nit:d.nit||'', ingresoMensual:+String(d.ingreso).replace(/[^\d.]/g,''),
     constancia:d.fuente, pesoConstancia:pesoConstancia(d.fuente),

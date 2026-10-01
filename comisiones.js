@@ -398,6 +398,13 @@ function validaDPI(v) {
   return { ok:true, valor:d };
 }
 
+/* Comprador con documento de otro país (pasaporte, cédula extranjera): no es un CUI, se acepta como viene. */
+function validaDocExtranjero(v) {
+  const d = String(v || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  if (d.replace(/[^A-Z0-9]/g, '').length < 5) return { ok:false, msg:'Anota el número del pasaporte o documento' };
+  return { ok:true, valor:d.slice(0, 30) };
+}
+
 const validaMail = v => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(v||'').trim())
   ? { ok:true, valor:String(v).trim().toLowerCase() }
   : { ok:false, msg:'El correo no tiene forma válida' };
@@ -425,7 +432,7 @@ function validarVenta(datos, opciones) {
     if (!v) continue;
     let r = { ok:true };
     if (c.tipo === 'tel')   r = validaTel(v);
-    if (c.tipo === 'dpi')   r = validaDPI(v);
+    if (c.tipo === 'dpi')   r = (opciones && opciones.docExtranjero) ? validaDocExtranjero(v) : validaDPI(v);
     if (c.tipo === 'mail')  r = validaMail(v);
     if (c.tipo === 'depto') r = validaDepto(v);
     if (c.tipo === 'monto' && !(Number(String(v).replace(/[^\d.]/g,'')) > 0))
