@@ -2003,7 +2003,7 @@ function modalCobro(contrato,fecha){
         <div class="hint" id="rcPista">Si es menor, queda como pago parcial de esta cuota.</div></div>
       <div class="field"><label>Fecha del pago</label><input id="rcFecha" type="date" value="${HOY_ISO}" max="${HOY_ISO}"></div>
       <div class="field" id="rcAplicBox" hidden><label>${PROYECTO&&PROYECTO.metodo==='amortizado'?'Lo que sobra de la cuota':'Lo que sobra adelanta las cuotas siguientes'}</label>
-        <select id="rcAplic">${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Abono a capital</option><option value="cuotas">Adelantar cuotas</option>':'<option value="capital">Aporte a capital</option><option value="cuotas">Adelantar cuotas</option><option value="rebajar">Abono a plan (mismos intereses)</option>'}</select></div>
+        <select id="rcAplic">${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Abono a capital</option><option value="cuotas">Adelantar cuotas</option>':'<option value="cuotas">Adelantar cuotas</option><option value="capital">Aporte a capital</option><option value="rebajar">Abono a plan (mismos intereses)</option>'}</select></div>
       <div class="field"><label>Forma de pago</label>
         <input id="rcForma" value="Transferencia bancaria" readonly style="background:var(--tint)">
         <div class="hint">Solo se reciben transferencias a la cuenta recaudadora. Decisión del dueño.</div></div>
@@ -4598,7 +4598,7 @@ function modalPago(id){
         ${!(+ct.enganche>0)?`<div class="hint" style="color:#8A5F12;margin-top:4px">Enganche Q0 · <a href="#" onclick="closeModal();modalEnganche('${id}');return false;">corregir</a></div>`:''}</div>
       <div class="field"><label>Monto de la boleta *</label><input id="p-monto" type="number" step="0.01" placeholder="${ec.prox?'cuota: '+Q(ec.prox.monto):'monto que pagó'}" oninput="totalBoleta('p');pistaAplicacion('${id}')"></div>
       <div class="field full" id="p-aplicBox" hidden><label id="p-aplicLbl">Pagó más que la cuota</label>
-        <select id="p-aplic" onchange="pistaAplicacion('${id}')">${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Abono a capital</option><option value="cuotas">Adelantar cuotas</option>':'<option value="capital">Aporte a capital</option><option value="cuotas">Adelantar cuotas</option><option value="rebajar">Abono a plan (mismos intereses)</option>'}</select>
+        <select id="p-aplic" onchange="pistaAplicacion('${id}')">${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Abono a capital</option><option value="cuotas">Adelantar cuotas</option>':'<option value="cuotas">Adelantar cuotas</option><option value="capital">Aporte a capital</option><option value="rebajar">Abono a plan (mismos intereses)</option>'}</select>
         <div class="hint" id="p-aplicPista"></div></div>
       <div class="field"><label>Forma de pago</label><input id="p-forma" value="Transferencia bancaria" readonly style="background:var(--tint)"></div>
       <div class="field"><label>Cuenta acreditada</label><select id="p-cta">${opcionesCuenta()}</select></div>
@@ -4661,6 +4661,9 @@ function pistaAplicacion(id){
   const sinCuota=!(op&&op.value)&&m>0;
   const sobra=(pend>0&&m>pend+0.005)||sinCuota, parcial=pend>0&&m>0&&m<pend-0.005;
   const sel2=document.getElementById('p-aplic'), lbl=document.getElementById('p-aplicLbl');
+  /* Al contado (sin interés o con saldo al desmembrar) no hay adelanto ni aporte: todo pago abona al saldo. */
+  const ctA=getContrato(id); const contado=!ctA||!(+ctA.tasa>0)||/^contado/.test(String(ctA.modalidad||''));
+  if(contado){ caja.hidden=!parcial; if(sel2) sel2.hidden=true; if(lbl) lbl.hidden=true; if(pista) pista.innerHTML=parcial?`Pago parcial: quedan ${Q(pend-m)} de esta cuota.`:''; return; }
   caja.hidden=!(sobra||parcial);
   if(sel2) sel2.hidden=!sobra;
   if(lbl){ lbl.hidden=!sobra; if(sinCuota) lbl.textContent='Este pago no va a una cuota fija · ¿qué se hace con él?'; }
@@ -4782,7 +4785,8 @@ async function guardarPago(id){
        se registra suelto y la base lo aplica al confirmarse. */
     const ct=getContrato(id);
     const selG=document.getElementById('p-giro'); const opG=selG&&selG.options[selG.selectedIndex]; const giroId=opG&&opG.value?opG.value:null; const venceG=opG&&opG.dataset.vence||null;
-    const aplicacion=(document.getElementById('p-aplicBox')&&!document.getElementById('p-aplicBox').hidden&&['capital','rebajar'].includes(v('p-aplic')))?v('p-aplic'):'cuotas';
+    const selA=document.getElementById('p-aplic'), cajaA=document.getElementById('p-aplicBox');
+    const aplicacion=(cajaA&&!cajaA.hidden&&selA&&!selA.hidden&&['capital','rebajar'].includes(selA.value))?selA.value:'cuotas';   // sólo si la opción se le mostró a quien registra
     let pago=null;
     if(giroId && venceG && !historico && tc===1 && typeof marcarCobrada==='function'){
       /* A la cuota elegida: queda marcada en la agenda de cobranza y el pago apunta a ese giro. */
