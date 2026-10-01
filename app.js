@@ -2003,7 +2003,8 @@ function modalCobro(contrato,fecha){
         <div class="hint" id="rcPista">Si es menor, queda como pago parcial de esta cuota.</div></div>
       <div class="field"><label>Fecha del pago</label><input id="rcFecha" type="date" value="${HOY_ISO}" max="${HOY_ISO}"></div>
       <div class="field" id="rcAplicBox" hidden><label>${PROYECTO&&PROYECTO.metodo==='amortizado'?'Lo que sobra de la cuota':'Lo que sobra adelanta las cuotas siguientes'}</label>
-        <select id="rcAplic">${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Abono a capital</option><option value="cuotas">Adelantar cuotas</option>':'<option value="cuotas">Adelantar cuotas</option><option value="capital">Aporte a capital</option><option value="rebajar">Abono a plan (mismos intereses)</option>'}</select></div>
+        <select id="rcAplic">${PROYECTO&&PROYECTO.metodo==='amortizado'?'<option value="capital">Abono a capital</option><option value="cuotas">Adelantar cuotas</option>':'<option value="cuotas">Adelantar cuotas</option>'}</select>
+        ${PROYECTO&&PROYECTO.metodo==='amortizado'?'':'<div class="hint">El abono a capital (una cuota o más de más, estando al día) se registra desde el contrato.</div>'}</div>
       <div class="field"><label>Forma de pago</label>
         <input id="rcForma" value="Transferencia bancaria" readonly style="background:var(--tint)">
         <div class="hint">Solo se reciben transferencias a la cuenta recaudadora. Decisión del dueño.</div></div>
@@ -4652,6 +4653,7 @@ function textoAbonoExtra(id, giroId, monto, pendCuota){
     return `Aporte ${Q(extra)} · cuotas de ${Q(sinAbono[0].cuota)} a <b>${Q(Math.max(0,sinAbono[0].cuota-bc-bi))}</b> · ${Q(bi*sinAbono.length)} menos de intereses`; }
   if(modo==='rebajar'&&sinAbono.length){ const bc=Math.floor(extra/sinAbono.length*100)/100;
     return `Abono ${Q(extra)} · cuotas de ${Q(sinAbono[0].cuota)} a <b>${Q(Math.max(0,sinAbono[0].cuota-bc))}</b>`; }
+  if(!completas) return `${Q(extra)} de más · se abona a la cuota siguiente`;
   return `${Q(extra)} de más · adelanta ${completas} cuota(s)${parcialA?' y abona '+Q(parcialA.abono)+' a la siguiente':''}`;
 }
 function pistaAplicacion(id){
@@ -4667,7 +4669,24 @@ function pistaAplicacion(id){
   caja.hidden=!(sobra||parcial);
   if(sel2) sel2.hidden=!sobra;
   if(lbl){ lbl.hidden=!sobra; if(sinCuota) lbl.textContent='Este pago no va a una cuota fija · ¿qué se hace con él?'; }
-  if(pista) pista.innerHTML = sobra ? textoAbonoExtra(id, op&&op.value, m, sinCuota?0:pend) : (parcial ? `Pago parcial: quedan ${Q(pend-m)} de esta cuota.` : '');
+  /* Política del 1 oct 2026: el abono a capital empieza en UNA cuota completa de más y con el cliente al día.
+     Por debajo de eso lo que sobra es adelanto. Administración puede hacer la excepción (la base tiene el mismo candado). */
+  let aviso='';
+  if(sel2&&sobra&&!(PROYECTO&&PROYECTO.metodo==='amortizado')){
+    const pol=politicaAporte(ctA, op&&op.value, m, sinCuota?0:pend);
+    [...sel2.options].forEach(o=>{ if(o.value!=='cuotas'){ o.disabled=!pol.puede; o.hidden=!pol.puede; } });
+    if(!pol.puede){ sel2.value='cuotas'; aviso=`<div style="margin-top:4px">${pol.motivo}</div>`; }
+  }
+  if(pista) pista.innerHTML = sobra ? textoAbonoExtra(id, op&&op.value, m, sinCuota?0:pend)+aviso : (parcial ? `Pago parcial: quedan ${Q(pend-m)} de esta cuota.` : '');
+}
+function politicaAporte(ct, giroId, monto, pendCuota){
+  if(ROLE==='admin') return {puede:true};
+  const cuota=(planDelContratoSeguro(ct)||{}).cuota||0, extra=Math.round((monto-(pendCuota||0))*100)/100;
+  if(cuota>0&&extra<cuota-0.005) return {puede:false, motivo:`Abono a capital: desde una cuota completa de más (${Q(cuota)}). Aquí sobran ${Q(Math.max(0,extra))}: es adelanto.`};
+  const f=(document.getElementById('p-fecha')||{}).value||HOY_ISO, tol=(typeof TOLERANCIA_CUOTA==='number'?TOLERANCIA_CUOTA:5);
+  const atras=cuotasPendientes(ct).filter(g=>String(g.id)!==String(giroId||'')&&g.vence&&String(g.vence).slice(0,10)<f&&((g.monto||0)-(g.abonado||0))>tol).length;
+  if(atras) return {puede:false, motivo:`Abono a capital: sólo estando al día. Tiene ${atras} cuota(s) anterior(es) sin pagar; primero se cubren.`};
+  return {puede:true};
 }
 function pistaMonedaPago(){
   const e=document.getElementById('p-monedaPista'); if(!e) return; const tc=PROYECTO.tipoCambio||7.8; const m=+v('p-monto')||0;
@@ -4682,7 +4701,7 @@ function pistaMonedaPago(){
 function puedeBajarCuotasCon(ct,p){
   if(!ct||!p||p.estado!=='confirmado'||p.esAbono||(p.aplicacion&&p.aplicacion!=='cuotas')) return false;
   if(!['admin','financiero'].includes(ROLE)||(PROYECTO&&PROYECTO.metodo==='amortizado')) return false;
-  const cuota=(planDelContratoSeguro(ct)||{}).cuota||0; return cuota>0 && (+p.monto||0) > cuota*1.02;
+  const cuota=(planDelContratoSeguro(ct)||{}).cuota||0; return cuota>0 && (+p.monto||0) >= (ROLE==='admin'?cuota*1.02:cuota*2-0.005);   // política: una cuota completa de más
 }
 function planDelContratoSeguro(ct){ try{ return (typeof planDelContrato==='function')?planDelContrato(ct):(ct.plan||null); }catch(e){ return ct.plan||null; } }
 async function abonoACapital(pagoId){
