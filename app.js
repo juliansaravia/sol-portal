@@ -2993,10 +2993,13 @@ function historialPagosHTML(){
   const q=histQ.trim().toLowerCase();
   const L=(DB.pagos||[]).filter(p=>histF==='todos'||p.estado===histF).map(p=>({p,ct:getContrato(p.contratoId)}))
     .filter(x=>!q||`${x.ct?x.ct.no:''} ${x.ct?x.ct.lote:''} ${x.ct?nombreCliente(x.ct.clienteId):''} ${x.p.referencia||''}`.toLowerCase().includes(q))
-    .sort((a,b)=>String(b.p.creado||b.p.fecha||'').localeCompare(String(a.p.creado||a.p.fecha||''))).slice(0,300);
+    .sort((a,b)=>String(b.p.creado||b.p.fecha||'').localeCompare(String(a.p.creado||a.p.fecha||'')));
+  window.__histFilas=L; const total=L.length, suma=L.filter(x=>x.p.estado==='confirmado').reduce((t,x)=>t+(+x.p.monto||0),0); L.length=Math.min(L.length,300);
   const EST={confirmado:['Confirmado','b-ok'],registrado:['Por confirmar','b-pend'],rechazado:['Rechazado','b-mora']};
   return `<div class="card"><div class="card-h" style="flex-wrap:wrap;gap:8px"><h2>Historial de pagos</h2>
-      <input class="chip" style="min-width:200px" placeholder="Contrato, lote, cliente o referencia" value="${esc(histQ)}" onchange="histQ=this.value;renderConfirmacion()"></div>
+      <input class="chip" style="min-width:200px" placeholder="Contrato, lote, cliente o referencia" value="${esc(histQ)}" onchange="histQ=this.value;renderConfirmacion()">
+      <span class="hint">${total} pago(s) · confirmado ${Q(suma)}${total>300?' · se muestran los 300 más recientes':''}</span>
+      <button class="btn btn-ghost btn-sm" onclick="exportarHistorialPagos()">Excel</button></div>
     <div class="card-b chips">${[['todos','Todos'],['registrado','Por confirmar'],['confirmado','Confirmados'],['rechazado','Rechazados']].map(([k,t])=>`<button class="chip ${histF===k?'on':''}" onclick="histF='${k}';renderConfirmacion()">${t}</button>`).join('')}</div>
     <div class="card-b" style="padding:0;overflow-x:auto"><table class="data"><thead><tr><th>Fecha de pago</th><th>Contrato</th><th>Lote</th><th>Cliente</th><th class="num">Monto</th><th>Referencia</th><th>Registró</th><th>Estado</th><th>Confirmó / rechazó</th></tr></thead><tbody>
     ${L.length?L.map(({p,ct})=>{ const e=EST[p.estado]||[p.estado,'b-nod']; const quien=nombrePersona(p.aprobadoPor);
@@ -3007,10 +3010,20 @@ function historialPagosHTML(){
         <td>${p.estado==='registrado'?'—':`${esc(quien||'—')}${p.aprobadoEn?`<div class="hint">${fmtD(String(p.aprobadoEn).slice(0,10))}</div>`:''}`}</td></tr>`; }).join(''):'<tr><td colspan="9" class="empty">Sin pagos</td></tr>'}
     </tbody></table></div></div>`;
 }
+function exportarHistorialPagos(){
+  const EST={confirmado:'Confirmado',registrado:'Por confirmar',rechazado:'Rechazado'};
+  const f=[['Fecha de pago','Contrato','Lote','Cliente','Monto','Referencia','Forma','Estado','Registró','Fecha de registro','Confirmó / rechazó','Fecha']];
+  (window.__histFilas||[]).forEach(({p,ct})=>f.push([String(p.fecha||'').slice(0,10),ct?ct.no:'',ct?ct.lote:'',ct?nombreCliente(ct.clienteId):'',+p.monto||0,p.referencia||'',p.forma||'',
+    p.eliminado?'Eliminado':(EST[p.estado]||p.estado),nombrePersona(p.registradoPor)||'WhatsApp',String(p.creado||'').slice(0,10),p.estado==='registrado'?'':nombrePersona(p.aprobadoPor),String(p.aprobadoEn||'').slice(0,10)]));
+  descargarCSV('historial-de-pagos-'+HOY_ISO, f);
+}
+let confTab='pendientes';
 function renderConfirmacion(){
   const pend=DB.pagos.filter(p=>p.estado==='registrado');
+  const pestanas=`<div class="chips" style="margin:0 0 12px">${[['pendientes','Por confirmar · '+pend.length],['historial','Historial de pagos']].map(([k,t])=>`<button class="chip ${confTab===k?'on':''}" onclick="confTab='${k}';renderConfirmacion()">${t}</button>`).join('')}</div>`;
+  if(confTab==='historial'){ C().innerHTML=pestanas+historialPagosHTML(); return; }
   const cu=window.__cuadre; const cuadran=cu?[...cu.porPago.keys()].filter(id=>pend.some(p=>mismoId(p.id,id))).length:0;
-  let h=`<div class="card"><div class="card-h" style="flex-wrap:wrap;gap:10px"><h2>Cuadre con el banco</h2><span class="hint">Subí el estado de cuenta de Banrural (CSV o Excel guardado como CSV) o pegalo. Cada pago por confirmar se busca por referencia, y si no, por monto y fecha.</span></div>
+  let h=pestanas+`<div class="card"><div class="card-h" style="flex-wrap:wrap;gap:10px"><h2>Cuadre con el banco</h2><span class="hint">Subí el estado de cuenta de Banrural (CSV o Excel guardado como CSV) o pegalo. Cada pago por confirmar se busca por referencia, y si no, por monto y fecha.</span></div>
     <div class="card-b"><div class="form-grid">
       <div class="field"><label>Estado de cuenta (CSV)</label><input type="file" accept=".csv,.txt,.tsv,text/csv,text/plain" onchange="cuadrarArchivo(this)"></div>
       <div class="field"><label>…o pegá las filas del Excel</label><textarea id="cb-texto" rows="2" placeholder="fecha, agencia, descripción, referencia 1, referencia 2, débito, crédito, saldo"></textarea></div>
@@ -3039,7 +3052,7 @@ function renderConfirmacion(){
           <button class="btn btn-ghost btn-sm" onclick="doConfirmar('${p.id}',false)">Rechazar</button>
           <button class="btn btn-ghost btn-sm" onclick="modalEditarPago('${p.id}')">Editar</button>
           <button class="btn btn-ghost btn-sm" onclick="emitirYCompartirRecibo('${p.id}')">${reciboDe(p.id)?'Recibo':'Emitir recibo'}</button></td></tr>`;});
-  h+=`</tbody></table></div></div>`+historialPagosHTML();
+  h+=`</tbody></table></div></div>`;
   C().innerHTML=h;
 }
 async function doConfirmar(id,ok){
