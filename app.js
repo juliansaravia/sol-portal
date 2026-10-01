@@ -2761,6 +2761,18 @@ function renderAprobacion(){
           <button class="btn btn-ghost btn-sm" onclick="doRechazar('${c.id}')">Rechazar</button></td></tr>`;});
   h+=`</tbody></table></div></div>
     <div class="hint">Aprobar genera el plan de giros (Reserva + Cuota Inicial + Saldo Deudor) y marca el lote como vendido.</div>`;
+  /* Ventas guardadas que todavía no se enviaron al comité: no entran a la bandeja hasta que el vendedor las envía. */
+  const borr=DB.contratos.filter(c=>c.estado==='borrador').sort((a,b)=>String(b.fecha||'').localeCompare(String(a.fecha||'')));
+  if(borr.length){
+    h+=`<div class="card" style="margin-top:14px"><div class="card-h"><h2>Sin enviar al comité · ${borr.length}</h2></div>
+      <div class="card-b" style="padding:0;overflow-x:auto"><table class="data"><thead><tr>
+      <th>No.</th><th>Fecha</th><th>Lote</th><th>Cliente</th><th>Vendedor</th><th>Falta</th><th>Acción</th></tr></thead><tbody>`;
+    borr.forEach(c=>{ let falta=[]; try{ falta=(typeof faltantesDe==='function'?faltantesDe(c):[]).filter(x=>x.grave!==false).map(x=>x.que); }catch(e){}
+      h+=`<tr><td><b>${c.no}</b></td><td>${c.fecha?fmtD(c.fecha):'—'}</td><td>${c.lote}</td><td>${esc(nombreCliente(c.clienteId))}</td><td>${esc(c.vendedor||'—')}</td>
+        <td>${falta.length?esc(falta.join(' · ')):'<span class="badge b-ok">Listo para enviar</span>'}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="abrirContrato('${c.id}','docs')">Ver</button></td></tr>`; });
+    h+=`</tbody></table></div></div>`;
+  }
   C().innerHTML=h;
 }
 async function doEnviarAprobacion(id){
@@ -2967,6 +2979,9 @@ async function confirmarCuadrados(){
   if(typeof cargarCartera==='function' && hayRemoto()){ const r=await cargarCartera(); if(r.ok) renderConfirmacion(); } else renderConfirmacion();
 }
 /* Posible duplicado: otro pago vivo del mismo contrato con la misma referencia, o con el mismo monto a 3 días o menos. */
+/* Una boleta por confirmar con fecha de hace más de 45 días casi siempre es el año mal leído (2023 por 2026). */
+function fechaDudosa(p){ const f=String(p.fecha||'').slice(0,10); if(!f||p.estado!=='registrado') return false;
+  return (new Date(HOY_ISO+'T00:00:00')-new Date(f+'T00:00:00'))/864e5>45; }
 function posibleDuplicado(p){
   const nr=x=>String(x||'').replace(/\D/g,'').replace(/^0+/,''); const r=nr(p.referencia);
   return (DB.pagos||[]).find(o=>!mismoId(o.id,p.id)&&mismoId(o.contratoId,p.contratoId)&&o.estado!=='rechazado'&&
@@ -3016,7 +3031,7 @@ function renderConfirmacion(){
     const bol=adjuntosDe('pago',p.id).filter(a=>!/^Recibo \d/.test(a.descripcion||''));
     const q=cu?cu.porPago.get(String(p.id)):null;
     h+=`<tr><td><b>${ct?ct.no:'—'}</b></td><td>${ct?esc(ct.lote):'—'}</td><td><span class="pill">${tipo}</span></td><td>${ct?esc(nombreCliente(ct.clienteId)):'—'}</td>
-      <td>${fmtD(p.fecha)}</td><td>${esc(p.cuenta)||'—'}</td><td>${esc(p.forma)}</td><td>${esc(p.referencia)||'—'}</td>
+      <td>${fmtD(p.fecha)}${fechaDudosa(p)?`<div class="hint" style="color:#B0562F"><b>¿Fecha?</b> revisar el año</div>`:''}</td><td>${esc(p.cuenta)||'—'}</td><td>${esc(p.forma)}</td><td>${esc(p.referencia)||'—'}</td>
       <td class="num">${Q(p.monto)}${(()=>{ const d=posibleDuplicado(p); return d?`<div class="hint" style="color:#B0562F"><b>¿Duplicado?</b> ya hay ${Q(d.monto)} del ${fmtD(d.fecha)} (${d.estado==='confirmado'?'confirmado':'por confirmar'}${d.referencia?' · ref. '+esc(d.referencia):''})</div>`:''; })()}</td>
       <td>${bol.length?`<button class="btn btn-ghost btn-sm" onclick="verAdjunto('${bol[0].id}')">Ver boleta</button>`:(pagoRespaldado(p)?'<span class="hint">ref. banco</span>':'<span class="hint">sin boleta</span>')}</td>
       ${cu?`<td>${q?`<span class="badge b-ok">✓ ${q.via}</span><div class="hint">${fmtD(q.mov.fecha)} · ${esc(q.mov.ref||'')}</div>`:'<span class="badge b-mora">✗ no aparece</span>'}</td>`:''}
@@ -4726,6 +4741,10 @@ function pagoRepetido(ctId, ref){
   return (DB.pagos||[]).find(p=>mismoId(p.contratoId,ctId)&&p.estado!=='rechazado'&&String(p.referencia||'').trim().toLowerCase().replace(/^0+/,'')===r)||null;
 }
 function seguirPeseARepetido(ctId, ref){
+  /* El mismo monto en estos días, con otra referencia: casi siempre es la boleta que ya entró por WhatsApp. */
+  const m=+v('p-monto')||0, f=v('p-fecha')||HOY_ISO;
+  const g=!pagoRepetido(ctId,ref)&&m>0?(DB.pagos||[]).find(p=>mismoId(p.contratoId,ctId)&&p.estado!=='rechazado'&&Math.abs((+p.monto||0)-m)<0.005&&Math.abs((new Date(String(p.fecha).slice(0,10)+'T00:00:00')-new Date(f+'T00:00:00'))/864e5)<=5):null;
+  if(g&&!confirm(`OJO: este contrato YA tiene un pago de ${Q(g.monto)} del ${fmtD(g.fecha)} (${g.estado==='confirmado'?'confirmado':'por confirmar'}${g.referencia?' · ref. '+g.referencia:''}${g.registradoPor===null?' · entró por WhatsApp':''}).\n\nSi es la misma boleta, NO la registres otra vez (tocá Cancelar) y corregí ese pago con «Editar».\nSólo seguí si son dos pagos distintos.`)) return false;
   const d=pagoRepetido(ctId,ref); if(!d) return true;
   return confirm(`OJO: este contrato YA tiene un pago con la referencia ${d.referencia}:\n\n   ${Q(d.monto)} · ${fmtD(d.fecha)} · ${d.estado==='confirmado'?'confirmado':'por confirmar'}\n\nSi es la misma boleta, NO la registres otra vez (tocá Cancelar).\nSólo seguí si de verdad son dos pagos distintos con el mismo número.`);
 }
