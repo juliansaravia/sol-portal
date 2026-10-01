@@ -299,7 +299,7 @@ async function sbRegistrarPago(contrato_id, { monto, forma, cuenta, referencia, 
   return escribir('registrar el pago', async () => {
     /* Pago en otra moneda (Hati en US$, cliente paga Q): las tres columnas llegan con 56_hati_y_moneda.sql. */
     const extraMoneda = (tipo_cambio && tipo_cambio !== 1) ? { moneda: moneda || 'GTQ', tipo_cambio, monto_original } : {};
-    if (aplicacion === 'capital') extraMoneda.aplicacion = 'capital';   // 59: lo que sobre se abona a capital
+    if (aplicacion === 'capital' || aplicacion === 'rebajar') extraMoneda.aplicacion = aplicacion;   // 59/80: lo que sobre va a capital o baja cuotas
     const fila = oExplota(await SB.from('pago').insert({
       contrato_id,
       giro_id: giro_id || null,
@@ -494,7 +494,7 @@ async function sbMarcarCobrada(contrato_id, vence, { monto, forma, cuenta, refer
   return escribir('marcar la cuota como cobrada', async () => {
     const giro_id = giroElegido || await giroDeVencimiento(contrato_id, vence);
     /* Fecha real del pago y, si pagó de más, a qué se aplica (59). */
-    const extra = aplicacion === 'capital' ? { aplicacion: 'capital' } : {};
+    const extra = (aplicacion === 'capital' || aplicacion === 'rebajar') ? { aplicacion } : {};
     const pago = oExplota(await SB.from('pago').insert({
       contrato_id, giro_id,
       cuenta_bancaria_id: await idDeCuenta(cuenta),
