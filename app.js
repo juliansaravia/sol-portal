@@ -531,6 +531,20 @@ function startApp(role){
   pintarEstado2FA();
   const destino=(location.hash||'').slice(1);
   setView(ROLES[role].views.includes(destino) ? destino : ROLES[role].home);
+  permisoDeAprobar(role, destino);
+}
+/* Aprobar créditos también se da por PERSONA (94): quien tenga la marca ve la bandeja del comité aunque su rol no la traiga. */
+async function permisoDeAprobar(role, destino){
+  try{
+    if(ROLES[role].views.includes('aprobacion')||!(typeof hayRemoto==='function'&&hayRemoto())||typeof SB==='undefined') return;
+    const r=await SB.rpc('puede_aprobar_creditos'); if(r.error||r.data!==true||ROLE!==role) return;
+    ROLES[role].views.push('aprobacion');
+    document.querySelectorAll('.nav-item,.tab-item').forEach(b=>{ if(b.dataset.view==='aprobacion') b.style.display=''; });
+    document.querySelectorAll('.nav-sec').forEach(sec=>{ let n=sec.nextElementSibling,vis=false;
+      while(n&&n.classList.contains('nav-item')){ if(n.style.display!=='none') vis=true; n=n.nextElementSibling; } sec.style.display=vis?'':'none'; });
+    if(destino==='aprobacion') setView('aprobacion');
+    if(typeof pintarBadgeAsuntos==='function') pintarBadgeAsuntos();
+  }catch(e){}
 }
 /* Que nadie dependa de que alguien más esté disponible para volver a
    entrar. El correo lo manda Supabase; el portal solo lo pide. */
@@ -2788,7 +2802,8 @@ async function doRechazar(id){
   const ct=getContrato(id); if(!ct) return;
   const motivo=prompt(`Rechazar ${ct.no} · lote ${ct.lote} · ${nombreCliente(ct.clienteId)}\n\nLa solicitud se anula y el lote vuelve a estar disponible.\nMotivo del rechazo:`);
   if(motivo===null) return; if(motivo.trim().length<5) return toast('Escribí el motivo del rechazo',5000,true);
-  if(await rechazarContrato(id)){ await registrarGestion(id,'Bitácora Socios','Solucionado','Motivo del rechazo: '+motivo.trim()); anotar('contrato.rechazar',ct.no+' · '+motivo.trim()); toast('Contrato rechazado · lote liberado');renderAprobacion();} }
+  const hecho=await rechazarContrato(id, motivo.trim());
+  if(hecho){ if(hecho!=='bitacora') await registrarGestion(id,'Bitácora Socios','Solucionado','Motivo del rechazo: '+motivo.trim()); anotar('contrato.rechazar',ct.no+' · '+motivo.trim()); toast('Contrato rechazado · lote liberado');renderAprobacion();} }
 
 /* Dónde el portal y el modelo no coinciden. Se muestra, no se esconde. */
 function verCuadreMora(){

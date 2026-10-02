@@ -1324,9 +1324,13 @@ async function aprobarContrato(id) {
     /* Se dice 'aprobado' —el idioma del portal— y `sbEstadoContrato()`
        lo traduce a 'activo', que es lo que entiende la base y lo que
        dispara la partida contable de la venta. */
+    const n = typeof sbResolverSolicitud === 'function' ? await sbResolverSolicitud(id, true) : { ok: true, dato: null };
+    if (!n.ok) { avisar(n.error); return false; }
+    const l = getLote(ct.clave || ct.lote);
+    if (n.dato) { if (l) l.estado = 'vendido'; return true; }      // la base ya dejó la bitácora
     const r = await sbEstadoContrato(id, 'aprobado', 'vendido');
     if (!r.ok) { avisar(r.error); return false; }
-    const l = getLote(ct.clave || ct.lote); if (l) l.estado = 'vendido';
+    if (l) l.estado = 'vendido';
     await registrarGestion(id, 'Bitácora Socios', 'Solucionado', 'Crédito aprobado por el comité');
     return true;
   }
@@ -1335,9 +1339,12 @@ async function aprobarContrato(id) {
   await registrarGestion(id, 'Bitácora Socios', 'Solucionado', 'Crédito aprobado por el comité');
   saveDB(); return true;
 }
-async function rechazarContrato(id) {
+async function rechazarContrato(id, motivo) {
   const ct = getContrato(id); if (!ct) return false;
   if (typeof hayBase === 'function' && hayBase()) {
+    const n = typeof sbResolverSolicitud === 'function' ? await sbResolverSolicitud(id, false, motivo) : { ok: true, dato: null };
+    if (!n.ok) { avisar(n.error); return false; }
+    if (n.dato) { const l2 = getLote(ct.clave || ct.lote); if (l2) l2.estado = 'disponible'; return 'bitacora'; }   // la base ya anotó el motivo
     const r = await sbEstadoContrato(id, 'anulado', 'disponible');
     if (!r.ok) { avisar(r.error); return false; }
     const l = getLote(ct.clave || ct.lote); if (l) l.estado = 'disponible';

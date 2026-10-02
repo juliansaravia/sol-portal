@@ -278,6 +278,19 @@ async function sbEstadoContrato(contrato_id, estado, estadoLote) {
   });
 }
 
+/** Aprobar o rechazar una solicitud (94): la base valida el permiso por persona, mueve el contrato y el
+    lote juntos y lo deja en la bitácora. Devuelve dato null si la función aún no existe (camino anterior). */
+async function sbResolverSolicitud(contrato_id, aprobar, motivo) {
+  return escribir(aprobar ? 'aprobar la solicitud' : 'rechazar la solicitud', async () => {
+    const r = await SB.rpc('resolver_solicitud', { p_contrato_id: Number(contrato_id), p_aprobar: !!aprobar, p_motivo: motivo || null });
+    if (r.error && /PGRST202/.test(String(r.error.code || ''))) return null;
+    const d = oExplota(r);
+    const ct = DB.contratos.find(c => mismoId(c.id, contrato_id));
+    if (ct) { ct.estado = estadoDePortal(d.estado); ct.estadoBase = d.estado; }
+    return d;
+  });
+}
+
 async function sbReasignarContratos(idsContrato, persona_id) {
   return escribir('reasignar los contratos', async () => {
     if (!idsContrato.length) return 0;
