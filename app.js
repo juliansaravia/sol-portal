@@ -3081,8 +3081,43 @@ async function doConfirmar(id,ok){
     anotar('pago.rechazar',(ct?ct.no+' · ':'')+Q(p?p.monto:0)+' · '+motivo.trim());
     toast('Pago rechazado'); renderConfirmacion(); return;
   }
-  if(!(await confirmarPago(id,ok))) return;
-  toast(ok?'Pago confirmado ✓ · actualizando la cartera…':'Pago rechazado'); renderConfirmacion();
+  modalConfirmarPago(id);
+}
+/* Al confirmar se revisa la boleta contra el banco: ahí mismo se corrigen la referencia y la fecha (5 oct 2026). */
+function modalConfirmarPago(pagoId){
+  const p=DB.pagos.find(x=>mismoId(x.id,pagoId)); if(!p) return;
+  const ct=getContrato(p.contratoId)||{}; const bol=adjuntosDe('pago',p.id).filter(a=>!/^Recibo \d/.test(a.descripcion||''));
+  const d=posibleDuplicado(p);
+  openModal(`<div class="modal-h"><h3>Confirmar pago · ${Q(p.monto)}</h3><p>${esc(ct.no||'')} · Lote ${esc(ct.lote||'')} · ${esc(nombreCliente(ct.clienteId)||'')}</p></div>
+    <div class="modal-b"><div class="form-grid">
+      <div class="field"><label>Referencia de la boleta</label><input id="cf-ref" autocomplete="off" value="${esc(p.referencia||'')}"></div>
+      <div class="field"><label>Fecha de la boleta</label><input id="cf-fecha" type="date" max="${HOY_ISO}" value="${esc(String(p.fecha||'').slice(0,10))}"></div>
+    </div>
+    ${bol.length?`<div class="btn-row" style="margin:6px 0 0"><button type="button" class="btn btn-ghost btn-sm" onclick="verAdjunto('${bol[0].id}')">Ver boleta</button></div>`:''}
+    ${d?`<div class="hint" style="color:#B0562F;margin-top:8px"><b>¿Duplicado?</b> ya hay ${Q(d.monto)} del ${fmtD(d.fecha)} (${d.estado==='confirmado'?'confirmado':'por confirmar'}${d.referencia?' · ref. '+esc(d.referencia):''})</div>`:''}
+    </div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarConfirmarPago('${p.id}')">Confirmar pago</button></div>`);
+}
+async function guardarConfirmarPago(id){
+  const p=DB.pagos.find(x=>mismoId(x.id,id)); if(!p) return;
+  const ref=v('cf-ref').trim(), fecha=v('cf-fecha');
+  if(!fecha||fecha>HOY_ISO) return toast('Revisá la fecha de la boleta',5000,true);
+  const cambiaRef=ref!==(p.referencia||'')&&ref!=='', cambiaFecha=fecha!==String(p.fecha||'').slice(0,10);
+  const antes=`${fmtD(p.fecha)} · ref. ${p.referencia||'—'}`;
+  const ok=await conBoton(async()=>{
+    if((cambiaRef||cambiaFecha)&&typeof hayBase==='function'&&hayBase()){
+      let r1=await sbCorregirPago(p.id, cambiaRef?ref:null, null, cambiaFecha?fecha:null);
+      if(!r1.ok&&cambiaRef&&!cambiaFecha) r1=await sbReferenciaPago(p.id, ref);
+      if(!r1.ok){ toast('No se pudo corregir la boleta: '+r1.error,7000,true); return false; }
+    }
+    if(cambiaRef) p.referencia=ref; if(cambiaFecha) p.fecha=fecha;
+    if(cambiaRef||cambiaFecha) anotar('pago.corregir',(getContrato(p.contratoId)||{}).no+' · al confirmar · antes '+antes+' · ahora '+fmtD(p.fecha)+' · ref. '+(p.referencia||'—'));
+    return await confirmarPago(id,true);
+  });
+  if(!ok) return;
+  closeModal();
+  toast('Pago confirmado ✓ · actualizando la cartera…'); renderConfirmacion();
   /* La base aplicó el pago a las cuotas (02_funciones.sql); si el portal
      no recarga los giros, la cuota sigue saliendo como cobrable. */
   if(typeof cargarCartera==='function' && hayRemoto()){ const r=await cargarCartera(); if(r.ok && typeof vista!=='undefined') setView(vista); }

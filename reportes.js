@@ -549,10 +549,59 @@ function repCajaMensual() {
   return f;
 }
 
+/** Ventas del período (5 oct 2026): una fila por contrato firmado entre Desde y Hasta, de la más
+ *  reciente a la más antigua. Las anuladas salen marcadas, no se esconden. */
+const _ESTADO_VENTA = { aprobado:'Aprobada', en_aprobacion:'En el comité', borrador:'Borrador (sin enviar)', anulado:'Anulada', liquidado:'Liquidada', caido:'Caída' };
+function _ventasDelPeriodo() {
+  return DB.contratos.filter(c => c.fecha && String(c.fecha).slice(0, 10) >= REP.desde && String(c.fecha).slice(0, 10) <= REP.hasta);
+}
+function _formaDeVenta(c) {
+  if (/^contado/.test(String(c.modalidad || '')) || !(+c.tasa > 0)) return (+c.plazo > 1) ? 'Contado en ' + c.plazo + ' pagos' : 'Contado';
+  return 'Crédito a ' + (c.plazo || '—') + ' cuotas';
+}
+function repVentas() {
+  const f = [['Fecha','Contrato','Lote','Fase','Cliente','Teléfono','Vendedor','Origen','Forma de venta','Precio de venta','Enganche','Financiado','Cuota','Estado','Pagado a la fecha','Saldo']];
+  const filas = _ventasDelPeriodo().map(c => {
+    const l = (typeof getLote === 'function' ? getLote(c.clave || c.lote) : null) || {};
+    const cli = c.clienteId ? (getCliente(c.clienteId) || {}) : {};
+    let ec = {}, cuota = 0;
+    try { ec = estadoCuenta(c) || {}; } catch (e) {}
+    try { cuota = (typeof planDelContrato === 'function' ? (planDelContrato(c) || {}).cuota : 0) || 0; } catch (e) {}
+    return [String(c.fecha).slice(0, 10), c.no || '—', c.lote || '—', c.fase || l.fase || '', c.clienteId ? nombreCliente(c.clienteId) : '—', cli.telefono || c.tel || '',
+            c.vendedor || '(sin vendedor)', c.origen || '', _formaDeVenta(c), _repNum(c.precio), _repNum(c.enganche), _repNum(Math.max(0, (+c.precio || 0) - (+c.enganche || 0))),
+            _repNum(cuota), _ESTADO_VENTA[c.estado] || c.estado || '', _repNum(ec.recaudado || 0), _repNum(ec.saldo || 0)];
+  });
+  filas.sort((a, b) => String(b[0]).localeCompare(String(a[0])) || String(a[1]).localeCompare(String(b[1]), 'es', { numeric: true }));
+  return f.concat(filas);
+}
+/** El resumen de lo anterior: una fila por vendedor. Las anuladas se cuentan aparte y no suman al monto. */
+function repVentasVendedor() {
+  const f = [['Vendedor','Ventas','Monto vendido','Enganches','A crédito','Al contado','En el comité o borrador','Anuladas','Precio promedio']];
+  const m = new Map();
+  _ventasDelPeriodo().forEach(c => {
+    const k = c.vendedor || '(sin vendedor)'; const x = m.get(k) || { n:0, monto:0, eng:0, cred:0, cont:0, pend:0, anul:0 }; m.set(k, x);
+    if (c.estado === 'anulado' || c.estado === 'caido') { x.anul++; return; }
+    x.n++; x.monto += (+c.precio || 0); x.eng += (+c.enganche || 0);
+    if (/^Contado/.test(_formaDeVenta(c))) x.cont++; else x.cred++;
+    if (c.estado === 'en_aprobacion' || c.estado === 'borrador') x.pend++;
+  });
+  const filas = [...m.entries()].sort((a, b) => b[1].monto - a[1].monto)
+    .map(([k, x]) => [k, x.n, _repNum(x.monto), _repNum(x.eng), x.cred, x.cont, x.pend, x.anul, _repNum(x.n ? x.monto / x.n : 0)]);
+  const t = [...m.values()].reduce((s, x) => ({ n:s.n+x.n, monto:s.monto+x.monto, eng:s.eng+x.eng, cred:s.cred+x.cred, cont:s.cont+x.cont, pend:s.pend+x.pend, anul:s.anul+x.anul }), { n:0, monto:0, eng:0, cred:0, cont:0, pend:0, anul:0 });
+  if (filas.length) filas.push(['TOTAL', t.n, _repNum(t.monto), _repNum(t.eng), t.cred, t.cont, t.pend, t.anul, _repNum(t.n ? t.monto / t.n : 0)]);
+  return f.concat(filas);
+}
+
 const REPORTES = [
   { id:'direccion',    nombre:'Indicadores para dirección',
     que:'Cartera hoy (capital e intereses), cartera proyectada al 31 de diciembre de este año y del siguiente, tasa efectiva y % de morosidad.',
     para:'Lo que pide la junta, en una hoja. No depende del período.', fn: repDireccion },
+  { id:'ventas',       nombre:'Ventas del período',
+    que:'UNA FILA POR VENTA: fecha, contrato, lote, cliente, vendedor, forma de venta, precio, enganche, cuota, estado, lo pagado y el saldo.',
+    para:'Para saber qué se vendió, quién lo vendió y en qué condiciones.', fn: repVentas },
+  { id:'ventas-vendedor', nombre:'Ventas por vendedor',
+    que:'Una fila por vendedor: cuántas ventas, monto vendido, enganches, a crédito y al contado, pendientes de aprobar y anuladas.',
+    para:'Para medir al equipo de ventas en el período.', fn: repVentasVendedor },
   { id:'caja',         nombre:'Caja esperada por cuotas',
     que:'Mes a mes, cuántas cuotas vencen y cuánto dinero debería entrar.',
     para:'Para saber con qué caja contar y planear pagos.', fn: repCajaMensual },
