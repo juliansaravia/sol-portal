@@ -4292,6 +4292,7 @@ function ecCuotasCompactasHTML(ct, filas, mora) {
     const vencida = f.estado === 'vencido' || (f.estado === 'parcial' && m);
     const estado = f.condicion ? `<span class="badge b-nod">Al desmembrar</span>`
       : vencida ? `<span class="badge b-mora">Vencida</span>`
+      : (!f.condicion && f.venc && String(f.venc).slice(0,10) < HOY_ISO) ? `<span class="badge b-pend">En plazo · hasta el ${fmtD(isoMas(String(f.venc).slice(0,10), (typeof plazoDePago==='function'?plazoDePago(ct):30)))}</span>`
       : (f.abonado > 0 ? `<span class="badge b-pend">Abonada</span>` : (i === 0 ? `<span class="badge b-apar">La que sigue</span>` : `<span class="badge b-nod">Pendiente</span>`));
     h += `<div style="border:1px solid ${vencida ? 'var(--mora)' : 'var(--line)'};border-radius:10px;padding:9px 12px;margin:0 0 6px;${i === 0 && !vencida ? 'background:#fffdf5;' : ''}">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span><b>${etq(f)}</b> <span class="hint">· ${f.condicion ? 'sin fecha' : 'vence ' + fechaDe(f)}</span></span>${estado}</div>
@@ -6342,7 +6343,8 @@ function modalEnganche(id){
         <div class="field"><label>Pagado del enganche</label><input value="${Q(pagadoEng)}" readonly style="background:var(--tint)"></div>
         <div class="field"><label>Plazo del saldo (meses)</label><input id="en-plazo" type="number" min="1" max="120" value="${ct.plazo||60}" oninput="pistaPlan('${ct.id}')"></div>
         <div class="field"><label>Tasa</label><select id="en-tasa" onchange="pistaPlan('${ct.id}')"><option value="0.015" ${(ct.tasa==null||+ct.tasa===0.015)?'selected':''}>Crédito · 1.5% mensual</option><option value="0" ${+ct.tasa===0?'selected':''}>Sin interés (contado en pagos)</option></select></div>
-        <div class="field"><label>Primera cuota del saldo</label><input id="en-primeraSaldo" type="date" value="${prox.toISOString().slice(0,10)}"></div>
+        <div class="field"><label>Primera cuota del saldo</label><input id="en-primeraSaldo" type="date" value="${(()=>{ const sd=(ct.obligaciones||[]).find(o=>String(o.tipo||'').toLowerCase()==='saldo'); const g1=sd?(sd.giros||[]).filter(g=>!g.condicion).sort((a,b)=>(a.n||0)-(b.n||0))[0]:null; return g1&&(g1.vence||g1.venc)?String(g1.vence||g1.venc).slice(0,10):prox.toISOString().slice(0,10); })()}">
+          <div class="hint">Si Enlazados tiene otra fecha para la cuota 1, <a href="#" onclick="moverFechasPlan('${ct.id}');return false;"><b>mover sólo las fechas</b></a>: corre todo el calendario sin tocar montos, pagos ni aportes.</div></div>
         <div class="field"><label>Cuota resultante</label><input id="en-cuotaPlan" readonly style="background:var(--tint)"></div>
         <div class="field full"><label>Cuota pactada (opcional)</label><input id="en-cuotaFija" type="number" step="0.01" min="0" placeholder="Ej. 7707.58 · el precio se ajusta para que cuadre" oninput="precioDesdeCuota('${ct.id}')">
           <div class="hint">Si el contrato dice «N pagos de Q X», poné X aquí: se calcula el precio de venta que da exactamente esa cuota con el enganche, plazo y tasa de arriba.</div></div>
@@ -6413,6 +6415,18 @@ function pistaPlan(id){
   const precio=+v('en-precio')||ct.precio;
   const p=planFinanciamiento(precio,+v('en-monto')||0,+v('en-plazo')||1,+v('en-tasa'));
   const e=document.getElementById('en-cuotaPlan'); if(e) e.value=`${Q(p.cuota)} × ${p.plazo}`;
+}
+/* Sólo las fechas (97): el calendario se corre para que la cuota 1 venza el día que diga Enlazados. */
+async function moverFechasPlan(id){
+  const ct=getContrato(id); if(!ct) return; const f=v('en-primeraSaldo'); if(!f) return toast('Poné la fecha de la primera cuota',4000,true);
+  if(!(typeof hayBase==='function'&&hayBase())) return toast('Sin base conectada no se puede cambiar el plan',5000,true);
+  if(!confirm(`${ct.no} · la cuota 1 pasa a vencer el ${fmtD(f)} y las demás se corren igual, mes a mes.\nNo cambia montos, pagos ni aportes. ¿Seguir?`)) return;
+  const r=await conBoton(()=>sbMoverPrimeraCuota(id,f)); if(!r||!r.ok) return; const d=r.dato||{};
+  anotar('contrato.fechas', ct.no+' · primera cuota '+(d.primera_antes?fmtD(d.primera_antes)+' → ':'')+fmtD(f));
+  if(typeof cargarCartera==='function'){ try{ await cargarCartera(); }catch(e){} }
+  if(typeof reindexar==='function') reindexar();
+  closeModal(); if(drawerCt) pintarContrato();
+  toast(d.sin_cambio?'Las fechas ya estaban así':`Fechas movidas: cuota 1 el ${fmtD(f)} · ${d.cuotas_vencidas||0} cuota(s) vencida(s)`, 7000);
 }
 async function guardarPlan(id){
   const ct=getContrato(id); if(!ct) return;

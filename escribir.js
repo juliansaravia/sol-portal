@@ -278,6 +278,12 @@ async function sbEstadoContrato(contrato_id, estado, estadoLote) {
   });
 }
 
+/** Mover todo el calendario de cuotas para que la primera venza ese día (97). No toca montos ni pagos. */
+async function sbMoverPrimeraCuota(contrato_id, fecha) {
+  return escribir('mover las fechas del plan', async () =>
+    oExplota(await SB.rpc('mover_primera_cuota', { p_contrato_id: Number(contrato_id), p_fecha: fecha })));
+}
+
 /** Aprobar o rechazar una solicitud (94): la base valida el permiso por persona, mueve el contrato y el
     lote juntos y lo deja en la bitácora. Devuelve dato null si la función aún no existe (camino anterior). */
 async function sbResolverSolicitud(contrato_id, aprobar, motivo) {

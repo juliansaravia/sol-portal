@@ -53,7 +53,12 @@ const TOLERANCIA_CUOTA = 5;
 const estadoGiroAlDia = g => {
   const hoy = new Date().toISOString().slice(0, 10);
   if (g.estado !== 'pagado' && !g.condicion && (Number(g.monto) || 0) - (Number(g.abonado) || 0) <= TOLERANCIA_CUOTA) return 'pagado';
-  if (g.estado === 'pendiente' && !g.condicion && g.vencimiento && String(g.vencimiento).slice(0, 10) < hoy) return 'vencido';
+  /* 5 oct 2026: una cuota no está vencida al día siguiente de su fecha: el contrato da 30 días. Antes se leía
+     «vencida» apenas pasaba la fecha y el cliente al día aparecía con deuda. */
+  if (g.estado === 'pendiente' && !g.condicion && g.vencimiento) {
+    const lim = new Date(String(g.vencimiento).slice(0, 10) + 'T00:00:00'); lim.setDate(lim.getDate() + 30);
+    if (lim.toISOString().slice(0, 10) < hoy) return 'vencido';
+  }
   return g.estado;
 };
 
