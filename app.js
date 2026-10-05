@@ -3004,6 +3004,18 @@ function posibleDuplicado(p){
     ((r&&r.length>=5&&nr(o.referencia)===r)||(Math.abs((+o.monto||0)-(+p.monto||0))<0.01&&Math.abs(diasEnt(String(o.fecha).slice(0,10),String(p.fecha).slice(0,10)))<=3)))||null;
 }
 const nombrePersona=id=>{ if(id==null) return ''; const x=(DB.equipo||[]).find(e=>mismoId(e.id,id)); return x?x.nombre:''; };
+/* Por dónde entró un pago (95): WhatsApp es sólo lo que registró NUO; la carga inicial no es «la IA». */
+function quienRegistro(p){
+  if(p.origen==='whatsapp') return 'WhatsApp (NUO)';
+  const n=nombrePersona(p.registradoPor); if(n) return n;
+  if(p.origen==='carga') return 'Carga inicial';
+  return p.origen?'—':'Sin usuario (WhatsApp o carga)';
+}
+function quienConfirmo(p){
+  if(p.estado==='registrado') return '';
+  const n=nombrePersona(p.aprobadoPor); if(n) return n;
+  return p.origen==='carga'?'Carga inicial':'—';
+}
 let histF='todos', histQ='';
 function historialPagosHTML(){
   const q=histQ.trim().toLowerCase();
@@ -3021,16 +3033,16 @@ function historialPagosHTML(){
     ${L.length?L.map(({p,ct})=>{ const e=EST[p.estado]||[p.estado,'b-nod']; const quien=nombrePersona(p.aprobadoPor);
       return `<tr class="click" ${ct?`onclick="abrirContrato('${ct.id}','cuenta')"`:''}><td>${fmtD(p.fecha)}</td><td><b>${ct?esc(ct.no):'—'}</b></td><td>${ct?esc(ct.lote):'—'}</td><td>${ct?esc(nombreCliente(ct.clienteId)):'—'}</td>
         <td class="num">${Q(p.monto)}</td><td>${esc(p.referencia||'—')}</td>
-        <td>${esc(nombrePersona(p.registradoPor)||'WhatsApp')}${p.creado?`<div class="hint">${fmtD(String(p.creado).slice(0,10))}</div>`:''}</td>
+        <td>${esc(quienRegistro(p))}${p.creado?`<div class="hint">${fmtD(String(p.creado).slice(0,10))}</div>`:''}</td>
         <td><span class="badge ${e[1]}">${p.eliminado?'Eliminado':e[0]}</span></td>
-        <td>${p.estado==='registrado'?'—':`${esc(quien||'—')}${p.aprobadoEn?`<div class="hint">${fmtD(String(p.aprobadoEn).slice(0,10))}</div>`:''}`}</td></tr>`; }).join(''):'<tr><td colspan="9" class="empty">Sin pagos</td></tr>'}
+        <td>${p.estado==='registrado'?'—':`${esc(quienConfirmo(p))}${p.aprobadoEn?`<div class="hint">${fmtD(String(p.aprobadoEn).slice(0,10))}</div>`:''}`}</td></tr>`; }).join(''):'<tr><td colspan="9" class="empty">Sin pagos</td></tr>'}
     </tbody></table></div></div>`;
 }
 function exportarHistorialPagos(){
   const EST={confirmado:'Confirmado',registrado:'Por confirmar',rechazado:'Rechazado'};
   const f=[['Fecha de pago','Contrato','Lote','Cliente','Monto','Referencia','Forma','Estado','Registró','Fecha de registro','Confirmó / rechazó','Fecha']];
   (window.__histFilas||[]).forEach(({p,ct})=>f.push([String(p.fecha||'').slice(0,10),ct?ct.no:'',ct?ct.lote:'',ct?nombreCliente(ct.clienteId):'',+p.monto||0,p.referencia||'',p.forma||'',
-    p.eliminado?'Eliminado':(EST[p.estado]||p.estado),nombrePersona(p.registradoPor)||'WhatsApp',String(p.creado||'').slice(0,10),p.estado==='registrado'?'':nombrePersona(p.aprobadoPor),String(p.aprobadoEn||'').slice(0,10)]));
+    p.eliminado?'Eliminado':(EST[p.estado]||p.estado),quienRegistro(p),String(p.creado||'').slice(0,10),quienConfirmo(p),String(p.aprobadoEn||'').slice(0,10)]));
   descargarCSV('historial-de-pagos-'+HOY_ISO, f);
 }
 let confTab='pendientes';
@@ -4831,7 +4843,7 @@ function seguirPeseARepetido(ctId, ref){
   /* El mismo monto en estos días, con otra referencia: casi siempre es la boleta que ya entró por WhatsApp. */
   const m=+v('p-monto')||0, f=v('p-fecha')||HOY_ISO;
   const g=!pagoRepetido(ctId,ref)&&m>0?(DB.pagos||[]).find(p=>mismoId(p.contratoId,ctId)&&p.estado!=='rechazado'&&Math.abs((+p.monto||0)-m)<0.005&&Math.abs((new Date(String(p.fecha).slice(0,10)+'T00:00:00')-new Date(f+'T00:00:00'))/864e5)<=5):null;
-  if(g&&!confirm(`OJO: este contrato YA tiene un pago de ${Q(g.monto)} del ${fmtD(g.fecha)} (${g.estado==='confirmado'?'confirmado':'por confirmar'}${g.referencia?' · ref. '+g.referencia:''}${g.registradoPor===null?' · entró por WhatsApp':''}).\n\nSi es la misma boleta, NO la registres otra vez (tocá Cancelar) y corregí ese pago con «Editar».\nSólo seguí si son dos pagos distintos.`)) return false;
+  if(g&&!confirm(`OJO: este contrato YA tiene un pago de ${Q(g.monto)} del ${fmtD(g.fecha)} (${g.estado==='confirmado'?'confirmado':'por confirmar'}${g.referencia?' · ref. '+g.referencia:''}${g.origen==='whatsapp'?' · entró por WhatsApp':''}).\n\nSi es la misma boleta, NO la registres otra vez (tocá Cancelar) y corregí ese pago con «Editar».\nSólo seguí si son dos pagos distintos.`)) return false;
   const d=pagoRepetido(ctId,ref); if(!d) return true;
   return confirm(`OJO: este contrato YA tiene un pago con la referencia ${d.referencia}:\n\n   ${Q(d.monto)} · ${fmtD(d.fecha)} · ${d.estado==='confirmado'?'confirmado':'por confirmar'}\n\nSi es la misma boleta, NO la registres otra vez (tocá Cancelar).\nSólo seguí si de verdad son dos pagos distintos con el mismo número.`);
 }

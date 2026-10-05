@@ -90,7 +90,7 @@ async function cargarDesdeSupabase() {
                   'expediente_de,modalidad,crm_no_contactar,crm_no_contactar_motivo'),
       todas('cliente', 'id,nombre,dpi,nit,telefono,email,direccion,ocupacion'),
       /* `eliminado` llega con 74_eliminar_pago.sql; si no se ha corrido, se pide lo de siempre. */
-      conRespaldo('pago', 'id,contrato_id,giro_id,monto,fecha_pago,forma_pago,referencia,estado', 'eliminado,eliminado_motivo,aplicacion,giro_capital_id,registrado_por,aprobado_por,aprobado_en,created_at'),
+      conRespaldo('pago', 'id,contrato_id,giro_id,monto,fecha_pago,forma_pago,referencia,estado', 'eliminado,eliminado_motivo,aplicacion,giro_capital_id,registrado_por,aprobado_por,aprobado_en,created_at,origen'),
       /* `auth_uid` viene para saber quién ya puede entrar. No se guarda
          el identificador, solo si lo tiene: la pantalla no necesita más
          y el uid de nadie tiene por qué andar dando vueltas. */
@@ -276,7 +276,7 @@ async function cargarDesdeSupabase() {
       referencia: p.referencia, estado: p.estado,
       eliminado: !!p.eliminado, eliminadoMotivo: p.eliminado_motivo || '',
       aplicacion: p.aplicacion || 'cuotas', esAbono: !!p.giro_capital_id, giroCapitalId: p.giro_capital_id || null,
-      registradoPor: p.registrado_por != null ? p.registrado_por : null, aprobadoPor: p.aprobado_por != null ? p.aprobado_por : null, aprobadoEn: p.aprobado_en || null, creado: p.created_at || null
+      registradoPor: p.registrado_por != null ? p.registrado_por : null, aprobadoPor: p.aprobado_por != null ? p.aprobado_por : null, aprobadoEn: p.aprobado_en || null, origen: p.origen || null, creado: p.created_at || null
     }));
 
     const porContrato = new Map(DB.contratos.map(c => [c.id, c]));
