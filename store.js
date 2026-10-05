@@ -96,6 +96,13 @@ function anotar(accion, detalle, extra = {}) {
   DB.bitacora.unshift(e);
   if (DB.bitacora.length > BITACORA_MAX) DB.bitacora.length = BITACORA_MAX;
   saveDB();
+  /* También a la bitácora de la base (96), que es la que se consulta por usuario. Lo que la base ya
+     registra sola (pagos corregidos, eliminados, rechazados; estado del contrato) no se manda dos veces. */
+  try {
+    if (!['pago.corregir','pago.eliminar','pago.rechazar','pago.boleta','contrato.rechazar'].includes(accion)
+        && typeof SB !== 'undefined' && SB && typeof hayBase === 'function' && hayBase())
+      SB.rpc('anotar_bitacora', { p_accion: String(accion || ''), p_detalle: String(detalle || '') }).then(() => {}, () => {});
+  } catch (err) {}
   return e;
 }
 

@@ -54,6 +54,7 @@ const TITLES={
   recaudacion:['Recaudación de la semana','Marca lo que se cobró y lo que no'],
   conciliacion:['Cuadre bancario','Los depósitos de Banrural contra la cartera'],
   equipo:['Equipo','Usuarios, vendedores y códigos'],
+  bitacora:['Bitácora por usuario','Qué hizo cada persona, con fecha y hora'],
   automatizaciones:['Automatizaciones','Integraciones y flujos automáticos'],
   seguridad:['Seguridad y accesos','Quién puede hacer qué, y qué se ha hecho'],
   expedientes:['Expedientes','El papeleo de cada contrato, y qué le falta'],
@@ -533,6 +534,58 @@ function startApp(role){
   setView(ROLES[role].views.includes(destino) ? destino : ROLES[role].home);
   permisoDeAprobar(role, destino);
 }
+/* ============================================================ BITÁCORA POR USUARIO (96)
+   Sale de la base: lo que cada persona registró, confirmó, corrigió, subió o cambió. */
+let bitDesde=null, bitHasta=null, bitQuien='', bitQ='', bitFilas=null, bitError='';
+const BIT_ETQ={'pago.aporte_capital':'Aporte a capital','pago.abono_plan':'Abono a plan','contrato.contado_diferido':'Marcó saldo al desmembrar','contrato.interes':'Exoneró o restituyó interés',
+  'contrato.plan':'Rehízo el plan de pagos','contrato.plan_medida':'Pagos a la medida','venta.creada':'Ingresó una venta','venta.desistida':'Registró un desistimiento',
+  'acceso.quitado':'Quitó un acceso','acceso.devuelto':'Devolvió un acceso','persona.alta':'Dio de alta a una persona','persona.editada':'Editó a una persona',
+  'banco.conciliado':'Asignó un depósito','comision.liquidada':'Liquidó una comisión','comision.pagada':'Pagó una comisión','comision.cancelada':'Canceló una comisión'};
+async function cargarBitacora(){
+  bitError=''; bitFilas=null; if(vista==='bitacora') pintarBitacora();
+  if(!(typeof hayBase==='function'&&hayBase()&&typeof SB!=='undefined')){ bitFilas=[]; bitError='Sin base conectada.'; return pintarBitacora(); }
+  const r=await SB.rpc('bitacora',{p_desde:bitDesde,p_hasta:bitHasta,p_persona:null,p_tope:5000});
+  if(r.error){ bitFilas=[]; bitError=/PGRST202/.test(String(r.error.code||''))?'Falta correr la migración 96 en la base.':r.error.message; }
+  else bitFilas=r.data||[];
+  if(vista==='bitacora') pintarBitacora();
+}
+function renderBitacora(){
+  if(!bitDesde){ bitHasta=HOY_ISO; bitDesde=isoMas(HOY_ISO,-30); }
+  pintarBitacora(); if(bitFilas===null) cargarBitacora();
+}
+function bitFiltradas(){
+  const q=bitQ.trim().toLowerCase();
+  return (bitFilas||[]).filter(f=>(!bitQuien||f.persona===bitQuien)&&(!q||`${f.persona} ${f.accion} ${f.detalle} ${f.contrato||''} ${f.lote||''}`.toLowerCase().includes(q)));
+}
+function pintarBitacora(){
+  const todas=bitFilas||[]; const porQuien=new Map(); todas.forEach(f=>porQuien.set(f.persona,(porQuien.get(f.persona)||0)+1));
+  const gente=[...porQuien.entries()].sort((a,b)=>b[1]-a[1]); const L=bitFiltradas();
+  const hora=t=>{ const d=new Date(t); return `${d.toLocaleDateString('es-GT',{day:'2-digit',month:'short',year:'numeric',timeZone:'America/Guatemala'})} <span class="muted">${d.toLocaleTimeString('es-GT',{hour:'2-digit',minute:'2-digit',timeZone:'America/Guatemala'})}</span>`; };
+  let h=`<div class="card"><div class="card-b"><div class="form-grid">
+      <div class="field"><label>Desde</label><input type="date" value="${bitDesde}" max="${HOY_ISO}" onchange="bitDesde=this.value;cargarBitacora()"></div>
+      <div class="field"><label>Hasta</label><input type="date" value="${bitHasta}" max="${HOY_ISO}" onchange="bitHasta=this.value;cargarBitacora()"></div>
+      <div class="field"><label>Usuario</label><select onchange="bitQuien=this.value;pintarBitacora()"><option value="">Todos</option>${gente.map(([n,c])=>`<option value="${esc(n)}" ${bitQuien===n?'selected':''}>${esc(n)} · ${c}</option>`).join('')}</select></div>
+      <div class="field"><label>Buscar</label><input value="${esc(bitQ)}" placeholder="Contrato, lote, referencia…" onchange="bitQ=this.value;pintarBitacora()"></div>
+    </div>
+    <div class="btn-row" style="margin:8px 0 0"><span class="hint">${bitFilas===null?'Cargando…':`${L.length} movimiento(s)${todas.length>=5000?' · el período trae más de 5,000: acortalo para verlo completo':''}`}</span>
+      <button class="btn btn-ghost btn-sm" ${L.length?'':'disabled'} onclick="exportarBitacora()">Excel</button></div>
+    ${bitError?`<div class="hint" style="color:#B0562F;margin-top:6px">${esc(bitError)}</div>`:''}</div></div>`;
+  if(gente.length&&!bitQuien) h+=`<div class="card"><div class="card-h"><h2>Por usuario</h2></div><div class="card-b chips">${gente.map(([n,c])=>`<button class="chip" onclick="bitQuien='${esc(n).replace(/'/g,"\\'")}';pintarBitacora()">${esc(n)} · ${c}</button>`).join('')}</div></div>`;
+  h+=`<div class="card"><div class="card-b" style="padding:0;overflow-x:auto"><table class="data"><thead><tr><th>Fecha y hora</th><th>Usuario</th><th>Qué hizo</th><th>Detalle</th><th>Contrato</th><th>Lote</th></tr></thead><tbody>`;
+  h+=L.slice(0,500).map(f=>`<tr><td style="white-space:nowrap">${hora(f.fecha)}</td><td><b>${esc(f.persona)}</b>${f.rol?`<div class="hint">${esc((ROLES[f.rol]||{}).label||f.rol)}</div>`:''}</td>
+      <td>${esc(BIT_ETQ[f.accion]||f.accion)}</td><td>${esc(f.detalle||'')}</td><td>${esc(f.contrato||'—')}</td><td>${esc(f.lote||'—')}</td></tr>`).join('')
+     ||`<tr><td colspan="6" class="empty">${bitFilas===null?'Cargando…':'Sin movimientos en ese período'}</td></tr>`;
+  h+=`</tbody></table></div>${L.length>500?`<div class="card-b hint" style="text-align:center">Se muestran los 500 más recientes de ${L.length}. El Excel los trae todos.</div>`:''}</div>`;
+  C().innerHTML=h;
+}
+function exportarBitacora(){
+  const f=[['Fecha','Hora','Usuario','Rol','Qué hizo','Detalle','Contrato','Lote']];
+  bitFiltradas().forEach(x=>{ const d=new Date(x.fecha);
+    f.push([d.toLocaleDateString('en-CA',{timeZone:'America/Guatemala'}), d.toLocaleTimeString('es-GT',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'America/Guatemala'}),
+            x.persona, (ROLES[x.rol]||{}).label||x.rol||'', BIT_ETQ[x.accion]||x.accion, x.detalle||'', x.contrato||'', x.lote||'']); });
+  descargarCSV('bitacora-'+(bitQuien?bitQuien.replace(/\s+/g,'-')+'-':'')+bitDesde+'-a-'+bitHasta, f);
+}
+
 /* Aprobar créditos también se da por PERSONA (94): quien tenga la marca ve la bandeja del comité aunque su rol no la traiga. */
 async function permisoDeAprobar(role, destino){
   try{
@@ -677,7 +730,7 @@ function setView(v){
      vendedores. */
   const RENDER_DE={inicio:'renderInicio',asuntos:'renderAsuntos',cotizador:'renderCotizador',vender:'renderVender',inventario:'renderInventario',contratos:'renderContratos',
     clientes:'renderClientes',aprobacion:'renderAprobacion',cobranza:'renderCobranza',confirmacion:'renderConfirmacion',comisiones:'renderComisiones',reporteria:'renderReporteria',
-    agenda:'renderAgenda',recaudacion:'renderRecaudacion',conciliacion:'renderConciliacion',seguridad:'renderSeguridad',expedientes:'renderExpedientes',equipo:'renderEquipo',automatizaciones:'renderAutomatizaciones'};
+    agenda:'renderAgenda',recaudacion:'renderRecaudacion',conciliacion:'renderConciliacion',seguridad:'renderSeguridad',expedientes:'renderExpedientes',equipo:'renderEquipo',automatizaciones:'renderAutomatizaciones',bitacora:'renderBitacora'};
   const fn=window[RENDER_DE[v]];
   if(typeof fn!=='function'){ C().innerHTML=`<div class="card"><div class="empty">Esta pantalla no está disponible en este portal.</div></div>`; return; }
   fn();

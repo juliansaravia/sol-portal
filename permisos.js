@@ -231,6 +231,7 @@ const VISTA_REQUIERE = {
   comisiones: 'comision.ver_propia',
   reporteria: 'venta.ver_todas',
   equipo: 'equipo.ver',
+  bitacora: 'bitacora.ver',
   seguridad: 'permisos.editar',
   automatizaciones: 'reglas.editar',
 };
