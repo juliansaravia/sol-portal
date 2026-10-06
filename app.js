@@ -4457,9 +4457,9 @@ function modalNuevoContrato(loteSel,pre){
     return `<div class="field ${ancho||''}${optHist}">
     <label>${label}${req?' <span class="ast">*</span>':''}</label><input id="n-${id}" ${extra||''}><div class="err" id="e-${id}"></div></div>`; };
   /* La dirección va en cuatro partes obligatorias; el departamento se elige de la lista. */
-  const direccion=(pref,titulo)=>`<div class="field full" style="margin-bottom:-6px"><label>${titulo} *</label><div class="hint">Número de casa, calle, municipio y departamento: sin los cuatro no se acepta.</div></div>`
+  const direccion=(pref,titulo,opcional)=>`<div class="field full" style="margin-bottom:-6px"><label>${titulo}${opcional?'':' *'}</label><div class="hint">${opcional?'Si se pone, va completa: número de casa, calle, municipio y departamento.':'Número de casa, calle, municipio y departamento: sin los cuatro no se acepta.'}</div></div>`
     +PARTES_DIRECCION.map(pt=>pt.tipo==='depto'
-      ?`<div class="field"><label>${pt.label} *</label><select id="n-${pref}_${pt.suf}"><option value="">— elegir —</option>${DEPARTAMENTOS.map(x=>`<option ${x==='Chimaltenango'?'selected':''}>${x}</option>`).join('')}</select><div class="err" id="e-${pref}_${pt.suf}"></div></div>`
+      ?`<div class="field"><label>${pt.label}${opcional?'':' *'}</label><select id="n-${pref}_${pt.suf}"><option value="">— elegir —</option>${DEPARTAMENTOS.map(x=>`<option ${x==='Chimaltenango'?'selected':''}>${x}</option>`).join('')}</select><div class="err" id="e-${pref}_${pt.suf}"></div></div>`
       :campo(`${pref}_${pt.suf}`,pt.label,`placeholder="${esc(pt.ph||'')}"`)).join('');
   openModal(`<div class="modal-h"><h3>Nueva venta</h3>
       <p>Lote, comprador y pariente. Los papeles van después, en orden: formulario, plan de pagos, boleta del enganche, DPI y contrato.</p></div>
@@ -4514,13 +4514,13 @@ function modalNuevoContrato(loteSel,pre){
       <!-- No siempre es un pariente: a veces es el fiador, el patrono o
            un amigo. Lo que importa es que sea OTRA persona a quien se
            pueda llamar, no de quién es pariente. -->
-      <div class="sect-t" style="margin-top:18px">Referencia · pariente, fiador o quien responda</div>
-      <div class="hint" style="margin-bottom:10px">Tiene que ser un contacto distinto: si el cliente cambia de número, es a quien se llama.</div>
+      <div class="sect-t" style="margin-top:18px">Referencia · pariente, fiador o quien responda <span class="hint" style="font-weight:400">· opcional</span></div>
+      <div class="hint" style="margin-bottom:10px">Otro contacto a quien llamar si el cliente cambia de número. Se puede dejar vacío y completar después en el expediente; si se pone, va con teléfono y dirección.</div>
       <div class="form-grid">
         ${campo('pnom','Nombre')}
         ${campo('ptel','Teléfono celular','placeholder="5555 5555 · extranjero: +1 305 555 0123" inputmode="tel"')}
         ${campo('pmail','Correo','type="email"','full')}
-        ${direccion('pdir','Dirección del pariente o fiador')}
+        ${direccion('pdir','Dirección del pariente o fiador',true)}
       </div>
       <div id="n-errores"></div>
     </div>

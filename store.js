@@ -478,7 +478,7 @@ function crearClienteLocal(nombreCompleto, extra = {}) {
     email: extra.email || '', direccion: extra.direccion || '',
     ocupacion: extra.ocupacion || '', ingresoMensual: extra.ingresoMensual || null,
     constancia: extra.constancia || null, pesoConstancia: extra.pesoConstancia ?? null,
-    pariente: extra.pariente || null,
+    pariente: extra.pariente || null, tieneReferencia: !!(extra.pariente && extra.pariente.nombre),
     creado: HOY_ISO
   };
   DB.clientes.push(cli);
@@ -495,7 +495,9 @@ async function crearCliente(nombreCompleto, extra = {}) {
     pariente: extra.pariente || null
   });
   if (!r.ok) { avisar(r.error); return null; }
-  return DB.clientes[DB.clientes.length - 1];
+  const nuevo = DB.clientes[DB.clientes.length - 1];
+  if (nuevo) nuevo.tieneReferencia = !!(extra.pariente && extra.pariente.nombre);
+  return nuevo;
 }
 const getCliente = id => (id == null) ? undefined : indices().clientes.get(String(id));
 const nombreCliente = id => { const c = getCliente(id); return c ? `${c.nombre} ${c.apellido}`.trim() : '—'; };
@@ -924,7 +926,8 @@ function requeridosPara(ct, reqs) {
     reqs.push(cat ? { ...cat, obligatorio: true } : { codigo: 'constancia_ingresos', nombre: 'Constancia de ingresos', caras: 1, obligatorio: true });
   }
   return reqs.filter(r => {
-    if (r.codigo === 'dpi_pariente') return !!ct.origen && String(ct.fecha || '') >= EXIGE_DPI_PARIENTE_DESDE;
+    /* DPI del pariente: sólo si la venta trae referencia (desde el 6 oct 2026 es opcional). Si no se sabe, se pide. */
+    if (r.codigo === 'dpi_pariente') { const cl = getCliente(ct.clienteId) || {}; return !!ct.origen && String(ct.fecha || '') >= EXIGE_DPI_PARIENTE_DESDE && cl.tieneReferencia !== false; }
     if (r.codigo === 'plan_pagos')   return !esContado(ct);
     /* Históricos: sin DPI del cónyuge ni constancia de ingresos (16 sept 2026). */
     if (esHistoricoCt(ct) && (r.codigo === 'dpi_conyuge' || r.codigo === 'constancia_ingresos')) return false;

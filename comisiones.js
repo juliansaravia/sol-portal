@@ -311,13 +311,16 @@ const CAMPOS_VENTA = [
   { id:'fuente',   label:'¿Cómo comprueba su ingreso?', grupo:'ingresos',  req:false, tipo:'lista' },
   { id:'empleador',label:'Empresa o negocio donde trabaja', grupo:'ingresos', req:false },
   { id:'nit',      label:'NIT',                         grupo:'comprador', req:false },
-  { id:'pnom',     label:'Nombre del pariente',         grupo:'pariente',  req:true },
-  { id:'ptel',     label:'Teléfono celular del pariente',grupo:'pariente', req:true, tipo:'tel' },
+  /* Referencia (pariente, fiador o quien responda) OPCIONAL al ingresar la venta (6 oct 2026): los
+     vendedores no siempre la tienen a mano y no debe frenar la venta. Si se pone el nombre, van también
+     el teléfono y la dirección completa. El correo nunca es obligatorio. */
+  { id:'pnom',     label:'Nombre del pariente',         grupo:'pariente',  req:false },
+  { id:'ptel',     label:'Teléfono celular del pariente',grupo:'pariente', req:false, tipo:'tel' },
   { id:'pmail',    label:'Correo del pariente',         grupo:'pariente',  req:false, tipo:'mail' },
-  { id:'pdir_casa',  label:'Número de casa o lote del pariente', grupo:'pariente', req:true },
-  { id:'pdir_calle', label:'Calle, avenida, zona o aldea del pariente', grupo:'pariente', req:true },
-  { id:'pdir_muni',  label:'Municipio del pariente',           grupo:'pariente',  req:true },
-  { id:'pdir_depto', label:'Departamento del pariente',        grupo:'pariente',  req:true, tipo:'depto' },
+  { id:'pdir_casa',  label:'Número de casa o lote del pariente', grupo:'pariente', req:false },
+  { id:'pdir_calle', label:'Calle, avenida, zona o aldea del pariente', grupo:'pariente', req:false },
+  { id:'pdir_muni',  label:'Municipio del pariente',           grupo:'pariente',  req:false },
+  { id:'pdir_depto', label:'Departamento del pariente',        grupo:'pariente',  req:false, tipo:'depto' },
 ];
 
 /* ---------- Dirección ---------- */
@@ -420,7 +423,7 @@ const OPCIONAL_HISTORICO = ['dpi','tel','mail','dir_casa','dir_calle','dir_muni'
                             'pnom','ptel','pmail','pdir_casa','pdir_calle','pdir_muni','pdir_depto'];
 /* Crédito con expediente completo (Hati, 10 sept 2026): todo lo que
    sirve para evaluar al deudor pasa a obligatorio. */
-const REQUERIDO_ROBUSTO = ['mail','ocup','ingreso','fuente','empleador','nit','pnom','ptel','pdir_casa','pdir_calle','pdir_muni','pdir_depto'];
+const REQUERIDO_ROBUSTO = ['mail','ocup','ingreso','fuente','empleador','nit','pnom','ptel','pdir_casa','pdir_calle','pdir_muni','pdir_depto'];   // Hati: la referencia sí es obligatoria
 function validarVenta(datos, opciones) {
   const historico = !!(opciones && opciones.historico);
   const robusto = !!(opciones && opciones.robusto) && !historico;
@@ -433,13 +436,20 @@ function validarVenta(datos, opciones) {
     let r = { ok:true };
     if (c.tipo === 'tel')   r = validaTel(v);
     if (c.tipo === 'dpi')   r = (opciones && opciones.docExtranjero) ? validaDocExtranjero(v) : validaDPI(v);
-    if (c.tipo === 'mail')  r = validaMail(v);
+    /* Un correo opcional mal escrito no frena la venta: no se guarda, y punto. */
+    if (c.tipo === 'mail')  r = c.req ? validaMail(v) : { ok:true };
     if (c.tipo === 'depto') r = validaDepto(v);
     if (c.tipo === 'monto' && !(Number(String(v).replace(/[^\d.]/g,'')) > 0))
       r = { ok:false, msg:'Anota un monto mayor que cero' };
     if (!r.ok) errores.push({ campo:c.id, msg:`${c.label}: ${r.msg}` });
   }
 
+  // Si se da la referencia, va completa: nombre, teléfono y dirección (el correo, no).
+  const refDada = ['pnom','ptel','pdir_casa','pdir_calle','pdir_muni'].some(k => String(datos[k] || '').trim());
+  if (refDada && !historico) for (const c of CAMPOS_VENTA) {
+    if (c.grupo !== 'pariente' || c.id === 'pmail') continue;
+    if (!String(datos[c.id] || '').trim() && !errores.some(e => e.campo === c.id)) errores.push({ campo:c.id, msg:`Falta ${c.label.toLowerCase()} (si se pone la referencia, va completa)` });
+  }
   // El pariente no puede ser el mismo teléfono del comprador: entonces no sirve de contacto alterno
   const t1 = validaTel(datos.tel), t2 = validaTel(datos.ptel);
   if (t1.ok && t2.ok && t1.valor === t2.valor)

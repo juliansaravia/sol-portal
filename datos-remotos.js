@@ -89,11 +89,12 @@ async function cargarDesdeSupabase() {
 
        Los pagos se quedan acá: son 738 y de ellos depende cuánto lleva
        recaudado cada contrato, que es de lo primero que se mira. */
-    const [lotes, contratos, clientes, pagos, equipo, documentos, comisiones, adjuntos, recibos, liquidaciones, requeridos, proyectos, personaProyectos] = await Promise.all([
+    const [lotes, contratos, clientes, referencias, pagos, equipo, documentos, comisiones, adjuntos, recibos, liquidaciones, requeridos, proyectos, personaProyectos] = await Promise.all([
       todas('v_inventario', 'proyecto_id,proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado,centro_x,centro_y,poligono'),
       conRespaldo('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,origen,banco,boleta,lote_id,cliente_id,persona_id',
                   'expediente_de,modalidad,crm_no_contactar,crm_no_contactar_motivo'),
       todas('cliente', 'id,nombre,dpi,nit,telefono,email,direccion,ocupacion'),
+      todas('referencia_personal', 'cliente_id').catch(() => null),   // 6 oct 2026: quién dio referencia (pariente/fiador); si no se puede leer, se pide el DPI como antes
       /* `eliminado` llega con 74_eliminar_pago.sql; si no se ha corrido, se pide lo de siempre. */
       conRespaldo('pago', 'id,contrato_id,giro_id,monto,fecha_pago,forma_pago,referencia,estado', 'eliminado,eliminado_motivo,aplicacion,giro_capital_id,registrado_por,aprobado_por,aprobado_en,created_at,origen'),
       /* `auth_uid` viene para saber quién ya puede entrar. No se guarda
@@ -173,10 +174,12 @@ async function cargarDesdeSupabase() {
     if (DB.lotes.length && !ubicados)
       console.warn('[datos] ningún lote coincide con lotes-geo.js: revisá los códigos');
 
+    const conRef = referencias ? new Set(referencias.map(r => String(r.cliente_id))) : null;
     DB.clientes = clientes.map(c => ({
       id: c.id, nombre: c.nombre, apellido: '',
       dpi: c.dpi, nit: c.nit, tel: c.telefono, correo: c.email,
-      direccion: c.direccion, ocupacion: c.ocupacion
+      direccion: c.direccion, ocupacion: c.ocupacion,
+      tieneReferencia: conRef ? conRef.has(String(c.id)) : undefined   // undefined = no se sabe: se pide el DPI del pariente
     }));
 
     /* Los expedientes se arman con esto: sin los documentos de la base,
