@@ -927,7 +927,7 @@ function requeridosPara(ct, reqs) {
   }
   return reqs.filter(r => {
     /* DPI del pariente: sólo si la venta trae referencia (desde el 6 oct 2026 es opcional). Si no se sabe, se pide. */
-    if (r.codigo === 'dpi_pariente') { const cl = getCliente(ct.clienteId) || {}; return !!ct.origen && String(ct.fecha || '') >= EXIGE_DPI_PARIENTE_DESDE && cl.tieneReferencia !== false; }
+    if (r.codigo === 'dpi_pariente') { const cl = getCliente(ct.clienteId) || {}; return !!ct.origen && String(ct.fecha || '') >= EXIGE_DPI_PARIENTE_DESDE && cl.tieneReferencia === true; }
     if (r.codigo === 'plan_pagos')   return !esContado(ct);
     /* Históricos: sin DPI del cónyuge ni constancia de ingresos (16 sept 2026). */
     if (esHistoricoCt(ct) && (r.codigo === 'dpi_conyuge' || r.codigo === 'constancia_ingresos')) return false;

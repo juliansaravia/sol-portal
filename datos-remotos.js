@@ -179,7 +179,7 @@ async function cargarDesdeSupabase() {
       id: c.id, nombre: c.nombre, apellido: '',
       dpi: c.dpi, nit: c.nit, tel: c.telefono, correo: c.email,
       direccion: c.direccion, ocupacion: c.ocupacion,
-      tieneReferencia: conRef ? conRef.has(String(c.id)) : undefined   // undefined = no se sabe: se pide el DPI del pariente
+      tieneReferencia: conRef ? conRef.has(String(c.id)) : undefined   // undefined = este rol no lee referencias: no se le exige el DPI del pariente
     }));
 
     /* Los expedientes se arman con esto: sin los documentos de la base,
