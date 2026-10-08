@@ -217,26 +217,49 @@ function repEnganches() {
 
 /** 3 · Antigüedad de saldos. El reporte de cartera de toda la vida. */
 function repAntiguedad() {
-  const tramos = [[1,30],[31,60],[61,90],[91,180],[181,9999]];
-  const f = [['Contrato','Lote','Cliente','Vendedor','Saldo total','Días de atraso',
-              'Al día','1-30','31-60','61-90','91-180','Más de 180']];
-  const hoy = HOY_ISO;
-  DB.contratos.filter(c => c.estado !== 'anulado').forEach(c => {
+  /* Antigüedad de saldos (8 oct 2026): cada fila suma su saldo completo. Lo atrasado va por tramos
+     según los días desde la fecha de la cuota; lo demás es «Por vencer». Una cuota cuenta como
+     atrasada sólo pasados los 30 días del contrato (0 en contado diferido), y por lo que le falta. */
+  const tramos = [[1,30],[31,60],[61,90],[91,180],[181,99999]];
+  const f = [['Contrato','Lote','Fase','Cliente','Vendedor','Saldo total','Por vencer','Atrasado','Días de atraso',
+              '1-30','31-60','61-90','91-180','Más de 180','Estado']];
+  const hoy = HOY_ISO, dia = 86400000;
+  const tot = { saldo:0, porVencer:0, atrasado:0, tr:[0,0,0,0,0] };
+  DB.contratos.filter(c => c.estado !== 'anulado' && c.estado !== 'caido').forEach(c => {
     const e = estadoCuenta(c);
+    const plazo = (typeof plazoDePago === 'function') ? plazoDePago(c) : 30;
     const giros = (c.obligaciones || []).flatMap(o => o.giros || []);
-    const vencidos = giros.filter(g => g.estado !== 'pagado' && g.vence < hoy);
-    const dias = vencidos.length
-      ? Math.round((new Date(hoy) - new Date(vencidos[0].vence)) / 86400000) : 0;
-    const col = tramos.map(([a, b]) => {
-      const m = vencidos.filter(g => {
-        const d = Math.round((new Date(hoy) - new Date(g.vence)) / 86400000);
-        return d >= a && d <= b;
-      }).reduce((s, g) => s + g.monto, 0);
-      return m ? _repNum(m) : '';
-    });
-    f.push([c.no, c.lote, nombreCliente(c.clienteId), c.vendedor || 'Sin asignar',
-            _repNum(e.saldo), dias, dias === 0 ? _repNum(e.saldo) : '', ...col]);
+    const atras = giros.filter(g => {
+      if (g.estado === 'pagado' || g.condicion) return false;
+      const v = String(g.vence || g.venc || '').slice(0, 10); if (!v) return false;
+      const falta = (g.monto || 0) - (g.abonado || 0); if (falta <= (typeof TOLERANCIA_CUOTA === 'number' ? TOLERANCIA_CUOTA : 5)) return false;
+      const lim = new Date(v + 'T00:00:00'); lim.setDate(lim.getDate() + plazo);
+      return lim.toISOString().slice(0, 10) < hoy;
+    }).map(g => ({ falta: (g.monto || 0) - (g.abonado || 0), dias: Math.round((new Date(hoy + 'T00:00:00') - new Date(String(g.vence || g.venc).slice(0, 10) + 'T00:00:00')) / dia) }));
+    const atrasado = Math.round(atras.reduce((s, g) => s + g.falta, 0) * 100) / 100;
+    const dias = atras.length ? Math.max(...atras.map(g => g.dias)) : 0;
+    const col = tramos.map(([a, b]) => Math.round(atras.filter(g => g.dias >= a && g.dias <= b).reduce((s, g) => s + g.falta, 0) * 100) / 100);
+    const saldo = Math.round((e.saldo || 0) * 100) / 100, porVencer = Math.round((saldo - atrasado) * 100) / 100;
+    tot.saldo += saldo; tot.porVencer += porVencer; tot.atrasado += atrasado; col.forEach((m, k) => tot.tr[k] += m);
+    f.push([c.no, c.lote, c.fase || '', nombreCliente(c.clienteId), c.vendedor || 'Sin asignar',
+            _repNum(saldo), _repNum(porVencer), atrasado ? _repNum(atrasado) : '', dias || '',
+            ...col.map(m => m ? _repNum(m) : ''), atrasado ? 'Atrasado' : 'Al día']);
   });
+  f.push(['TOTAL', '', '', '', '', _repNum(tot.saldo), _repNum(tot.porVencer), _repNum(tot.atrasado), '', ...tot.tr.map(_repNum), '']);
+  return f;
+}
+
+/** Desistimientos y anulaciones (8 oct 2026): los contratos que salieron de la cartera, con lo que
+ *  habían pagado y por qué. No dependen del período. */
+function repDesistimientos() {
+  const f = [['Contrato','Lote','Fase','Cliente','Vendedor','Fecha del contrato','Precio','Enganche','Pagado (confirmado)','Pagos','Motivo / última nota']];
+  DB.contratos.filter(c => c.estado === 'anulado' || c.estado === 'caido').forEach(c => {
+    const pagos = (DB.pagos || []).filter(p => mismoId(p.contratoId, c.id) && p.estado === 'confirmado');
+    const notas = (DB.gestiones || []).filter(g => mismoId(g.contratoId, c.id) && /rechaz|desist|anul|prueba/i.test(g.comentario || '')).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+    f.push([c.no, c.lote, c.fase || '', c.clienteId ? nombreCliente(c.clienteId) : '—', c.vendedor || '', String(c.fecha || '').slice(0, 10), _repNum(c.precio), _repNum(c.enganche),
+            _repNum(pagos.reduce((s, p) => s + (+p.monto || 0), 0)), pagos.length, notas.length ? notas[0].comentario : '']);
+  });
+  f.sort((a, b) => String(b[5]).localeCompare(String(a[5])));
   return f;
 }
 
@@ -621,8 +644,11 @@ const REPORTES = [
     que:'Cada contrato aprobado cuyo enganche no figura pagado, con su caso: boleta subida sin pago, pago por confirmar, pago aplicado a otra cuota, sin respaldo.',
     para:'La lista de trabajo para dejar todos los enganches aplicados. No depende del período.', fn: repEnganches },
   { id:'antiguedad',   nombre:'Antigüedad de saldos',
-    que:'El saldo vencido repartido en tramos de 30, 60, 90 y 180 días.',
+    que:'Cada contrato con su saldo completo: lo por vencer y lo atrasado por tramos de 30, 60, 90 y 180 días. Suma lo mismo que la cartera.',
     para:'Para provisionar y para decidir a quién se escala.', fn: repAntiguedad },
+  { id:'desistimientos', nombre:'Desistimientos y anulaciones',
+    que:'Los contratos que salieron de la cartera (desistidos, anulados, de prueba), con lo que habían pagado y el motivo.',
+    para:'Para que no alteren la cartera y quede claro qué se devolvió o no. No depende del período.', fn: repDesistimientos },
   { id:'comisiones',   nombre:'Comisiones',
     que:'Lo devengado por vendedor, y lo retenido con su motivo.',
     para:'Para la liquidación y para provisionar el gasto.', fn: repComisiones },
