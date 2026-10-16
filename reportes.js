@@ -252,12 +252,13 @@ function repAntiguedad() {
 /** Desistimientos y anulaciones (8 oct 2026): los contratos que salieron de la cartera, con lo que
  *  habían pagado y por qué. No dependen del período. */
 function repDesistimientos() {
-  const f = [['Contrato','Lote','Fase','Cliente','Vendedor','Fecha del contrato','Precio','Enganche','Pagado (confirmado)','Pagos','Motivo / última nota']];
+  const f = [['Contrato','Lote','Fase','Cliente','Vendedor','Fecha del contrato','Precio','Enganche','Pagado (confirmado)','Pagos','Tipo · motivo']];
   DB.contratos.filter(c => c.estado === 'anulado' || c.estado === 'caido').forEach(c => {
     const pagos = (DB.pagos || []).filter(p => mismoId(p.contratoId, c.id) && p.estado === 'confirmado');
     const notas = (DB.gestiones || []).filter(g => mismoId(g.contratoId, c.id) && /rechaz|desist|anul|prueba/i.test(g.comentario || '')).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+    const tipo = c.estadoBase === 'desistido' ? 'Desistimiento' : c.estadoBase === 'caido' ? 'Caído' : 'Anulado';
     f.push([c.no, c.lote, c.fase || '', c.clienteId ? nombreCliente(c.clienteId) : '—', c.vendedor || '', String(c.fecha || '').slice(0, 10), _repNum(c.precio), _repNum(c.enganche),
-            _repNum(pagos.reduce((s, p) => s + (+p.monto || 0), 0)), pagos.length, notas.length ? notas[0].comentario : '']);
+            _repNum(pagos.reduce((s, p) => s + (+p.monto || 0), 0)), pagos.length, tipo + (notas.length ? ' · ' + notas[0].comentario : '')]);
   });
   f.sort((a, b) => String(b[5]).localeCompare(String(a[5])));
   return f;

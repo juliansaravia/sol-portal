@@ -40,6 +40,7 @@ const claveLote = (fase, codigo) => `${fase}·${codigo}`;
 const ESTADO_PORTAL = {
   activo:    'aprobado',    // vendido y vigente
   caido:     'anulado',     // se cayó · el portal solo distingue dentro/fuera
+  desistido: 'anulado',     // el cliente desistió · fuera de la cartera (el reporte de desistimientos lo distingue por estadoBase)
   liquidado: 'aprobado'     // terminó de pagar · sigue siendo una venta
 };
 const estadoDePortal = e => ESTADO_PORTAL[e] || e;
