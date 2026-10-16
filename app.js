@@ -4035,7 +4035,8 @@ function pintarContrato(){
   if(drawerTab==='ficha'){
     h+=`<div class="sect-t">Datos del contrato</div><div class="fgrid">
       <div><div class="f-lbl">No. contrato</div><div class="f-val">${ct.no}</div></div>
-      <div><div class="f-lbl">Fecha</div><div class="f-val">${fmtD(ct.fecha)}</div></div>
+      <div><div class="f-lbl">Fecha del contrato</div><div class="f-val">${fmtD(ct.fecha)}
+        ${PUEDE_DIFERIR()&&ct.estado!=='anulado'?`<button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="modalFechaContrato('${ct.id}')">Cambiar</button>`:''}</div></div>
       <div><div class="f-lbl">Lote</div><div class="f-val">${ct.lote}
         ${PUEDE_DIFERIR()&&ct.estado!=='anulado'&&ct.loteId?`<button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="modalCambiarLote('${ct.id}')">Cambiar</button>`:''}</div></div>
       <div><div class="f-lbl">Precio de venta</div><div class="f-val">${Q(ct.precio)}</div></div>
@@ -4480,9 +4481,9 @@ function modalNuevoContrato(loteSel,pre){
       ${puedeHistorico?`<label class="hint" style="display:flex;gap:8px;align-items:flex-start;margin:10px 0 0;cursor:pointer"><input type="checkbox" id="n-hist" onchange="ventaHistorica(this.checked)" ${pre.historico?'checked':''} style="margin-top:3px">
         <span><b>Contrato histórico</b>: ya está firmado en papel y vigente. Queda aprobado con el lote vendido; sólo se exige nombre y apellido del cliente, lo demás se guarda si se tiene. El contrato firmado se sube después como documento.</span></label>
       <div class="form-grid" id="n-histCampos" hidden>
-        <div class="field"><label>Fecha del contrato <span class="ast">*</span></label><input id="n-fecha" type="date" value="${HOY_ISO}"></div>
         <div class="field"><label>Número del contrato <span class="hint">(el del papel, ej. RES-006)</span></label><input id="n-numero" placeholder="Vacío: el suite le da el siguiente" style="text-transform:uppercase"></div>
       </div>`:''}
+      <div class="form-grid"><div class="field"><label>Fecha de la solicitud de compraventa</label><input id="n-fecha" type="date" value="${HOY_ISO}" max="${HOY_ISO}"><div class="hint">La del papel firmado. Si se deja hoy, se puede corregir después en la ficha.</div></div></div>
 
       <div class="sect-t" style="margin-top:18px">El comprador</div>
       <div class="form-grid">
@@ -4682,7 +4683,7 @@ async function crearContrato(){
     direccion:d.dir_depto?direccionCompleta(d,'dir'):'', ocupacion:[d.ocup,d.empleador].filter(Boolean).join(' · '), nit:d.nit||'', ingresoMensual:+String(d.ingreso).replace(/[^\d.]/g,''),
     constancia:d.fuente, pesoConstancia:pesoConstancia(d.fuente),
     pariente:d.pnom?{nombre:d.pnom, telefono:validaTel(d.ptel).valor, email:validaMail(d.pmail).valor, direccion:d.pdir_depto?direccionCompleta(d,'pdir'):''}:null,
-    fecha:historico?v('n-fecha'):undefined, historico, numero:historico?v('n-numero').trim().toUpperCase()||undefined:undefined,
+    fecha:v('n-fecha')||undefined, historico, numero:historico?v('n-numero').trim().toUpperCase()||undefined:undefined,
     /* El vendedor vende a su nombre, siempre. El enganche puede ser 0 (promoción): vacío es el mínimo. */
     vendedor:ROLE==='vendedor'?((window.__user&&window.__user.name)||v('n-vend')):v('n-vend'),
     precio:precioVentaElegido(),
@@ -6415,6 +6416,24 @@ function pistaPlan(id){
   const precio=+v('en-precio')||ct.precio;
   const p=planFinanciamiento(precio,+v('en-monto')||0,+v('en-plazo')||1,+v('en-tasa'));
   const e=document.getElementById('en-cuotaPlan'); if(e) e.value=`${Q(p.cuota)} × ${p.plazo}`;
+}
+/* La fecha del contrato (103): la de la solicitud de compraventa, no la del día en que se registró. */
+function modalFechaContrato(id){
+  const ct=getContrato(id); if(!ct) return;
+  openModal(`<div class="modal-h"><h3>Fecha del contrato</h3><p>${esc(ct.no)} · Lote ${esc(ct.lote)} · ${esc(nombreCliente(ct.clienteId))}</p></div>
+    <div class="modal-b"><div class="field"><label>Fecha de la solicitud de compraventa</label><input id="fc-fecha" type="date" max="${HOY_ISO}" value="${esc(String(ct.fecha||'').slice(0,10))}"></div>
+      <div class="hint">Cambia la fecha del contrato y la del enganche. Las cuotas no se mueven; para eso está «mover sólo las fechas» en Enganche y plan.</div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="guardarFechaContrato('${ct.id}')">Guardar</button></div>`);
+}
+async function guardarFechaContrato(id){
+  const ct=getContrato(id); if(!ct) return; const f=v('fc-fecha'); if(!f||f>HOY_ISO) return toast('Revisá la fecha',4000,true);
+  if(f===String(ct.fecha||'').slice(0,10)) return closeModal();
+  if(typeof hayBase==='function'&&hayBase()){
+    const r=await conBoton(()=>sbCambiarFechaContrato(id,f)); if(!r||!r.ok) return;
+    if(typeof cargarCartera==='function'){ try{ await cargarCartera(); }catch(e){} }
+  } else if(typeof saveDB==='function') saveDB();
+  anotar('contrato.fecha', ct.no+' · '+fmtD(ct.fecha)+' → '+fmtD(f)); ct.fecha=f;
+  if(typeof reindexar==='function') reindexar(); closeModal(); if(drawerCt) pintarContrato(); toast('Fecha del contrato: '+fmtD(f));
 }
 /* Sólo las fechas (97): el calendario se corre para que la cuota 1 venza el día que diga Enlazados. */
 async function moverFechasPlan(id){

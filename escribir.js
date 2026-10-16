@@ -278,6 +278,12 @@ async function sbEstadoContrato(contrato_id, estado, estadoLote) {
   });
 }
 
+/** La fecha del contrato (103): la de la solicitud de compraventa. Mueve el enganche; no las cuotas. */
+async function sbCambiarFechaContrato(contrato_id, fecha) {
+  return escribir('cambiar la fecha del contrato', async () =>
+    oExplota(await SB.rpc('cambiar_fecha_contrato', { p_contrato_id: Number(contrato_id), p_fecha: fecha })));
+}
+
 /** Mover todo el calendario de cuotas para que la primera venza ese día (97). No toca montos ni pagos. */
 async function sbMoverPrimeraCuota(contrato_id, fecha) {
   return escribir('mover las fechas del plan', async () =>
