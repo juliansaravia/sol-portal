@@ -284,6 +284,27 @@ async function sbCambiarFechaContrato(contrato_id, fecha) {
     oExplota(await SB.rpc('cambiar_fecha_contrato', { p_contrato_id: Number(contrato_id), p_fecha: fecha })));
 }
 
+/* ── WhatsApp propio (105) ── */
+async function sbWaBandeja(filtro) { return oExplota(await SB.rpc('wa_bandeja', { p_filtro: filtro || 'todas', p_tope: 300 })); }
+async function sbWaHilo(conversacion_id) { return oExplota(await SB.rpc('wa_hilo', { p_conversacion_id: Number(conversacion_id), p_tope: 200 })); }
+async function sbWaLeida(conversacion_id) { try { await SB.rpc('wa_marcar_leida', { p_conversacion_id: Number(conversacion_id) }); } catch (e) {} }
+async function sbWaAjustar(contacto_id, cambios) {
+  return escribir('ajustar el contacto', async () => oExplota(await SB.rpc('wa_contacto_ajustar', { p_contacto_id: Number(contacto_id),
+    p_ia_activa: cambios.ia_activa ?? null, p_asignado_a: cambios.asignado_a ?? null, p_cerrar: cambios.cerrar ?? null, p_cliente_id: cambios.cliente_id ?? null })));
+}
+/** La función whatsapp, con la sesión de la persona: enviar, plantilla, media. */
+async function sbWaFuncion(cuerpo) {
+  const { data: { session } } = await SB.auth.getSession();
+  if (!session) return { ok: false, error: 'Tu sesión caducó. Volvé a entrar.' };
+  try {
+    const r = await fetch((window.SUPABASE_CONFIG?.url || '') + '/functions/v1/whatsapp', { method: 'POST',
+      headers: { 'Authorization': `Bearer ${session.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo) });
+    let d = null; try { d = await r.json(); } catch (_) {}
+    if (!r.ok) return { ok: false, error: (d && d.error) || ('Error ' + r.status) };
+    return { ok: true, dato: d };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
 /** Mover todo el calendario de cuotas para que la primera venza ese día (97). No toca montos ni pagos. */
 async function sbMoverPrimeraCuota(contrato_id, fecha) {
   return escribir('mover las fechas del plan', async () =>

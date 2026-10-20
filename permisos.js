@@ -224,6 +224,7 @@ const VISTA_REQUIERE = {
   expedientes: 'doc.ver_todos',
   aprobacion: 'venta.aprobar',
   cobranza: 'cobranza.ver',
+  whatsapp: 'cobranza.ver',
   agenda: 'cobranza.gestionar',
   recaudacion: 'recaudo.marcar',
   conciliacion: 'banco.conciliar',

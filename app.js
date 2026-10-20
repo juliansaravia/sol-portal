@@ -47,6 +47,7 @@ const TITLES={
   clientes:['Clientes','Información de los socios'],
   aprobacion:['Aprobación de créditos','Bandeja del comité'],
   cobranza:['Cobranza','Cartera, giros y mora'],
+  whatsapp:['WhatsApp','Conversaciones con clientes y prospectos'],
   confirmacion:['Confirmación de pagos','Boletas pendientes de verificar'],
   comisiones:['Comisiones','Cálculo sobre cobro efectivo'],
   reporteria:['Reportería','Indicadores del negocio'],
@@ -534,6 +535,72 @@ function startApp(role){
   setView(ROLES[role].views.includes(destino) ? destino : ROLES[role].home);
   permisoDeAprobar(role, destino);
 }
+/* ============================================================ WHATSAPP PROPIO (105)
+   La bandeja de conversaciones. La base decide qué ve cada quien (wa_bandeja / wa_hilo). */
+let waFiltro='todas', waQ='', waLista=null, waAbierta=null, waHilo=[], waError='', waTimer=null;
+async function cargarWa(){
+  if(!(typeof hayBase==='function'&&hayBase())){ waLista=[]; waError='Sin base conectada.'; return pintarWa(); }
+  try{ waLista=await sbWaBandeja(waFiltro); waError=''; }catch(e){ waLista=[]; waError=/PGRST202|does not exist/.test(e.message)?'Falta correr la migración 105 en la base.':e.message; }
+  if(waAbierta){ const c=waLista.find(x=>mismoId(x.conversacion_id,waAbierta)); if(c) await abrirWa(waAbierta,true); }
+  if(vista==='whatsapp') pintarWa();
+}
+function renderWhatsapp(){ pintarWa(); if(waLista===null) cargarWa();
+  /* Se refresca sola cada 20 s mientras la pantalla esté abierta. */
+  if(typeof setInterval==='function'&&typeof clearInterval==='function'){ if(waTimer) clearInterval(waTimer); waTimer=setInterval(()=>{ if(vista==='whatsapp') cargarWa(); else { clearInterval(waTimer); waTimer=null; } }, 20000); } }
+async function abrirWa(id,silencioso){
+  waAbierta=id; try{ waHilo=await sbWaHilo(id); }catch(e){ waHilo=[]; toast(e.message,5000,true); }
+  const c=(waLista||[]).find(x=>mismoId(x.conversacion_id,id)); if(c&&c.no_leidos>0){ c.no_leidos=0; sbWaLeida(id); }
+  if(!silencioso) pintarWa();
+}
+function waFiltradas(){ const q=waQ.trim().toLowerCase(); return (waLista||[]).filter(c=>!q||`${c.nombre||''} ${c.telefono} ${c.cliente||''} ${c.contratos||''}`.toLowerCase().includes(q)); }
+function pintarWa(){
+  const L=waFiltradas(); const c=waAbierta?(waLista||[]).find(x=>mismoId(x.conversacion_id,waAbierta)):null;
+  const hora=t=>new Date(t).toLocaleString('es-GT',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'America/Guatemala'});
+  const tel=t=>String(t||'').replace(/^502(\d{4})(\d{4})$/,'$1 $2');
+  let h=`<div style="display:grid;grid-template-columns:minmax(260px,360px) 1fr;gap:14px;align-items:start">
+    <div class="card"><div class="card-b chips" style="gap:6px;flex-wrap:wrap">${[['todas','Todas'],['sin_leer','Sin leer'],['clientes','Clientes'],['asignadas','Mías'],['cerradas','Cerradas']].map(([k,t])=>`<button class="chip ${waFiltro===k?'on':''}" onclick="waFiltro='${k}';cargarWa()">${t}</button>`).join('')}</div>
+      <div class="card-b" style="padding:0 12px 8px"><input class="chip" style="width:100%" placeholder="Nombre, teléfono, lote o contrato" value="${esc(waQ)}" oninput="waQ=this.value;pintarWa()"></div>
+      ${waError?`<div class="card-b hint" style="color:#B0562F">${esc(waError)}</div>`:''}
+      <div style="max-height:70vh;overflow:auto">${L.length?L.map(x=>`<div class="pay-item click" style="cursor:pointer;${mismoId(x.conversacion_id,waAbierta)?'background:var(--tint)':''}" onclick="abrirWa('${x.conversacion_id}')">
+          <div class="pay-main"><div class="pay-title">${esc(x.nombre||tel(x.telefono))}${x.no_leidos?` <span class="nav-badge">${x.no_leidos}</span>`:''}${x.cliente?` <span class="badge b-ok">cliente</span>`:''}${!x.ia_activa?' <span class="badge b-nod">IA off</span>':''}</div>
+          <div class="pay-sub">${x.contratos?esc(x.contratos)+' · ':''}${esc((x.ultimo_texto||'').slice(0,60))}</div></div>
+          <div class="hint" style="white-space:nowrap">${hora(x.ultimo_en)}</div></div>`).join(''):`<div class="empty">${waLista===null?'Cargando…':'Sin conversaciones'}</div>`}</div></div>`;
+  if(!c){ h+=`<div class="card"><div class="empty">Elegí una conversación</div></div></div>`; C().innerHTML=h; return; }
+  const cliCt=c.cliente_id?(DB.contratos||[]).filter(k=>mismoId(k.clienteId,c.cliente_id)&&k.estado!=='anulado'):[];
+  h+=`<div class="card"><div class="card-h" style="flex-wrap:wrap;gap:8px"><div><h2>${esc(c.nombre||tel(c.telefono))}</h2><span class="hint">${tel(c.telefono)}${c.cliente?' · '+esc(c.cliente):' · prospecto'}${c.asignado?' · '+esc(c.asignado):''}</span></div>
+      <div class="btn-row" style="gap:6px;flex-wrap:wrap">${cliCt.map(k=>`<button class="btn btn-ghost btn-sm" onclick="abrirContrato('${k.id}','cuenta')">${esc(k.no)} · ${esc(k.lote)}</button>`).join('')}
+        <button class="btn btn-ghost btn-sm" onclick="waAjustar('${c.contacto_id}',{ia_activa:${c.ia_activa?'false':'true'}})">${c.ia_activa?'Apagar IA':'Encender IA'}</button>
+        <button class="btn btn-ghost btn-sm" onclick="waAsignar('${c.contacto_id}')">Asignar</button>
+        <button class="btn btn-ghost btn-sm" onclick="waAjustar('${c.contacto_id}',{cerrar:${c.estado==='cerrada'?'false':'true'}})">${c.estado==='cerrada'?'Reabrir':'Cerrar'}</button></div></div>
+    <div id="wa-hilo" style="max-height:55vh;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:6px;background:#f6f4ef">
+      ${[...waHilo].reverse().map(m=>{ const mio=m.direccion==='saliente'; const EST={enviado:'✓',entregado:'✓✓',leido:'✓✓ leído',fallido:'✗ no se entregó'};
+        return `<div style="align-self:${mio?'flex-end':'flex-start'};max-width:78%;background:${mio?'#dcf2d8':'#fff'};border-radius:10px;padding:8px 10px;font-size:13px;box-shadow:0 1px 1px rgba(0,0,0,.08)">
+          ${m.media_ruta?`<a href="#" onclick="waMedia('${esc(m.media_ruta)}');return false;"><b>📎 ${esc(m.tipo)}</b></a>${m.pago_id?` <span class="badge b-pend">pago por confirmar</span>`:''}<br>`:''}${esc(m.texto||'').replace(/\n/g,'<br>')}
+          <div class="hint" style="text-align:right;margin-top:3px">${m.por_ia?'IA · ':(m.persona?esc(m.persona)+' · ':'')}${hora(m.created_at)}${mio?' · '+(EST[m.estado]||m.estado):''}${m.detalle&&m.estado==='fallido'?' · '+esc(m.detalle):''}</div></div>`; }).join('')||'<div class="empty">Sin mensajes</div>'}</div>
+    <div class="card-b"><div style="display:flex;gap:8px"><textarea id="wa-texto" rows="2" style="flex:1" placeholder="${c.ventana_abierta?'Escribí la respuesta…':'El cliente no ha escrito en 24 h: sólo se puede mandar una plantilla'}" ${c.ventana_abierta?'':'disabled'}></textarea>
+      ${c.ventana_abierta?`<button class="btn btn-primary" onclick="waEnviar('${c.conversacion_id}')">Enviar</button>`:`<button class="btn btn-primary" onclick="waPlantilla('${c.conversacion_id}')">Plantilla</button>`}</div>
+      <div class="hint" style="margin-top:4px">Los pagos que lleguen por aquí quedan por confirmar en Confirmación de pagos. La IA nunca confirma.</div></div></div></div>`;
+  C().innerHTML=h; const hil=document.getElementById('wa-hilo'); if(hil) hil.scrollTop=hil.scrollHeight;
+}
+async function waEnviar(id){ const t=(document.getElementById('wa-texto')||{}).value||''; if(!t.trim()) return;
+  const r=await sbWaFuncion({accion:'enviar',conversacion_id:Number(id),texto:t.trim()}); if(!r.ok) return toast(r.error,7000,true);
+  anotar('wa.enviar',''+id); await abrirWa(id); }
+async function waPlantilla(id){
+  let pls=[]; try{ pls=oExplota(await SB.from('wa_plantilla').select('nombre,cuerpo,variables,estado').eq('activa',true)); }catch(e){}
+  pls=pls.filter(p=>p.estado==='aprobada'); if(!pls.length) return toast('No hay plantillas aprobadas por Meta todavía',6000,true);
+  openModal(`<div class="modal-h"><h3>Mandar plantilla</h3></div><div class="modal-b"><div class="field"><label>Plantilla</label><select id="wp-nombre" onchange="document.getElementById('wp-cuerpo').textContent=this.selectedOptions[0].dataset.c">${pls.map(p=>`<option value="${esc(p.nombre)}" data-c="${esc(p.cuerpo)}">${esc(p.nombre)}</option>`).join('')}</select></div>
+    <div class="hint" id="wp-cuerpo">${esc(pls[0].cuerpo)}</div><div class="field"><label>Variables (una por línea, en orden)</label><textarea id="wp-vars" rows="3"></textarea></div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="waMandarPlantilla('${id}')">Mandar</button></div>`);
+}
+async function waMandarPlantilla(id){ const vars=v('wp-vars').split('\n').map(x=>x.trim()).filter(Boolean);
+  const r=await conBoton(()=>sbWaFuncion({accion:'plantilla',conversacion_id:Number(id),plantilla:v('wp-nombre'),variables:vars})); if(!r||!r.ok) return toast((r&&r.error)||'No se pudo',7000,true);
+  closeModal(); await abrirWa(id); }
+async function waAjustar(contactoId,cambios){ const r=await sbWaAjustar(contactoId,cambios); if(!r.ok) return toast(r.error,6000,true); await cargarWa(); }
+function waAsignar(contactoId){ const gente=(DB.equipo||[]).filter(p=>p.activo!==false);
+  openModal(`<div class="modal-h"><h3>Asignar conversación</h3></div><div class="modal-b"><div class="field"><label>Persona</label><select id="wa-asig">${gente.map(p=>`<option value="${p.id}">${esc(p.nombre)} · ${esc(p.rol||'')}</option>`).join('')}</select></div></div>
+    <div class="modal-f"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="closeModal();waAjustar('${contactoId}',{asignado_a:Number(v('wa-asig'))})">Asignar</button></div>`); }
+async function waMedia(ruta){ const r=await sbWaFuncion({accion:'media',ruta}); if(!r.ok) return toast(r.error,6000,true); window.open(r.dato.url,'_blank','noopener'); }
+
 /* ============================================================ BITÁCORA POR USUARIO (96)
    Sale de la base: lo que cada persona registró, confirmó, corrigió, subió o cambió. */
 let bitDesde=null, bitHasta=null, bitQuien='', bitQ='', bitFilas=null, bitError='';
@@ -730,7 +797,7 @@ function setView(v){
      vendedores. */
   const RENDER_DE={inicio:'renderInicio',asuntos:'renderAsuntos',cotizador:'renderCotizador',vender:'renderVender',inventario:'renderInventario',contratos:'renderContratos',
     clientes:'renderClientes',aprobacion:'renderAprobacion',cobranza:'renderCobranza',confirmacion:'renderConfirmacion',comisiones:'renderComisiones',reporteria:'renderReporteria',
-    agenda:'renderAgenda',recaudacion:'renderRecaudacion',conciliacion:'renderConciliacion',seguridad:'renderSeguridad',expedientes:'renderExpedientes',equipo:'renderEquipo',automatizaciones:'renderAutomatizaciones',bitacora:'renderBitacora'};
+    agenda:'renderAgenda',recaudacion:'renderRecaudacion',conciliacion:'renderConciliacion',seguridad:'renderSeguridad',expedientes:'renderExpedientes',equipo:'renderEquipo',automatizaciones:'renderAutomatizaciones',bitacora:'renderBitacora',whatsapp:'renderWhatsapp'};
   const fn=window[RENDER_DE[v]];
   if(typeof fn!=='function'){ C().innerHTML=`<div class="card"><div class="empty">Esta pantalla no está disponible en este portal.</div></div>`; return; }
   fn();
