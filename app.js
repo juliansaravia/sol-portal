@@ -6620,7 +6620,8 @@ async function guardarLiberarDiferido(id){
   closeModal(); toast('Saldo liberado: ya está en cobranza'); await traerCartera(); if(typeof vista!=='undefined'&&vista==='cobranza') renderCobranza(); else if(typeof pintarContrato==='function') pintarContrato();
 }
 function seccionDiferidos(activos){
-  const dif=(activos||[]).filter(c=>c.modalidad==='contado_diferido').map(c=>({c,ec:estadoCuenta(c)}));
+  /* Los que ya no deben nada no son un cobro pendiente: no salen aquí (van a Liquidados). */
+  const dif=(activos||[]).filter(c=>c.modalidad==='contado_diferido').map(c=>({c,ec:estadoCuenta(c)})).filter(x=>(x.ec.diferido||0)>0.5||(x.ec.saldo||0)>0.5);
   if(!dif.length) return '';
   const total=dif.reduce((t,x)=>t+(x.ec.diferido||0),0);
   return `<div class="card"><div class="card-h"><h2>Saldo al desmembrar · ${dif.length} · ${Qk(total)}</h2>
