@@ -573,6 +573,76 @@ function repCajaMensual() {
   return f;
 }
 
+/** Flujo de caja por lote (27 oct 2026): UNA FILA POR CONTRATO vivo (aprobado o liquidado) y UNA COLUMNA
+ *  POR MES. Hasta el mes pasado la celda es lo COBRADO (pagos confirmados, por su fecha); de este mes en
+ *  adelante es lo POR COBRAR (lo que falta de cada cuota, por su vencimiento; el saldo al desmembrar, por su
+ *  fecha estimada). Lo atrasado y lo que espera escrituras sin fecha van en columnas aparte, porque no tienen
+ *  mes. La fila TOTAL es la caja de toda la cartera, mes a mes. No depende del período. */
+function repFlujoLote() {
+  const tol = (typeof TOLERANCIA_CUOTA === 'number') ? TOLERANCIA_CUOTA : 5;
+  const hoyMes = HOY_ISO.slice(0, 7), mesDe = f => String(f || '').slice(0, 7);
+  const r2 = n => Math.round((n || 0) * 100) / 100;
+  const sumar = (m, k, v) => m.set(k, r2((m.get(k) || 0) + v));
+  const vivos = DB.contratos.filter(c => c.estado === 'aprobado' || c.estado === 'liquidado');
+  let minMes = hoyMes, maxMes = hoyMes;
+  const porContrato = vivos.map(c => {
+    const meses = new Map(); let cobrado = 0, sinFecha = 0, atrasado = 0, programado = 0, desmSinFecha = 0, ultima = '';
+    pagosDe(c).filter(p => p.estado === 'confirmado').forEach(p => {
+      cobrado += p.monto || 0;
+      const k = mesDe(p.fecha);
+      if (!/^\d{4}-\d{2}$/.test(k)) { sinFecha += p.monto || 0; return; }
+      sumar(meses, k > hoyMes ? hoyMes : k, p.monto || 0);      // una boleta con fecha futura es caja de hoy
+    });
+    if (c.recaudadoBase) { cobrado += c.recaudadoBase; sinFecha += c.recaudadoBase; }
+    (c.obligaciones || []).flatMap(o => o.giros || []).forEach(g => {
+      const falta = r2((g.monto || 0) - (g.abonado || 0));
+      if (g.estado === 'pagado' || falta <= tol) return;
+      if (g.condicion) {                                            // saldo al desmembrar: por su fecha estimada
+        const k = mesDe(g.fechaEstimada);
+        if (!/^\d{4}-\d{2}$/.test(k)) { desmSinFecha += falta; return; }
+        programado += falta; sumar(meses, k < hoyMes ? hoyMes : k, falta); if (k > maxMes) maxMes = k; return;
+      }
+      const k = mesDe(g.vence || g.venc);
+      if (!/^\d{4}-\d{2}$/.test(k)) { desmSinFecha += falta; return; }
+      if (k < hoyMes) { atrasado += falta; return; }               // ya debió entrar: no tiene mes futuro
+      programado += falta; sumar(meses, k, falta); if (k > maxMes) maxMes = k;
+      if (k > ultima) ultima = String(g.vence || g.venc).slice(0, 10);
+    });
+    for (const k of meses.keys()) if (k < minMes) minMes = k;
+    const fv = mesDe(c.fecha); if (/^\d{4}-\d{2}$/.test(fv) && fv < minMes) minMes = fv;
+    let ec = {}; try { ec = estadoCuenta(c) || {}; } catch (e) {}
+    return { c, meses, cobrado: r2(cobrado), sinFecha: r2(sinFecha), atrasado: r2(atrasado), programado: r2(programado),
+             desmSinFecha: r2(desmSinFecha), saldo: r2(ec.saldo || 0), totalPlan: r2(ec.totalGiros || 0), ultima };
+  });
+  const columnas = [];
+  for (let [y, m] = minMes.split('-').map(Number); ; ) {
+    const k = `${y}-${String(m).padStart(2, '0')}`;
+    columnas.push(k); if (k >= maxMes || columnas.length > 600) break;
+    m++; if (m > 12) { m = 1; y++; }
+  }
+  const etiqueta = k => { const [y, m] = k.split('-').map(Number);
+    return `${MESES_CORTOS[m - 1]} ${y} · ${k < hoyMes ? 'cobrado' : k === hoyMes ? 'cobrado y por cobrar' : 'por cobrar'}`; };
+  const f = [['Contrato','Lote','Fase','Cliente','Vendedor','Fecha de venta','Estado','Precio','Total del plan','Cobrado a la fecha',
+              'Cobrado sin fecha','Atrasado a la fecha','Por cobrar programado','Al desmembrar sin fecha','Saldo','Última cuota',
+              ...columnas.map(etiqueta)]];
+  const tot = { precio:0, plan:0, cobrado:0, sinFecha:0, atrasado:0, programado:0, desm:0, saldo:0, meses: new Map() };
+  porContrato.sort((a, b) => String(a.c.fase || '').localeCompare(String(b.c.fase || ''), 'es') || String(a.c.lote || '').localeCompare(String(b.c.lote || ''), 'es', { numeric: true }))
+    .forEach(x => {
+      const c = x.c;
+      tot.precio += +c.precio || 0; tot.plan += x.totalPlan; tot.cobrado += x.cobrado; tot.sinFecha += x.sinFecha; tot.atrasado += x.atrasado;
+      tot.programado += x.programado; tot.desm += x.desmSinFecha; tot.saldo += x.saldo;
+      x.meses.forEach((v, k) => sumar(tot.meses, k, v));
+      f.push([c.no, c.lote, c.fase || '', nombreCliente(c.clienteId), c.vendedor || 'Sin asignar', String(c.fecha || '').slice(0, 10),
+              _ESTADO_VENTA[c.estado] || c.estado || '', _repNum(c.precio), _repNum(x.totalPlan), _repNum(x.cobrado),
+              x.sinFecha ? _repNum(x.sinFecha) : '', x.atrasado ? _repNum(x.atrasado) : '', _repNum(x.programado),
+              x.desmSinFecha ? _repNum(x.desmSinFecha) : '', _repNum(x.saldo), x.ultima,
+              ...columnas.map(k => x.meses.has(k) ? _repNum(x.meses.get(k)) : '')]);
+    });
+  f.push(['TOTAL', '', '', '', '', '', '', _repNum(tot.precio), _repNum(tot.plan), _repNum(tot.cobrado), _repNum(tot.sinFecha), _repNum(tot.atrasado),
+          _repNum(tot.programado), _repNum(tot.desm), _repNum(tot.saldo), '', ...columnas.map(k => _repNum(tot.meses.get(k) || 0))]);
+  return f;
+}
+
 /** Ventas del período (5 oct 2026): una fila por contrato firmado entre Desde y Hasta, de la más
  *  reciente a la más antigua. Las anuladas salen marcadas, no se esconden. */
 const _ESTADO_VENTA = { aprobado:'Aprobada', en_aprobacion:'En el comité', borrador:'Borrador (sin enviar)', anulado:'Anulada', liquidado:'Liquidada', caido:'Caída' };
@@ -629,6 +699,9 @@ const REPORTES = [
   { id:'caja',         nombre:'Caja esperada por cuotas',
     que:'Mes a mes, cuántas cuotas vencen y cuánto dinero debería entrar.',
     para:'Para saber con qué caja contar y planear pagos.', fn: repCajaMensual },
+  { id:'flujo-lote',   nombre:'Flujo de caja por lote',
+    que:'UNA FILA POR CONTRATO y UNA COLUMNA POR MES: lo cobrado cada mes hasta hoy y lo que va a entrar cada mes de aquí al final del plan. Con lo atrasado y lo que espera escrituras aparte, y una fila TOTAL con la caja del mes de toda la cartera.',
+    para:'Para ver lote por lote el historial de cobros y la caja que se va a recibir mes a mes. No depende del período.', fn: repFlujoLote },
   { id:'cartera',      nombre:'Cartera al corte',
     que:'Cada contrato con su plan, lo recaudado, el saldo y la mora.',
     para:'Es el primero que pide el contador.', fn: repCartera },
