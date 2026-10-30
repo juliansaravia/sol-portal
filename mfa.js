@@ -102,12 +102,20 @@ async function confirmarSegundoFactor(factorId, codigo) {
 /** El código que se pide al entrar, cuando ya hay un factor enrolado.
     Si la cuenta tiene más de un factor verificado (pasó: jventas, 3 sept
     2026), se prueba con cada uno, del más nuevo al más viejo. */
+/* Los factores se pueden pedir mientras la persona busca el código en el teléfono (30 oct 2026):
+   es un viaje al servidor que antes se hacía después de escribirlo. Se usa una sola vez. */
+let _factoresPromesa = null;
+function prefetchFactores() {
+  if (!SB) return;
+  _factoresPromesa = SB.auth.mfa.listFactors().catch(e => ({ data: null, error: e }));
+}
 async function verificarSegundoFactor(codigo) {
   if (!SB) return { ok: false, error: 'sin conexión' };
   const limpio = String(codigo || '').replace(/\D/g, '');
   if (limpio.length !== 6) return { ok: false, error: 'El código son seis dígitos.' };
 
-  const { data, error: eLista } = await SB.auth.mfa.listFactors();
+  const pedido = _factoresPromesa; _factoresPromesa = null;
+  const { data, error: eLista } = await (pedido || SB.auth.mfa.listFactors());
   if (eLista) return { ok: false, error: eLista.message };
   const factores = (data.totp || []).filter(f => f.status === 'verified')
     .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
@@ -145,7 +153,7 @@ function codigoNoCuadra(msg) {
   return msg;
 }
 
-Object.assign(window, {
+Object.assign(window, { prefetchFactores,
   tengoSegundoFactor, faltaSegundoFactor,
   enrolarSegundoFactor, confirmarSegundoFactor, verificarSegundoFactor
 });

@@ -90,7 +90,7 @@ async function cargarDesdeSupabase() {
 
        Los pagos se quedan acá: son 738 y de ellos depende cuánto lleva
        recaudado cada contrato, que es de lo primero que se mira. */
-    const [lotes, contratos, clientes, referencias, pagos, equipo, documentos, comisiones, adjuntos, recibos, liquidaciones, requeridos, proyectos, personaProyectos] = await Promise.all([
+    const [lotes, contratos, clientes, referencias, pagos, equipo, documentos, comisiones, adjuntos, recibos, liquidaciones, requeridos, proyectos, personaProyectos, lotesCreados] = await Promise.all([
       todas('v_inventario', 'proyecto_id,proyecto,fase,manzana,lote_id,lote,area_m2,precio_lista,estado,centro_x,centro_y,poligono'),
       conRespaldo('contrato', 'id,numero,fecha,precio_venta,enganche,plazo_meses,tasa_mensual,estado,origen,banco,boleta,lote_id,cliente_id,persona_id',
                   'expediente_de,modalidad,crm_no_contactar,crm_no_contactar_motivo'),
@@ -125,7 +125,10 @@ async function cargarDesdeSupabase() {
       /* Los proyectos con sus reglas y su moneda (56_hati_y_moneda.sql trae moneda/tipo_cambio). */
       conRespaldo('proyecto', 'id,codigo,nombre,municipio,departamento,tasa_mensual,tasa_mora,enganche_minimo,plazos,comision_pct,dias_gracia', 'moneda,tipo_cambio,metodo_interes,tasa_anual,enganche_pct,expediente_robusto'),
       /* Proyectos que ve cada persona (persona_proyecto): sin filas, ve todos. */
-      opcional('persona_proyecto', 'persona_id,proyecto_id')
+      opcional('persona_proyecto', 'persona_id,proyecto_id'),
+      /* Cuándo se creó cada lote (para el cuadre con el modelo). Iba en un viaje aparte, después de
+         todos los demás: medio segundo más de espera por un dato que no urge (30 oct 2026). */
+      todas('lote', 'id,created_at').catch(e => { console.warn('[datos] lote.created_at no disponible:', e && e.message); return null; })
     ]);
 
     const porLote = new Map(lotes.map(l => [l.lote_id, l]));
@@ -152,10 +155,10 @@ async function cargarDesdeSupabase() {
     /* Cuándo se creó cada lote: el cuadre con el modelo separa los que ya existían
        a su fecha de corte de los agregados después. Si no se puede leer, el cuadre
        sigue sin ese dato. */
-    try {
-      const creados = new Map((await todas('lote', 'id,created_at')).map(x => [String(x.id), _fecha(x.created_at)]));
+    if (lotesCreados) {
+      const creados = new Map(lotesCreados.map(x => [String(x.id), _fecha(x.created_at)]));
       DB.lotes.forEach(l => { l.creado = creados.get(String(l.id)) || null; });
-    } catch (e) { console.warn('[datos] lote.created_at no disponible:', e && e.message); }
+    }
 
 
     /* La posición en el plano vive en assets/lotes-geo.js (438 lotes,
@@ -399,14 +402,25 @@ async function cargarDesdeSupabase() {
    que dependen de la cartera lo dicen — en vez de mostrar ceros,
    que se leen igual que un dato.
    ============================================================ */
+/* La cartera (5,550 giros, dos rondas de viajes) se puede ir pidiendo desde que la persona
+   entra, en paralelo con los datos base, y armarse cuando la app ya está en pantalla. Antes
+   se pedía DESPUÉS de dibujar: eran dos viajes más mirando «Cartera Total Q0» (30 oct 2026). */
+let _carteraPedida = null;
+const pedirCartera = () => Promise.all([
+  todas('obligacion', 'id,contrato_id,tipo,descripcion,monto_total,orden'),
+  conRespaldo('giro', 'id,obligacion_id,numero,vencimiento,monto,estado,abonado', 'condicion,fecha_estimada,capital,interes,interes_exonerado')
+]);
+function prefetchCartera() {
+  if (!window.SB) return;
+  _carteraPedida = pedirCartera().catch(e => { _carteraPedida = null; throw e; });
+  _carteraPedida.catch(() => {});
+}
 async function cargarCartera() {
   if (!window.SB) return { ok: false, error: 'sin conexión' };
   const t0 = Date.now();
   try {
-    const [obligaciones, giros] = await Promise.all([
-      todas('obligacion', 'id,contrato_id,tipo,descripcion,monto_total,orden'),
-      conRespaldo('giro', 'id,obligacion_id,numero,vencimiento,monto,estado,abonado', 'condicion,fecha_estimada,capital,interes,interes_exonerado')
-    ]);
+    const pedida = _carteraPedida; _carteraPedida = null;
+    const [obligaciones, giros] = await (pedida || pedirCartera());
 
     const porContrato = new Map(DB.contratos.map(c => [c.id, c]));
     for (const ct of DB.contratos) ct.obligaciones = [];
@@ -521,5 +535,6 @@ async function todas(tabla, columnas, tam = 1000) {
 
 window.cargarDesdeSupabase = cargarDesdeSupabase;
 window.cargarCartera = cargarCartera;
+window.prefetchCartera = prefetchCartera;
 window.claveLote = claveLote;
 window.estadoDePortal = estadoDePortal;

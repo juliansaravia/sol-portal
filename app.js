@@ -150,6 +150,17 @@ function solicitarCambioContrasena(){
   if(CONTACTO_ADMIN.whatsapp) window.open(`https://wa.me/${String(CONTACTO_ADMIN.whatsapp).replace(/\D/g,'')}?text=${encodeURIComponent(txt)}`,'_blank');
   else location.href=`mailto:${CONTACTO_ADMIN.correo}?subject=${encodeURIComponent('Solicitud de cambio de contraseña · portal')}&body=${encodeURIComponent(txt)}`;
 }
+/* ── Cronómetro del ingreso (30 oct 2026) ──
+   «Se tarda un montón entre la contraseña, el 2FA y entrar». Para saber DÓNDE, cada
+   paso deja su marca y el resumen va a la bitácora (y a la consola). */
+const CRONO={ marcas:[] };
+function crono(paso){ CRONO.marcas.push({ paso, t:Date.now() }); }
+function cronoResumen(){
+  const m=CRONO.marcas; if(m.length<2) return '';
+  const seg=ms=>(ms/1000).toFixed(1)+' s';
+  const partes=[]; for(let i=1;i<m.length;i++) partes.push(m[i].paso+' '+seg(m[i].t-m[i-1].t));
+  return 'tiempos: '+partes.join(' · ')+' · total '+seg(m[m.length-1].t-m[0].t);
+}
 async function entrar(){
   /* Carrera: al abrir con sesión viva, el formulario se pinta y
      reanudarSesion() corre en paralelo. Si en esos segundos el gestor
@@ -162,7 +173,9 @@ async function entrar(){
   const btn = document.getElementById('au-entrar');
   if(btn){ btn.disabled=true; btn.textContent='Entrando…'; }
 
+  CRONO.marcas=[]; crono('inicio');
   const r = await iniciarSesion(email, pass);
+  crono('contraseña');
   if(btn){ btn.disabled=false; btn.textContent='Entrar'; }
   if(!r.ok){
     const e=document.getElementById('au-err'); if(e) e.textContent=r.error;
@@ -189,13 +202,22 @@ async function entrar(){
     return;
   }
 
+  await arrancarConDatos('');
+}
+/* Lo común a los tres caminos (contraseña sola, con código, sesión reanudada): la cartera se pide
+   desde el primer momento, en paralelo con los datos base, y se arma cuando la app ya está en pantalla. */
+async function arrancarConDatos(como){
+  if(typeof prefetchCartera==='function') prefetchCartera();
   const carga = await cargarDesdeSupabase();
-  if(!carga.ok){ toast('Entraste, pero no se pudieron cargar los datos: '+carga.error); return; }
-
+  crono('datos');
+  if(!carga.ok){ toast('Entraste, pero no se pudieron cargar los datos: '+carga.error, 7000, true); return; }
   window.__user = { name: SESION.persona.nombre, role: rolDePortal(SESION.rol) };
-  anotar('sesion.entrar', SESION.persona.nombre+' · '+SESION.rol);
   startApp(window.__user.role);
-  traerCartera();
+  crono('pantalla');
+  await traerCartera();
+  crono('cartera');
+  const res=cronoResumen(); console.log('[ingreso] '+res);
+  anotar('sesion.entrar', SESION.persona.nombre+' · '+SESION.rol+(como?' · '+como:'')+' · '+res);
   if(SESION.modoConsulta) avisoModoConsulta();
 }
 
@@ -385,6 +407,9 @@ function pedirCodigo2FA(){
       appVisible: !document.querySelector('.app').hidden, pantalla: typeof SCREEN!=='undefined'?SCREEN:'?',
       vista: typeof vista!=='undefined'?vista:null }));
   } catch(e){}
+  crono('pide código');
+  /* Mientras la persona escribe el código, se van pidiendo sus factores: un viaje menos después. */
+  if(typeof prefetchFactores==='function') prefetchFactores();
   openModal(`<div class="modal-h"><h3>Código de tu teléfono</h3>
       <p>Abrí Microsoft Authenticator y escribí el código de seis dígitos</p></div>
     <div class="modal-b">
@@ -407,18 +432,9 @@ async function entrarCon2FA(){
     return v;
   });
   if(!r) return;
+  crono('código verificado');
   closeModal();
-  const carga = await cargarDesdeSupabase();
-  if(!carga.ok){ toast('Entraste, pero no se pudieron cargar los datos: '+carga.error, 7000, true); return; }
-  window.__user = { name: SESION.persona.nombre, role: rolDePortal(SESION.rol) };
-  anotar('sesion.entrar', SESION.persona.nombre+' · '+SESION.rol+' · con segundo factor');
-  startApp(window.__user.role);
-  /* La cartera es la segunda fase de la carga y este camino no la
-     pedía: quien entrara con segundo factor veía Cartera Total en Q0,
-     la cobranza vacía y la agenda sin cuotas. Nadie lo notó porque el
-     modal del código era invisible y por acá no pasaba nadie. */
-  traerCartera();
-  if(SESION.modoConsulta) avisoModoConsulta();
+  await arrancarConDatos('con segundo factor');
 }
 
 /* ---------- Enrolar el teléfono ---------- */
@@ -493,11 +509,15 @@ async function reanudarSesion(){
     return 'enrolar';
   }
 
+  CRONO.marcas=[]; crono('sesión reanudada');
+  if(typeof prefetchCartera==='function') prefetchCartera();
   const carga = await cargarDesdeSupabase();
+  crono('datos');
   if(!carga.ok){ console.warn('[sesión] sin datos:', carga.error); return false; }
   window.__user = { name: SESION.persona.nombre, role: rolDePortal(SESION.rol) };
   startApp(window.__user.role);
-  traerCartera();
+  crono('pantalla');
+  traerCartera().then(()=>{ crono('cartera'); console.log('[ingreso] '+cronoResumen()); });
   if(SESION.modoConsulta) avisoModoConsulta();
   return true;
 }
