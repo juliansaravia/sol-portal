@@ -2347,6 +2347,8 @@ function renderEquipo(){
         ${p.activo && !p.entra ? (p.email
             ? `<button class="btn btn-gold btn-sm" onclick="invitarA('${p.id}')">Invitar</button>`
             : `<span class="hint" title="Sin correo no se le puede invitar">sin correo</span>`) : ''}
+        ${p.activo && p.entra && p.email && SESION.rol==='admin' && !/@usuarios\./.test(p.email)
+            ? `<button class="btn btn-ghost btn-sm" title="Si fue invitado y nunca abrió el enlace, se le manda otro correo" onclick="invitarA('${p.id}',true)">Reenviar invitación</button>` : ''}
         ${p.activo && SESION.rol==='admin'
             ? `<button class="btn btn-ghost btn-sm" onclick="modalContrasena('${p.id}')">${p.email?'Contraseña':'Usuario y contraseña'}</button>` : ''}
         ${p.activo && (p.tel||p.telefono) ? `<button class="btn btn-ghost btn-sm" title="Mandarle el enlace del portal y su usuario por WhatsApp" onclick="whatsappAcceso('${p.id}')">WhatsApp</button>` : ''}
@@ -2609,10 +2611,14 @@ function whatsappAcceso(id, clave){
   window.open(`https://wa.me/${tel}?text=${encodeURIComponent(txt)}`,'_blank');
   anotar('equipo.whatsapp', p.nombre+(clave?' · con contraseña temporal':''));
 }
-async function invitarA(id){
+async function invitarA(id, reenviar){
   const p=DB.equipo.find(x=>mismoId(x.id,id)); if(!p) return;
   if(!p.email) return toast('Primero ponele su correo: es la llave con la que entra', 6000, true);
-  if(!confirm(`Mandarle a ${p.nombre} una invitación a ${p.email}.\n\n`
+  /* Reenviar: sólo si la persona fue invitada y nunca abrió el enlace (la base lo comprueba);
+     si ya entra, no se le manda nada y se avisa. El enlace anterior deja de servir. */
+  if(!confirm(reenviar
+            ? `Mandarle a ${p.nombre} OTRA invitación a ${p.email}.\n\nSólo aplica si nunca abrió la anterior; el enlace viejo deja de servir. Si ya entra al portal, no se le manda nada.`
+            : `Mandarle a ${p.nombre} una invitación a ${p.email}.\n\n`
             + `Va a recibir un enlace para poner su propia contraseña. `
             + `Vos nunca la vas a ver.`)) return;
 
